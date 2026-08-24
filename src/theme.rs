@@ -1,6 +1,8 @@
 use gtk::gdk;
 use vte4::prelude::*;
 
+use crate::settings::Theme;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rgb(u8, u8, u8);
 
@@ -9,6 +11,7 @@ const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
+const WALLPAPER_BACKGROUND_CLASS: &str = "zter-wallpaper-background";
 
 const ANSI_PALETTE: [Rgb; 16] = [
     Rgb(0x28, 0x2c, 0x34), // black
@@ -29,7 +32,13 @@ const ANSI_PALETTE: [Rgb; 16] = [
     Rgb(0xff, 0xff, 0xff), // bright white
 ];
 
-pub fn apply_to(terminal: &vte4::Terminal, transparent_background: bool) {
+pub fn apply_to(terminal: &vte4::Terminal, theme: Theme, transparent_background: bool) {
+    match theme {
+        Theme::OneHalfDark => apply_one_half_dark(terminal, transparent_background),
+    }
+}
+
+fn apply_one_half_dark(terminal: &vte4::Terminal, transparent_background: bool) {
     let foreground = rgba(FOREGROUND);
     let background = rgba(BACKGROUND);
     let cursor = rgba(CURSOR);
@@ -44,6 +53,11 @@ pub fn apply_to(terminal: &vte4::Terminal, transparent_background: bool) {
     terminal.set_color_cursor_foreground(Some(&cursor_foreground));
     terminal.set_color_highlight(Some(&selection));
     terminal.set_color_highlight_foreground(Some(&selection_foreground));
+    if transparent_background {
+        terminal.add_css_class(WALLPAPER_BACKGROUND_CLASS);
+    } else {
+        terminal.remove_css_class(WALLPAPER_BACKGROUND_CLASS);
+    }
     terminal.set_clear_background(!transparent_background);
 }
 
@@ -87,6 +101,10 @@ fn application_css() -> String {
             border-top: 1px solid {};
             box-shadow: none;
             padding: 8px;
+        }}
+        .zter-terminal.zter-wallpaper-background {{
+            background-color: transparent;
+            background-image: none;
         }}",
         BACKGROUND.css(),
         FOREGROUND.css(),
@@ -162,5 +180,17 @@ mod tests {
         assert!(css.contains("background-color: #303643"));
         assert!(css.contains("border-bottom-width: 0"));
         assert!(!css.contains("#E06C75"));
+    }
+
+    #[test]
+    fn wallpaper_terminal_css_is_explicitly_transparent() {
+        let css = application_css();
+        let (_, wallpaper_rule) = css
+            .split_once(".zter-terminal.zter-wallpaper-background")
+            .unwrap();
+        let (wallpaper_rule, _) = wallpaper_rule.split_once('}').unwrap();
+
+        assert!(wallpaper_rule.contains("background-color: transparent"));
+        assert!(wallpaper_rule.contains("background-image: none"));
     }
 }

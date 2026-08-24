@@ -50,6 +50,11 @@ until a new scoped priority and applicable standalone authorization are added.
   plans, open questions, recommendations, or future work.
 - Put version history in `docs/release/` and active task details in this file.
   Delete other stale or duplicated material.
+- Keep `README.md` focused primarily on prerequisites and how to run zter. Put
+  detailed behavior in its owning `docs/` file and link to it from the README.
+- Preserve the existing README project heading and creation metadata, and its
+  `Run` section containing the Ubuntu dependencies and `cargo run`. These may be
+  extended but must not be removed.
 - Before finishing, verify links and repository paths, search for stale
   plan/status language, and run `git diff --check`.
 

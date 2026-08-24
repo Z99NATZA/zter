@@ -1,22 +1,24 @@
 # Terminal Runtime
 
-zter opens one VTE terminal in one GTK application window. VTE starts the
-configured shell with the UTF-8 entries from the parent process environment and
-the directory from which zter was launched. The window closes when that shell
-exits.
+zter opens one VTE terminal in one GTK application window. VTE starts the shell
+selected by the user settings and environment with the UTF-8 entries from the
+parent process environment and the directory from which zter was launched. The
+window closes when that shell exits.
 
 ## Shell Selection
 
-`$SHELL` selects the executable. A missing or empty value falls back to
-`/bin/sh`. A non-UTF-8 value stops startup with an error. A shell spawn failure
-is written to standard error and displayed inside the terminal surface.
+The `shell` setting selects the executable when it is a string. A `null` value
+uses `$SHELL`; a missing or empty environment value falls back to `/bin/sh`. A
+non-UTF-8 `$SHELL` value stops startup with an error. A shell spawn failure is
+written to standard error and displayed inside the terminal surface.
 
 ## Terminal Surface
 
-The terminal keeps 10,000 lines of scrollback, scrolls to input on a keystroke,
-hides the pointer while typing, and recognizes hyperlinks. `Ctrl+Shift+C` copies
-selected text and `Ctrl+Shift+V` pastes clipboard text. Without a wallpaper, VTE
-paints an opaque One Half Dark background.
+The terminal uses the configured font family, font size, scrollback line count,
+and theme. It scrolls to input on a keystroke, hides the pointer while typing,
+and recognizes hyperlinks. `Ctrl+Shift+C` copies selected text and
+`Ctrl+Shift+V` pastes clipboard text. Without a wallpaper, VTE paints an opaque
+One Half Dark background.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 `#3E4451` border. The terminal content surface uses a top border of the same
@@ -48,8 +50,13 @@ Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
 
 ## Wallpaper
 
-`ZTER_WALLPAPER` accepts a path to an image file. zter verifies that the path is
-a file before opening the application. GTK scales a valid image to cover the
-window while preserving its aspect ratio. VTE leaves its default background
-transparent and zter places a fixed translucent dark layer between the image
-and terminal content for readability.
+The `wallpaper` setting accepts a path to an image file. `ZTER_WALLPAPER`
+overrides that value for one process, and an empty override disables the
+wallpaper. zter verifies that the selected path is a file before opening the
+application. GTK scales a valid image to cover the window while preserving its
+aspect ratio. In wallpaper mode, both VTE background painting and the terminal
+widget's GTK CSS background are transparent. zter places the configured
+translucent dark layer between the image and terminal content for readability.
+
+Settings paths, defaults, ranges, and failure handling are documented in
+[Settings](settings.md).

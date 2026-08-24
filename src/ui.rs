@@ -7,8 +7,6 @@ use crate::{config::AppConfig, theme};
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
-const SCROLLBACK_LINES: i64 = 10_000;
-const WALLPAPER_SHADE_OPACITY: f64 = 0.42;
 
 pub fn build(application: &gtk::Application, config: &AppConfig) {
     let window = gtk::ApplicationWindow::builder()
@@ -20,7 +18,7 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
     window.add_css_class("zter-window");
     theme::install_display_styles(&gtk::prelude::WidgetExt::display(&window));
 
-    let terminal = create_terminal(config.wallpaper().is_some());
+    let terminal = create_terminal(config);
     let content = create_content(&terminal, config);
 
     let window_weak = window.downgrade();
@@ -37,19 +35,27 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
     spawn_shell(&terminal, config);
 }
 
-fn create_terminal(has_wallpaper: bool) -> vte4::Terminal {
+fn create_terminal(config: &AppConfig) -> vte4::Terminal {
     let terminal = vte4::Terminal::new();
     terminal.add_css_class("zter-terminal");
     terminal.set_hexpand(true);
     terminal.set_vexpand(true);
-    terminal.set_scrollback_lines(SCROLLBACK_LINES);
+    terminal.set_scrollback_lines(config.scrollback_lines());
     terminal.set_scroll_on_keystroke(true);
     terminal.set_mouse_autohide(true);
     terminal.set_allow_hyperlink(true);
+    terminal.set_font(Some(&terminal_font(config)));
     install_clipboard_shortcuts(&terminal);
-    theme::apply_to(&terminal, has_wallpaper);
+    theme::apply_to(&terminal, config.theme(), config.wallpaper().is_some());
 
     terminal
+}
+
+fn terminal_font(config: &AppConfig) -> gtk::pango::FontDescription {
+    let mut font = gtk::pango::FontDescription::new();
+    font.set_family(config.font_family());
+    font.set_size((config.font_size() * f64::from(gtk::pango::SCALE)).round() as i32);
+    font
 }
 
 fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
@@ -92,7 +98,7 @@ fn create_content(terminal: &vte4::Terminal, config: &AppConfig) -> gtk::Overlay
         picture.set_vexpand(true);
         overlay.set_child(Some(&picture));
 
-        let shade = create_wallpaper_shade();
+        let shade = create_wallpaper_shade(config.wallpaper_shade());
         overlay.add_overlay(&shade);
         overlay.add_overlay(terminal);
     } else {
@@ -102,13 +108,13 @@ fn create_content(terminal: &vte4::Terminal, config: &AppConfig) -> gtk::Overlay
     overlay
 }
 
-fn create_wallpaper_shade() -> gtk::DrawingArea {
+fn create_wallpaper_shade(opacity: f64) -> gtk::DrawingArea {
     let shade = gtk::DrawingArea::new();
     shade.set_can_target(false);
     shade.set_hexpand(true);
     shade.set_vexpand(true);
-    shade.set_draw_func(|_, context, width, height| {
-        context.set_source_rgba(0.0, 0.0, 0.0, WALLPAPER_SHADE_OPACITY);
+    shade.set_draw_func(move |_, context, width, height| {
+        context.set_source_rgba(0.0, 0.0, 0.0, opacity);
         context.rectangle(0.0, 0.0, f64::from(width), f64::from(height));
         let _ = context.fill();
     });
