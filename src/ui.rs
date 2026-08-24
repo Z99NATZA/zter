@@ -5,7 +5,7 @@ use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::prelude::*;
 use vte4::prelude::*;
 
-use crate::{config::AppConfig, theme};
+use crate::{APPLICATION_ID, config::AppConfig, theme};
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
@@ -16,6 +16,7 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .title("zter")
+        .icon_name(APPLICATION_ID)
         .default_width(DEFAULT_WIDTH)
         .default_height(DEFAULT_HEIGHT)
         .build();

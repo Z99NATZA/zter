@@ -11,7 +11,7 @@ use gtk::prelude::*;
 use crate::config::AppConfig;
 use crate::settings::Settings;
 
-const APPLICATION_ID: &str = "io.github.znnn.zter";
+pub(crate) const APPLICATION_ID: &str = "io.github.znnn.zter";
 const USAGE: &str = "usage: zter [settings apply]";
 
 fn main() -> gtk::glib::ExitCode {

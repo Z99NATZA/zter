@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>zter</title>
+  <rect
+    x="12"
+    y="12"
+    width="232"
+    height="232"
+    rx="42"
+    fill="#282c34"
+    stroke="#4b5263"
+    stroke-width="6"
+  />
+  <path
+    d="M54 93 L96 128 L54 163"
+    fill="none"
+    stroke="#61afef"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="18"
+  />
+  <path
+    d="M119 108 H181 L123 157 H184"
+    fill="none"
+    stroke="#dcdfe4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="17"
+  />
+</svg>

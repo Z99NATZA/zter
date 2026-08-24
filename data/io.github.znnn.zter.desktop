@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=zter
+Comment=Terminal emulator with wallpaper support
+Exec=zter
+Icon=io.github.znnn.zter
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;commandline;terminal;
+StartupNotify=true
+StartupWMClass=io.github.znnn.zter

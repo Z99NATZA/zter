@@ -26,9 +26,12 @@ src/main.rs
 - `src/theme.rs` owns terminal surface and ANSI palette colors.
 - `src/ui.rs` owns GTK widgets, VTE behavior, wallpaper composition, and shell
   spawning.
+- `data/` owns the desktop launcher metadata and scalable application icon.
+- `scripts/` owns the user-local desktop installation and removal commands.
 
 The tracked `config/settings.json` is the complete project template and is
 embedded in the binary. The mutable user file is outside the repository.
 
 Detailed behavior is documented in [Settings](settings.md) and
-[Terminal runtime](terminal-runtime.md).
+[Terminal runtime](terminal-runtime.md). Desktop launcher and icon behavior is
+documented in [Desktop integration](desktop-integration.md).
