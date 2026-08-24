@@ -15,9 +15,8 @@ here before making repository changes; do not infer follow-up work.
 
 ## Required Outcome
 
-No implementation outcome is currently authorized. Preserve the clean Rust
-project baseline until a new scoped priority and applicable standalone
-authorization are added.
+No implementation outcome is currently authorized. Preserve current behavior
+until a new scoped priority and applicable standalone authorization are added.
 
 ## Authorization And Verification
 
