@@ -1,8 +1,8 @@
 # Terminal Runtime
 
-Zter opens one VTE terminal in one GTK application window. VTE starts the
+zter opens one VTE terminal in one GTK application window. VTE starts the
 configured shell with the UTF-8 entries from the parent process environment and
-the directory from which Zter was launched. The window closes when that shell
+the directory from which zter was launched. The window closes when that shell
 exits.
 
 ## Shell Selection
@@ -17,6 +17,14 @@ The terminal keeps 10,000 lines of scrollback, scrolls to input on a keystroke,
 hides the pointer while typing, and recognizes hyperlinks. `Ctrl+Shift+C` copies
 selected text and `Ctrl+Shift+V` pastes clipboard text. Without a wallpaper, VTE
 paints an opaque One Half Dark background.
+
+App-owned surfaces do not use shadows. The app window has one outer `1px`
+`#3E4451` border. The terminal content surface uses a top border of the same
+color as the only header/content divider and has `8px` inner padding. The GTK
+headerbar's theme border is disabled so it does not create a second dark line.
+The wallpaper and readability shade do not add borders. Window-manager or
+compositor decoration remains system-owned and may include an outer window
+shadow beyond the app border.
 
 ## Theme Palette
 
@@ -36,12 +44,12 @@ slots used by terminal programs for error semantics.
 | White      | `#DCDFE4` | `#FFFFFF` |
 
 Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
-`#61AFEF`, and selection is `#3E4451`.
+`#61AFEF`, selection is `#3E4451`, and the header background is `#303643`.
 
 ## Wallpaper
 
-`ZTER_WALLPAPER` accepts a path to an image file. Zter verifies that the path is
+`ZTER_WALLPAPER` accepts a path to an image file. zter verifies that the path is
 a file before opening the application. GTK scales a valid image to cover the
 window while preserving its aspect ratio. VTE leaves its default background
-transparent and Zter places a fixed translucent dark layer between the image
+transparent and zter places a fixed translucent dark layer between the image
 and terminal content for readability.

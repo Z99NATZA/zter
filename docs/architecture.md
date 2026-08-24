@@ -1,6 +1,6 @@
 # Architecture
 
-Zter is one GTK4 desktop process. GTK owns the application lifecycle and
+zter is one GTK4 desktop process. GTK owns the application lifecycle and
 window, while VTE owns terminal emulation, the pseudo-terminal, and the child
 shell connection.
 

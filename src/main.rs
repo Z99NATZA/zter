@@ -6,7 +6,7 @@ use gtk::prelude::*;
 
 use crate::config::AppConfig;
 
-const APPLICATION_ID: &str = "io.github.znnn.Zter";
+const APPLICATION_ID: &str = "io.github.znnn.zter";
 
 fn main() -> gtk::glib::ExitCode {
     let config = match AppConfig::from_environment() {

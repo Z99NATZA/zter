@@ -13,10 +13,12 @@ const WALLPAPER_SHADE_OPACITY: f64 = 0.42;
 pub fn build(application: &gtk::Application, config: &AppConfig) {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
-        .title("Zter")
+        .title("zter")
         .default_width(DEFAULT_WIDTH)
         .default_height(DEFAULT_HEIGHT)
         .build();
+    window.add_css_class("zter-window");
+    theme::install_display_styles(&gtk::prelude::WidgetExt::display(&window));
 
     let terminal = create_terminal(config.wallpaper().is_some());
     let content = create_content(&terminal, config);
@@ -37,6 +39,7 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
 
 fn create_terminal(has_wallpaper: bool) -> vte4::Terminal {
     let terminal = vte4::Terminal::new();
+    terminal.add_css_class("zter-terminal");
     terminal.set_hexpand(true);
     terminal.set_vexpand(true);
     terminal.set_scrollback_lines(SCROLLBACK_LINES);

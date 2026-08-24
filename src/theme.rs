@@ -6,6 +6,7 @@ struct Rgb(u8, u8, u8);
 
 const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
+const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
 
@@ -46,6 +47,57 @@ pub fn apply_to(terminal: &vte4::Terminal, transparent_background: bool) {
     terminal.set_clear_background(!transparent_background);
 }
 
+pub fn install_display_styles(display: &gdk::Display) {
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(&application_css());
+    gtk::style_context_add_provider_for_display(
+        display,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
+fn application_css() -> String {
+    format!(
+        "\
+        window.zter-window {{
+            background-color: {};
+            background-image: none;
+            color: {};
+            box-shadow: none;
+            border: 1px solid {};
+        }}
+        window.zter-window headerbar,
+        window.zter-window .titlebar {{
+            background-color: {};
+            background-image: none;
+            border-bottom-width: 0;
+            color: {};
+            box-shadow: none;
+        }}
+        window.zter-window headerbar windowcontrols button {{
+            background-color: transparent;
+            background-image: none;
+            box-shadow: none;
+        }}
+        window.zter-window headerbar windowcontrols button:hover {{
+            background-color: {};
+        }}
+        .zter-terminal {{
+            border-top: 1px solid {};
+            box-shadow: none;
+            padding: 8px;
+        }}",
+        BACKGROUND.css(),
+        FOREGROUND.css(),
+        SELECTION.css(),
+        HEADER_BACKGROUND.css(),
+        FOREGROUND.css(),
+        SELECTION.css(),
+        SELECTION.css()
+    )
+}
+
 fn rgba(Rgb(red, green, blue): Rgb) -> gdk::RGBA {
     gdk::RGBA::new(
         f32::from(red) / 255.0,
@@ -53,6 +105,12 @@ fn rgba(Rgb(red, green, blue): Rgb) -> gdk::RGBA {
         f32::from(blue) / 255.0,
         1.0,
     )
+}
+
+impl Rgb {
+    fn css(self) -> String {
+        format!("#{:02X}{:02X}{:02X}", self.0, self.1, self.2)
+    }
 }
 
 #[cfg(test)]
@@ -74,5 +132,35 @@ mod tests {
             .collect();
 
         assert_eq!(red_indexes, [1, 9]);
+    }
+
+    #[test]
+    fn app_css_uses_only_outer_and_divider_borders_and_disables_owned_shadows() {
+        let css = application_css();
+        let shadow_rules: Vec<&str> = css
+            .lines()
+            .filter(|line| line.contains("box-shadow:"))
+            .collect();
+
+        assert_eq!(css.matches("border:").count(), 1);
+        assert_eq!(css.matches("border-top:").count(), 1);
+        assert!(!shadow_rules.is_empty());
+        assert!(
+            shadow_rules
+                .iter()
+                .all(|rule| rule.trim() == "box-shadow: none;")
+        );
+        assert!(css.contains("border: 1px solid #3E4451"));
+        assert!(css.contains("border-top: 1px solid #3E4451"));
+    }
+
+    #[test]
+    fn header_uses_reference_tone_without_red_or_a_second_divider() {
+        let css = application_css();
+
+        assert!(css.contains("window.zter-window headerbar"));
+        assert!(css.contains("background-color: #303643"));
+        assert!(css.contains("border-bottom-width: 0"));
+        assert!(!css.contains("#E06C75"));
     }
 }
