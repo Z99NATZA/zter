@@ -16,7 +16,27 @@ is written to standard error and displayed inside the terminal surface.
 The terminal keeps 10,000 lines of scrollback, scrolls to input on a keystroke,
 hides the pointer while typing, and recognizes hyperlinks. `Ctrl+Shift+C` copies
 selected text and `Ctrl+Shift+V` pastes clipboard text. Without a wallpaper, VTE
-paints an opaque dark background.
+paints an opaque One Half Dark background.
+
+## Theme Palette
+
+The terminal uses One Half Dark colors. Ordinary surfaces and interaction states
+use neutral or blue colors; red is reserved for the normal and bright ANSI red
+slots used by terminal programs for error semantics.
+
+| Role       | Normal    | Bright    |
+| ---------- | --------- | --------- |
+| Black      | `#282C34` | `#5C6370` |
+| Red        | `#E06C75` | `#E06C75` |
+| Green      | `#98C379` | `#98C379` |
+| Yellow     | `#E5C07B` | `#E5C07B` |
+| Blue       | `#61AFEF` | `#61AFEF` |
+| Magenta    | `#C678DD` | `#C678DD` |
+| Cyan       | `#56B6C2` | `#56B6C2` |
+| White      | `#DCDFE4` | `#FFFFFF` |
+
+Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
+`#61AFEF`, and selection is `#3E4451`.
 
 ## Wallpaper
 

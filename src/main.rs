@@ -1,4 +1,5 @@
 mod config;
+mod theme;
 mod ui;
 
 use gtk::prelude::*;

@@ -19,6 +19,7 @@ src/main.rs
 
 - `src/main.rs` owns startup, failure reporting, and the GTK application.
 - `src/config.rs` owns environment-derived configuration and validation.
+- `src/theme.rs` owns terminal surface and ANSI palette colors.
 - `src/ui.rs` owns GTK widgets, VTE behavior, wallpaper composition, and shell
   spawning.
 

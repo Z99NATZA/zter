@@ -1,10 +1,9 @@
 use std::env;
 
-use gtk::gdk;
 use gtk::prelude::*;
 use vte4::prelude::*;
 
-use crate::config::AppConfig;
+use crate::{config::AppConfig, theme};
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
@@ -45,16 +44,7 @@ fn create_terminal(has_wallpaper: bool) -> vte4::Terminal {
     terminal.set_mouse_autohide(true);
     terminal.set_allow_hyperlink(true);
     install_clipboard_shortcuts(&terminal);
-
-    let foreground = gdk::RGBA::new(0.94, 0.94, 0.94, 1.0);
-    terminal.set_color_foreground(&foreground);
-
-    if has_wallpaper {
-        terminal.set_clear_background(false);
-    } else {
-        let background = gdk::RGBA::new(0.055, 0.055, 0.065, 1.0);
-        terminal.set_color_background(&background);
-    }
+    theme::apply_to(&terminal, has_wallpaper);
 
     terminal
 }
@@ -65,8 +55,8 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
 
     let terminal_weak = terminal.downgrade();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let is_terminal_shortcut =
-            modifiers.contains(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK);
+        let is_terminal_shortcut = modifiers
+            .contains(gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::SHIFT_MASK);
 
         if !is_terminal_shortcut {
             return gtk::glib::Propagation::Proceed;
@@ -77,8 +67,8 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
         };
 
         match key.to_lower() {
-            gdk::Key::c => terminal.copy_clipboard_format(vte4::Format::Text),
-            gdk::Key::v => terminal.paste_clipboard(),
+            gtk::gdk::Key::c => terminal.copy_clipboard_format(vte4::Format::Text),
+            gtk::gdk::Key::v => terminal.paste_clipboard(),
             _ => return gtk::glib::Propagation::Proceed,
         }
 
