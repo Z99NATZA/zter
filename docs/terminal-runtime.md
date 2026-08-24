@@ -17,16 +17,17 @@ written to standard error and displayed inside the terminal surface.
 The terminal uses the configured font family, font size, scrollback line count,
 and theme. It scrolls to input on a keystroke, hides the pointer while typing,
 and recognizes hyperlinks. `Ctrl+Shift+C` copies selected text and
-`Ctrl+Shift+V` pastes clipboard text. Without a wallpaper, VTE paints an opaque
-One Half Dark background.
+`Ctrl+Shift+V` pastes clipboard text. The composition layer paints the opaque
+One Half Dark background while VTE remains transparent.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
-`#3E4451` border. The terminal content surface uses a top border of the same
-color as the only header/content divider and has `8px` inner padding. The GTK
-headerbar's theme border is disabled so it does not create a second dark line.
-The wallpaper and readability shade do not add borders. Window-manager or
-compositor decoration remains system-owned and may include an outer window
-shadow beyond the app border.
+`#3E4451` border and `12px` rounded corners. The lower composition layer is
+clipped to the same radius. The terminal content surface uses a top border of
+the same color as the only header/content divider and has `8px` inner padding.
+The GTK headerbar's theme border is disabled so it does not create a second dark
+line. The wallpaper does not add borders. Window-manager or compositor
+decoration remains system-owned and may include an outer window shadow beyond
+the app border.
 
 ## Theme Palette
 
@@ -53,10 +54,12 @@ Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
 The `wallpaper` setting accepts a path to an image file. `ZTER_WALLPAPER`
 overrides that value for one process, and an empty override disables the
 wallpaper. zter verifies that the selected path is a file before opening the
-application. GTK scales a valid image to cover the window while preserving its
-aspect ratio. In wallpaper mode, both VTE background painting and the terminal
-widget's GTK CSS background are transparent. zter places the configured
-translucent dark layer between the image and terminal content for readability.
+application. zter centers and scales a valid image to cover the content while
+preserving its aspect ratio. The image is drawn over the One Half Dark
+background with the Screen blend mode and the configured opacity, so it adds
+subtle light and color without replacing the readable theme base. Both VTE
+background painting and the terminal widget's GTK CSS background remain
+transparent.
 
 Settings paths, defaults, ranges, and failure handling are documented in
 [Settings](settings.md).

@@ -18,7 +18,7 @@ pub struct AppConfig {
     font_family: String,
     font_size: f64,
     scrollback_lines: i64,
-    wallpaper_shade: f64,
+    wallpaper_opacity: f64,
 }
 
 impl AppConfig {
@@ -50,7 +50,7 @@ impl AppConfig {
             font_family: settings.font_family().to_owned(),
             font_size: settings.font_size(),
             scrollback_lines: settings.scrollback_lines(),
-            wallpaper_shade: settings.wallpaper_shade(),
+            wallpaper_opacity: settings.wallpaper_opacity(),
         })
     }
 
@@ -82,8 +82,8 @@ impl AppConfig {
         self.scrollback_lines
     }
 
-    pub fn wallpaper_shade(&self) -> f64 {
-        self.wallpaper_shade
+    pub fn wallpaper_opacity(&self) -> f64 {
+        self.wallpaper_opacity
     }
 }
 
@@ -236,19 +236,19 @@ mod tests {
         assert_eq!(config.font_family(), "Monospace");
         assert_eq!(config.font_size(), 12.0);
         assert_eq!(config.scrollback_lines(), 10_000);
-        assert_eq!(config.wallpaper_shade(), 0.42);
+        assert_eq!(config.wallpaper_opacity(), 0.1);
     }
 
     fn customized_settings(shell: serde_json::Value, wallpaper: serde_json::Value) -> Settings {
         serde_json::from_value(serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "shell": shell,
             "wallpaper": wallpaper,
             "theme": "one-half-dark",
             "font_family": "Monospace",
             "font_size": 12.0,
             "scrollback_lines": 10000,
-            "wallpaper_shade": 0.42
+            "wallpaper_opacity": 0.1
         }))
         .unwrap()
     }

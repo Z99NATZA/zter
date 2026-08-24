@@ -10,7 +10,7 @@ use serde_json::Value;
 
 const APPLICATION_DIRECTORY: &str = "zter";
 const SETTINGS_FILE: &str = "settings.json";
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SCHEMA_VERSION: u32 = 2;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -29,7 +29,7 @@ pub struct Settings {
     font_family: String,
     font_size: f64,
     scrollback_lines: i64,
-    wallpaper_shade: f64,
+    wallpaper_opacity: f64,
 }
 
 impl Settings {
@@ -61,10 +61,11 @@ impl Settings {
             }
         };
         let mut value = parse_json(&source, path)?;
+        let migrated = migrate_settings(&mut value, path)?;
         let changed = merge_missing_keys(&mut value, &default_value, path)?;
         let settings = settings_from_value(value, path)?;
 
-        if changed {
+        if migrated || changed {
             write_settings(path, &settings)?;
         }
 
@@ -121,8 +122,8 @@ impl Settings {
         self.scrollback_lines
     }
 
-    pub fn wallpaper_shade(&self) -> f64 {
-        self.wallpaper_shade
+    pub fn wallpaper_opacity(&self) -> f64 {
+        self.wallpaper_opacity
     }
 
     #[cfg(test)]
@@ -251,6 +252,45 @@ fn project_settings_path() -> &'static Path {
     Path::new("config/settings.json")
 }
 
+fn migrate_settings(value: &mut Value, path: &Path) -> Result<bool, SettingsError> {
+    let settings = value
+        .as_object_mut()
+        .ok_or_else(|| invalid(path, "the top-level value must be a JSON object"))?;
+
+    if settings.get("schema_version").and_then(Value::as_u64) != Some(1) {
+        return Ok(false);
+    }
+
+    if !settings.contains_key("wallpaper_opacity")
+        && let Some(shade) = settings.get("wallpaper_shade")
+    {
+        let shade = shade
+            .as_f64()
+            .ok_or_else(|| invalid(path, "wallpaper_shade in schema version 1 must be a number"))?;
+        if !shade.is_finite() || !(0.0..=1.0).contains(&shade) {
+            return Err(invalid(
+                path,
+                "wallpaper_shade in schema version 1 must be between 0 and 1",
+            ));
+        }
+        settings.insert(
+            "wallpaper_opacity".to_owned(),
+            Value::from(legacy_shade_to_opacity(shade)),
+        );
+    }
+
+    settings.remove("wallpaper_shade");
+    settings.insert(
+        "schema_version".to_owned(),
+        Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    Ok(true)
+}
+
+fn legacy_shade_to_opacity(shade: f64) -> f64 {
+    (((1.0 - shade) * 100.0).round() / 100.0).min(0.6)
+}
+
 fn merge_missing_keys(
     value: &mut Value,
     defaults: &Value,
@@ -314,8 +354,8 @@ impl Settings {
                 "scrollback_lines must be between 0 and 1000000",
             ));
         }
-        if !self.wallpaper_shade.is_finite() || !(0.0..=1.0).contains(&self.wallpaper_shade) {
-            return Err(invalid(path, "wallpaper_shade must be between 0 and 1"));
+        if !self.wallpaper_opacity.is_finite() || !(0.0..=0.6).contains(&self.wallpaper_opacity) {
+            return Err(invalid(path, "wallpaper_opacity must be between 0 and 0.6"));
         }
 
         Ok(())
@@ -431,7 +471,7 @@ mod tests {
                 "shell",
                 "theme",
                 "wallpaper",
-                "wallpaper_shade",
+                "wallpaper_opacity",
             ]
         );
     }
@@ -467,6 +507,32 @@ mod tests {
     }
 
     #[test]
+    fn schema_one_shade_migrates_to_equivalent_wallpaper_opacity() {
+        let directory = test_directory("shade-migration");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            &path,
+            "{\"schema_version\":1,\"font_size\":16.0,\"wallpaper_shade\":0.8}",
+        )
+        .unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+        let saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(settings.wallpaper_opacity(), 0.2);
+        assert_eq!(saved["schema_version"], 2);
+        assert!(saved.get("wallpaper_shade").is_none());
+        assert_eq!(saved["wallpaper_opacity"], 0.2);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn schema_one_migration_caps_opacity_at_the_supported_maximum() {
+        assert_eq!(legacy_shade_to_opacity(0.0), 0.6);
+    }
+
+    #[test]
     fn malformed_file_is_not_overwritten() {
         let directory = test_directory("malformed");
         let path = directory.join("settings.json");
@@ -485,6 +551,23 @@ mod tests {
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
         let invalid = PROJECT_SETTINGS_JSON.replace("12.0", "100.0");
+        fs::write(&path, &invalid).unwrap();
+
+        assert!(matches!(
+            Settings::load_or_create_at(&path),
+            Err(SettingsError::Invalid { .. })
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn wallpaper_opacity_above_the_supported_maximum_is_rejected() {
+        let directory = test_directory("invalid-opacity");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let invalid = PROJECT_SETTINGS_JSON
+            .replace("\"wallpaper_opacity\": 0.1", "\"wallpaper_opacity\": 0.7");
         fs::write(&path, &invalid).unwrap();
 
         assert!(matches!(

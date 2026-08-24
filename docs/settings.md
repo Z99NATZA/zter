@@ -37,14 +37,14 @@ Every settings file contains every supported key.
 
 | Key | Type | Default | Behavior |
 | --- | --- | --- | --- |
-| `schema_version` | integer | `1` | Selects the settings schema understood by this zter version. |
+| `schema_version` | integer | `2` | Selects the settings schema understood by this zter version. |
 | `shell` | string or `null` | `null` | Shell executable. `null` uses `$SHELL`, then `/bin/sh` if the environment value is missing or empty. |
 | `wallpaper` | string or `null` | `null` | Image path behind the terminal. `null` disables the wallpaper. |
 | `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |
 | `scrollback_lines` | integer | `10000` | Retained terminal history, from `0` through `1000000` lines. |
-| `wallpaper_shade` | number | `0.42` | Black readability layer opacity, from `0` through `1`. |
+| `wallpaper_opacity` | number | `0.10` | Screen-blended wallpaper opacity, from `0` through `0.6`. |
 
 `ZTER_WALLPAPER` overrides the `wallpaper` key for one process. Setting the
 environment variable to an empty value disables the configured wallpaper for
@@ -52,9 +52,14 @@ that process.
 
 ## Loading And Failure Handling
 
-During normal startup, when an older settings file is missing supported keys,
-zter adds those keys from the embedded project settings and atomically replaces
-the file while retaining existing values. Unknown keys, malformed JSON,
-unsupported schema versions, invalid values, and wallpaper paths that are not
-files stop startup with an error. Normal startup does not overwrite a malformed
-or invalid file; `settings apply` is the explicit recovery path.
+During normal startup, zter migrates schema version `1` by replacing
+`wallpaper_shade` with `wallpaper_opacity`. The migrated opacity is the inverse
+of the shade, capped at the supported maximum of `0.6`, which retains the
+previous image contribution where possible. zter also adds missing supported
+keys from the embedded project settings and atomically replaces the file while
+retaining existing values.
+
+Unknown keys, malformed JSON, unsupported schema versions, invalid values, and
+wallpaper paths that are not files stop startup with an error. Normal startup
+does not overwrite a malformed or invalid file; `settings apply` is the
+explicit recovery path.
