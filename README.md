@@ -22,9 +22,14 @@ sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
 ## Run
 
 ```bash
+# Clone
+git clone https://github.com/Z99NATZA/zter.git
+cd zter
+
 # Apply current settings (Optional)
 cargo run -- settings apply
 
+# Run
 cargo run
 ```
 
