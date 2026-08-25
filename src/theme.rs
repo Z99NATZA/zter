@@ -206,6 +206,11 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         .zter-content {{
             background-color: transparent;
             border-radius: 0 0 12px 12px;
+        }}
+        picture.zter-background {{
+            background-color: {};
+            background-image: none;
+            border-radius: 0 0 12px 12px;
         }}",
         BACKGROUND.css(),
         FOREGROUND.css(),
@@ -221,7 +226,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         terminal_padding.top(),
         terminal_padding.right(),
         terminal_padding.bottom(),
-        terminal_padding.left()
+        terminal_padding.left(),
+        BACKGROUND.css()
     )
 }
 
@@ -301,6 +307,16 @@ mod tests {
 
         assert!(wallpaper_rule.contains("background-color: transparent"));
         assert!(wallpaper_rule.contains("background-image: none"));
+    }
+
+    #[test]
+    fn prepared_wallpaper_surface_keeps_the_opaque_theme_fallback() {
+        let css = application_css(TerminalPadding::default());
+        let (_, background_rule) = css.split_once("picture.zter-background").unwrap();
+        let (background_rule, _) = background_rule.split_once('}').unwrap();
+
+        assert!(background_rule.contains("background-color: #282C34"));
+        assert!(background_rule.contains("background-image: none"));
     }
 
     #[test]

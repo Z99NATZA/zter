@@ -67,4 +67,5 @@ until a new scoped priority and applicable standalone authorization are added.
   behavior once that document exists.
 - CI readiness requires stable build dependencies and check commands. Define CI
   as a concrete active scope before implementing its workflow.
-- alias of agent-work-priority.md = priority | pri
+- Alias of agent-work-priority.md = priority | pri
+- Do not edit `docs/run.md`

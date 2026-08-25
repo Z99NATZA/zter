@@ -1,13 +1,13 @@
 use std::cell::{Cell, RefCell};
 use std::env;
-use std::f64::consts::{FRAC_PI_2, PI};
+use std::fmt;
 use std::io::Cursor;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use gtk::gdk::prelude::GdkCairoContextExt;
+use gtk::gdk::prelude::*;
 use gtk::prelude::*;
 use vte4::prelude::*;
 
@@ -20,7 +20,6 @@ use crate::{
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
-const WINDOW_CORNER_RADIUS: f64 = 12.0;
 const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Screen;
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
@@ -76,6 +75,36 @@ struct TabHeader {
     close_button: gtk::Button,
 }
 
+#[derive(Clone, Default)]
+struct WallpaperAsset {
+    texture: Option<gtk::gdk::Texture>,
+}
+
+#[derive(Debug)]
+enum WallpaperPreparationError {
+    Cairo(gtk::cairo::Error),
+    Downscale,
+    PixelConversion,
+}
+
+impl fmt::Display for WallpaperPreparationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cairo(error) => write!(formatter, "could not blend the wallpaper: {error}"),
+            Self::Downscale => formatter.write_str("could not downscale the wallpaper"),
+            Self::PixelConversion => {
+                formatter.write_str("could not convert the prepared wallpaper to pixels")
+            }
+        }
+    }
+}
+
+impl From<gtk::cairo::Error> for WallpaperPreparationError {
+    fn from(error: gtk::cairo::Error) -> Self {
+        Self::Cairo(error)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TerminalResizeAction {
     Ignore,
@@ -127,15 +156,30 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
         &gtk::prelude::WidgetExt::display(&window),
         config.terminal_padding(),
     );
+    let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
 
     let notebook = create_notebook();
-    let (header, tab_strip, tab_scroller) = create_header(&window, &notebook, config);
-    install_tab_shortcuts(&window, &notebook, &tab_strip, &tab_scroller, config);
+    let (header, tab_strip, tab_scroller) = create_header(&window, &notebook, config, &wallpaper);
+    install_tab_shortcuts(
+        &window,
+        &notebook,
+        &tab_strip,
+        &tab_scroller,
+        config,
+        &wallpaper,
+    );
     install_tab_switch_handler(&window, &notebook, &tab_strip, &tab_scroller, config);
 
     window.set_titlebar(Some(&header));
     window.set_child(Some(&notebook));
-    add_terminal_tab(&window, &notebook, &tab_strip, &tab_scroller, config);
+    add_terminal_tab(
+        &window,
+        &notebook,
+        &tab_strip,
+        &tab_scroller,
+        config,
+        &wallpaper,
+    );
     window.present();
     focus_current_terminal(&notebook);
 }
@@ -154,6 +198,7 @@ fn create_header(
     window: &gtk::ApplicationWindow,
     notebook: &gtk::Notebook,
     config: &AppConfig,
+    wallpaper: &WallpaperAsset,
 ) -> (gtk::WindowHandle, gtk::Box, gtk::ScrolledWindow) {
     let window_handle = gtk::WindowHandle::new();
     window_handle.add_css_class("zter-window-handle");
@@ -178,8 +223,22 @@ fn create_header(
     tab_scroller.add_css_class("zter-tab-scroller");
     install_tab_strip_scrolling(&tab_scroller);
 
-    let inline_new_tab = create_new_tab_button(window, notebook, &tab_strip, &tab_scroller, config);
-    let pinned_new_tab = create_new_tab_button(window, notebook, &tab_strip, &tab_scroller, config);
+    let inline_new_tab = create_new_tab_button(
+        window,
+        notebook,
+        &tab_strip,
+        &tab_scroller,
+        config,
+        wallpaper,
+    );
+    let pinned_new_tab = create_new_tab_button(
+        window,
+        notebook,
+        &tab_strip,
+        &tab_scroller,
+        config,
+        wallpaper,
+    );
     pinned_new_tab.set_visible(false);
 
     let drag_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -205,6 +264,7 @@ fn create_new_tab_button(
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
     config: &AppConfig,
+    wallpaper: &WallpaperAsset,
 ) -> gtk::Button {
     let button = gtk::Button::builder()
         .icon_name("list-add-symbolic")
@@ -219,6 +279,7 @@ fn create_new_tab_button(
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
     let config = config.clone();
+    let wallpaper = wallpaper.clone();
     button.connect_clicked(move |_| {
         let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller)) = (
             window_weak.upgrade(),
@@ -228,7 +289,14 @@ fn create_new_tab_button(
         ) else {
             return;
         };
-        add_terminal_tab(&window, &notebook, &tab_strip, &tab_scroller, &config);
+        add_terminal_tab(
+            &window,
+            &notebook,
+            &tab_strip,
+            &tab_scroller,
+            &config,
+            &wallpaper,
+        );
     });
 
     button
@@ -289,6 +357,7 @@ fn install_tab_shortcuts(
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
     config: &AppConfig,
+    wallpaper: &WallpaperAsset,
 ) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -298,6 +367,7 @@ fn install_tab_shortcuts(
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
     let config = config.clone();
+    let wallpaper = wallpaper.clone();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
         let Some(shortcut) = tab_shortcut(key, modifiers) else {
             return gtk::glib::Propagation::Proceed;
@@ -312,9 +382,14 @@ fn install_tab_shortcuts(
         };
 
         match shortcut {
-            TabShortcut::New => {
-                add_terminal_tab(&window, &notebook, &tab_strip, &tab_scroller, &config)
-            }
+            TabShortcut::New => add_terminal_tab(
+                &window,
+                &notebook,
+                &tab_strip,
+                &tab_scroller,
+                &config,
+                &wallpaper,
+            ),
             TabShortcut::Close => close_current_tab(&window, &notebook, &tab_strip, &tab_scroller),
             TabShortcut::Previous => notebook.prev_page(),
             TabShortcut::Next => notebook.next_page(),
@@ -363,9 +438,10 @@ fn add_terminal_tab(
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
     config: &AppConfig,
+    wallpaper: &WallpaperAsset,
 ) {
     let terminal = create_terminal(config);
-    let content = create_content(&terminal, config);
+    let content = create_content(&terminal, config, wallpaper);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
     content.set_widget_name(&tab_id);
@@ -1048,11 +1124,16 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
     terminal.add_controller(controller);
 }
 
-fn create_content(terminal: &vte4::Terminal, config: &AppConfig) -> gtk::Overlay {
+fn create_content(
+    terminal: &vte4::Terminal,
+    config: &AppConfig,
+    wallpaper: &WallpaperAsset,
+) -> gtk::Overlay {
     let overlay = gtk::Overlay::new();
     overlay.add_css_class("zter-content");
+    overlay.set_overflow(gtk::Overflow::Hidden);
 
-    let background = create_background(config);
+    let background = create_background(wallpaper);
     let terminal_viewport = create_terminal_viewport(terminal, config.terminal_padding());
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
@@ -1144,48 +1225,109 @@ fn terminal_grid_size(
     )
 }
 
-fn create_background(config: &AppConfig) -> gtk::DrawingArea {
-    let background = gtk::DrawingArea::new();
+fn prepare_wallpaper_asset(config: &AppConfig, display: &gtk::gdk::Display) -> WallpaperAsset {
+    let Some(source) = config.wallpaper() else {
+        return WallpaperAsset::default();
+    };
+    let wallpaper = match load_wallpaper(source) {
+        Ok(wallpaper) => wallpaper,
+        Err(error) => {
+            eprintln!(
+                "zter: could not load the bundled wallpaper: {error}; using the theme background"
+            );
+            return WallpaperAsset::default();
+        }
+    };
+    let display_size = display_pixel_size(display);
+    let wallpaper = match prepare_wallpaper_pixels(
+        &wallpaper,
+        display_size,
+        &theme::background_color(config.theme()),
+        config.wallpaper_opacity(),
+    ) {
+        Ok(wallpaper) => wallpaper,
+        Err(error) => {
+            eprintln!("zter: {error}; using the theme background");
+            return WallpaperAsset::default();
+        }
+    };
+
+    WallpaperAsset {
+        texture: Some(gtk::gdk::Texture::for_pixbuf(&wallpaper)),
+    }
+}
+
+fn display_pixel_size(display: &gtk::gdk::Display) -> (i32, i32) {
+    let monitors = display.monitors();
+    let mut width = DEFAULT_WIDTH;
+    let mut height = DEFAULT_HEIGHT;
+
+    for index in 0..monitors.n_items() {
+        let Some(monitor) = monitors
+            .item(index)
+            .and_then(|item| item.downcast::<gtk::gdk::Monitor>().ok())
+        else {
+            continue;
+        };
+        let geometry = monitor.geometry();
+        let scale = monitor.scale_factor().max(1);
+        width = width.max(geometry.width().saturating_mul(scale));
+        height = height.max(geometry.height().saturating_mul(scale));
+    }
+
+    (width, height)
+}
+
+fn prepare_wallpaper_pixels(
+    wallpaper: &gtk::gdk_pixbuf::Pixbuf,
+    display_size: (i32, i32),
+    background_color: &gtk::gdk::RGBA,
+    opacity: f64,
+) -> Result<gtk::gdk_pixbuf::Pixbuf, WallpaperPreparationError> {
+    let size = downscaled_wallpaper_size((wallpaper.width(), wallpaper.height()), display_size);
+    let wallpaper = if size == (wallpaper.width(), wallpaper.height()) {
+        wallpaper.clone()
+    } else {
+        wallpaper
+            .scale_simple(size.0, size.1, gtk::gdk_pixbuf::InterpType::Hyper)
+            .ok_or(WallpaperPreparationError::Downscale)?
+    };
+    let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, size.0, size.1)?;
+    let context = gtk::cairo::Context::new(&surface)?;
+    context.set_source_color(background_color);
+    context.paint()?;
+    context.set_operator(WALLPAPER_BLEND_OPERATOR);
+    context.set_source_pixbuf(&wallpaper, 0.0, 0.0);
+    context.paint_with_alpha(opacity)?;
+    surface.flush();
+
+    gtk::gdk::pixbuf_get_from_surface(surface.as_ref(), 0, 0, size.0, size.1)
+        .ok_or(WallpaperPreparationError::PixelConversion)
+}
+
+fn downscaled_wallpaper_size(
+    (source_width, source_height): (i32, i32),
+    (display_width, display_height): (i32, i32),
+) -> (i32, i32) {
+    let scale = (f64::from(display_width.max(1)) / f64::from(source_width.max(1)))
+        .max(f64::from(display_height.max(1)) / f64::from(source_height.max(1)))
+        .min(1.0);
+
+    (
+        (f64::from(source_width) * scale).ceil().max(1.0) as i32,
+        (f64::from(source_height) * scale).ceil().max(1.0) as i32,
+    )
+}
+
+fn create_background(wallpaper: &WallpaperAsset) -> gtk::Picture {
+    let background = gtk::Picture::new();
+    background.add_css_class("zter-background");
     background.set_can_target(false);
+    background.set_can_shrink(true);
+    background.set_content_fit(gtk::ContentFit::Cover);
     background.set_hexpand(true);
     background.set_vexpand(true);
-
-    let color = theme::background_color(config.theme());
-    let wallpaper = config.wallpaper().and_then(|source| {
-        load_wallpaper(source)
-            .map_err(|error| {
-                eprintln!(
-                    "zter: could not load the bundled wallpaper: {error}; using the theme background"
-                );
-            })
-            .ok()
-    });
-    let wallpaper_opacity = config.wallpaper_opacity();
-
-    background.set_draw_func(move |_, context, width, height| {
-        let width = f64::from(width);
-        let height = f64::from(height);
-        clip_rounded_bottom(context, width, height, WINDOW_CORNER_RADIUS);
-
-        context.set_source_color(&color);
-        let _ = context.paint();
-
-        let Some(wallpaper) = wallpaper.as_ref() else {
-            return;
-        };
-
-        let placement = cover_placement(
-            width,
-            height,
-            f64::from(wallpaper.width()),
-            f64::from(wallpaper.height()),
-        );
-        context.set_operator(WALLPAPER_BLEND_OPERATOR);
-        context.translate(placement.x, placement.y);
-        context.scale(placement.scale, placement.scale);
-        context.set_source_pixbuf(wallpaper, 0.0, 0.0);
-        let _ = context.paint_with_alpha(wallpaper_opacity);
-    });
+    background.set_paintable(wallpaper.texture.as_ref());
 
     background
 }
@@ -1208,40 +1350,6 @@ fn load_wallpaper(source: &WallpaperSource) -> Result<gtk::gdk_pixbuf::Pixbuf, g
 
 fn load_bundled_wallpaper() -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error> {
     gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(BUNDLED_WALLPAPER))
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct CoverPlacement {
-    x: f64,
-    y: f64,
-    scale: f64,
-}
-
-fn cover_placement(
-    area_width: f64,
-    area_height: f64,
-    image_width: f64,
-    image_height: f64,
-) -> CoverPlacement {
-    let scale = (area_width / image_width).max(area_height / image_height);
-    CoverPlacement {
-        x: (area_width - image_width * scale) / 2.0,
-        y: (area_height - image_height * scale) / 2.0,
-        scale,
-    }
-}
-
-fn clip_rounded_bottom(context: &gtk::cairo::Context, width: f64, height: f64, radius: f64) {
-    let radius = radius.min(width / 2.0).min(height);
-    context.new_path();
-    context.move_to(0.0, 0.0);
-    context.line_to(width, 0.0);
-    context.line_to(width, height - radius);
-    context.arc(width - radius, height - radius, radius, 0.0, FRAC_PI_2);
-    context.line_to(radius, height);
-    context.arc(radius, height - radius, radius, FRAC_PI_2, PI);
-    context.close_path();
-    context.clip();
 }
 
 fn spawn_shell(terminal: &vte4::Terminal, config: &AppConfig) {
@@ -1364,21 +1472,27 @@ mod tests {
     }
 
     #[test]
-    fn cover_placement_centers_and_crops_a_wide_image() {
-        let placement = cover_placement(960.0, 600.0, 1600.0, 900.0);
-
-        assert!((placement.scale - (2.0 / 3.0)).abs() < f64::EPSILON);
-        assert!((placement.x + 53.333_333_333_333_37).abs() < 1e-10);
-        assert_eq!(placement.y, 0.0);
+    fn wallpaper_downscales_to_cover_the_display_without_upscaling() {
+        assert_eq!(
+            downscaled_wallpaper_size((3840, 2160), (1920, 1080)),
+            (1920, 1080)
+        );
+        assert_eq!(
+            downscaled_wallpaper_size((1672, 941), (1920, 1080)),
+            (1672, 941)
+        );
     }
 
     #[test]
-    fn cover_placement_centers_and_crops_a_tall_image() {
-        let placement = cover_placement(960.0, 600.0, 900.0, 1600.0);
-
-        assert!((placement.scale - (16.0 / 15.0)).abs() < f64::EPSILON);
-        assert_eq!(placement.x, 0.0);
-        assert!((placement.y + 553.333_333_333_333_4).abs() < 1e-10);
+    fn wallpaper_keeps_pixels_needed_to_cover_a_different_aspect_ratio() {
+        assert_eq!(
+            downscaled_wallpaper_size((4000, 1000), (1920, 1080)),
+            (4000, 1000)
+        );
+        assert_eq!(
+            downscaled_wallpaper_size((1000, 4000), (1920, 1080)),
+            (1000, 4000)
+        );
     }
 
     #[test]
@@ -1388,6 +1502,35 @@ mod tests {
         assert!(wallpaper.width() > wallpaper.height());
         assert!(wallpaper.width() > 0);
         assert!(wallpaper.height() > 0);
+    }
+
+    #[test]
+    fn wallpaper_is_blended_once_into_opaque_display_pixels() {
+        let wallpaper = load_wallpaper(&WallpaperSource::Bundled).unwrap();
+        let prepared = prepare_wallpaper_pixels(
+            &wallpaper,
+            (960, 600),
+            &theme::background_color(crate::settings::Theme::OneHalfDark),
+            0.15,
+        )
+        .unwrap();
+
+        assert_eq!(
+            (prepared.width(), prepared.height()),
+            downscaled_wallpaper_size((wallpaper.width(), wallpaper.height()), (960, 600))
+        );
+        assert_eq!(prepared.n_channels(), 4);
+        let pixels = prepared.read_pixel_bytes();
+        let pixels = pixels.as_ref();
+        for (x, y) in [
+            (0, 0),
+            (prepared.width() / 2, prepared.height() / 2),
+            (prepared.width() - 1, prepared.height() - 1),
+        ] {
+            let alpha =
+                usize::try_from(y * prepared.rowstride() + x * prepared.n_channels() + 3).unwrap();
+            assert_eq!(pixels[alpha], u8::MAX);
+        }
     }
 
     #[test]

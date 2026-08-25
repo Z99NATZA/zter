@@ -100,10 +100,12 @@ override disables the wallpaper. A missing or unreadable external image falls
 back to the bundled wallpaper; if the bundled image cannot load, zter uses the
 solid theme background.
 
-zter centers and scales the selected image to cover the content while
-preserving its aspect ratio. The image is drawn over the One Half Dark
-background with the Screen blend mode and the configured opacity, so it adds
-subtle light and color without replacing the readable theme base. Both VTE
+Before presenting the window, zter decodes the selected image, reduces images
+larger than the pixels needed to cover the connected display, and applies the
+One Half Dark background, Screen blend mode, and configured opacity. The result
+is one opaque texture shared by every tab. GTK scales that unchanged texture to
+cover each terminal surface while preserving its aspect ratio; interactive
+terminal redraws do not decode, resize, or blend the wallpaper again. Both VTE
 background painting and the terminal widget's GTK CSS background remain
 transparent.
 
