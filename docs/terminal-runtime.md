@@ -56,7 +56,8 @@ The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
 and the active tab uses `#3E4451`. Active state is communicated by this neutral
 fill change only; tabs have no app-owned border, outline, or shadow. Header
 hover transitions last `180ms`. Native window controls use compact spacing and
-do not receive an additional app-owned hover fill.
+do not receive an additional app-owned hover fill. The new-tab button and the
+first native window control retain a minimum `32px` gap.
 
 ## Theme Palette
 

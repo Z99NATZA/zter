@@ -176,7 +176,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             box-shadow: none;
             min-height: 28px;
             min-width: 28px;
-            margin: 0 4px;
+            margin: 0 30px 0 4px;
             padding: 0;
         }}
         button.zter-tab-close:hover,
@@ -351,5 +351,19 @@ mod tests {
         let css = application_css(TerminalPadding::default());
 
         assert!(css.contains("transition: background-color 180ms ease-out"));
+    }
+
+    #[test]
+    fn new_tab_and_window_controls_keep_a_32px_minimum_gap() {
+        let css = application_css(TerminalPadding::default());
+        let (_, new_tab_rule) = css.rsplit_once("button.zter-new-tab {").unwrap();
+        let (new_tab_rule, _) = new_tab_rule.split_once('}').unwrap();
+        let (_, control_rule) = css
+            .split_once("window.zter-window .zter-header windowcontrols button {")
+            .unwrap();
+        let (control_rule, _) = control_rule.split_once('}').unwrap();
+
+        assert!(new_tab_rule.contains("margin: 0 30px 0 4px"));
+        assert!(control_rule.contains("margin: 0 2px"));
     }
 }
