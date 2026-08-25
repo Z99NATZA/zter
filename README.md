@@ -1,7 +1,7 @@
 # zter
 
 ```text
-Project created at 2026-08-24
+- Project created at 2026-08-24
 - README.md updated at 2026-08-25
 - Developed on Ubuntu
 ```
@@ -26,11 +26,18 @@ sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
 git clone https://github.com/Z99NATZA/zter.git
 cd zter
 
-# Apply current settings (Optional)
-cargo run -- settings apply
-
 # Run
 cargo run
+```
+
+## (Optional) Apply current settings
+
+```bash
+# Development
+cargo run -- settings apply
+
+# Build release
+cargo run --release -- settings apply
 ```
 
 ## (Optional) Build release to Application desktop
@@ -46,7 +53,7 @@ zter
 ./scripts/uninstall-user.sh
 ```
 
-## (Optional) Development mode
+## (Optional) Development
 
 ```bash
 # icon, metadata
