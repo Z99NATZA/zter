@@ -26,6 +26,12 @@ The command installs only these paths:
 When `XDG_DATA_HOME` is set, the launcher and icon use that data directory
 instead of `~/.local/share`.
 
+After changing the desktop files, the install and uninstall commands refresh
+the desktop database when `update-desktop-database` is available. They also
+refresh the user-local hicolor icon cache with `gtk4-update-icon-cache`, or
+`gtk-update-icon-cache` as a fallback, so a running desktop shell can promptly
+observe icon changes.
+
 The binary directory must be present in the graphical session's `PATH`. On a
 new Ubuntu user session, `~/.local/bin` is normally added after signing out and
 back in.

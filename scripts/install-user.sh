@@ -10,6 +10,7 @@ project_directory=$(CDPATH= cd -- "$script_directory/.." && pwd)
 data_directory=${XDG_DATA_HOME:-"$HOME/.local/share"}
 binary_directory=${ZTER_BIN_DIR:-"$HOME/.local/bin"}
 application_id=io.github.znnn.zter
+icon_theme_directory="$data_directory/icons/hicolor"
 
 case "$data_directory:$binary_directory" in
     /*:/*) ;;
@@ -46,6 +47,12 @@ install -Dm644 \
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$data_directory/applications"
+fi
+
+if command -v gtk4-update-icon-cache >/dev/null 2>&1; then
+    gtk4-update-icon-cache -f -t "$icon_theme_directory"
+elif command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "$icon_theme_directory"
 fi
 
 printf 'zter: installed for the current user\n'
