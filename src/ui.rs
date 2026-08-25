@@ -5,6 +5,7 @@ use std::io::Cursor;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::prelude::*;
@@ -13,6 +14,7 @@ use vte4::prelude::*;
 use crate::{
     config::{AppConfig, WallpaperSource},
     identity::{APPLICATION_NAME, ICON_NAME},
+    settings::TerminalPadding,
     theme,
 };
 
@@ -24,6 +26,8 @@ const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpap
 const TAB_ID_PREFIX: &str = "zter-tab-";
 const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
+const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
+const TERMINAL_TOP_BORDER: i32 = 1;
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -70,6 +74,44 @@ struct TabHeader {
     title_entry: gtk::Entry,
     select_button: gtk::Button,
     close_button: gtk::Button,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerminalResizeAction {
+    Ignore,
+    ApplyNow((i32, i32)),
+    Defer,
+}
+
+#[derive(Default)]
+struct DeferredTerminalResize {
+    observed: Option<(i32, i32)>,
+    applied: Option<(i32, i32)>,
+}
+
+impl DeferredTerminalResize {
+    fn observe(&mut self, size: (i32, i32)) -> TerminalResizeAction {
+        if size.0 <= 0 || size.1 <= 0 || self.observed == Some(size) {
+            return TerminalResizeAction::Ignore;
+        }
+
+        self.observed = Some(size);
+        if self.applied.is_none() {
+            self.applied = Some(size);
+            TerminalResizeAction::ApplyNow(size)
+        } else {
+            TerminalResizeAction::Defer
+        }
+    }
+
+    fn settle(&mut self) -> Option<(i32, i32)> {
+        if self.observed == self.applied {
+            return None;
+        }
+
+        self.applied = self.observed;
+        self.applied
+    }
 }
 
 pub fn build(application: &gtk::Application, config: &AppConfig) {
@@ -1011,11 +1053,95 @@ fn create_content(terminal: &vte4::Terminal, config: &AppConfig) -> gtk::Overlay
     overlay.add_css_class("zter-content");
 
     let background = create_background(config);
+    let terminal_viewport = create_terminal_viewport(terminal, config.terminal_padding());
     overlay.set_child(Some(&background));
-    overlay.add_overlay(terminal);
-    overlay.set_measure_overlay(terminal, true);
+    overlay.add_overlay(&terminal_viewport);
 
     overlay
+}
+
+fn create_terminal_viewport(terminal: &vte4::Terminal, padding: TerminalPadding) -> gtk::Fixed {
+    let viewport = gtk::Fixed::new();
+    viewport.set_hexpand(true);
+    viewport.set_vexpand(true);
+    viewport.set_overflow(gtk::Overflow::Hidden);
+    viewport.put(terminal, 0.0, 0.0);
+    install_deferred_terminal_resize(&viewport, terminal, padding);
+    viewport
+}
+
+fn install_deferred_terminal_resize(
+    viewport: &gtk::Fixed,
+    terminal: &vte4::Terminal,
+    padding: TerminalPadding,
+) {
+    let resize = Rc::new(RefCell::new(DeferredTerminalResize::default()));
+    let pending = Rc::new(RefCell::new(None::<gtk::glib::SourceId>));
+    let terminal_weak = terminal.downgrade();
+
+    viewport.add_tick_callback(move |viewport, _| {
+        let size = (viewport.width(), viewport.height());
+        match resize.borrow_mut().observe(size) {
+            TerminalResizeAction::Ignore => {}
+            TerminalResizeAction::ApplyNow(size) => {
+                if let Some(terminal) = terminal_weak.upgrade() {
+                    apply_terminal_viewport_size(&terminal, size, padding);
+                }
+            }
+            TerminalResizeAction::Defer => {
+                if let Some(source) = pending.borrow_mut().take() {
+                    source.remove();
+                }
+
+                let resize = resize.clone();
+                let pending_for_timeout = pending.clone();
+                let terminal_weak = terminal_weak.clone();
+                let source = gtk::glib::timeout_add_local_once(TERMINAL_RESIZE_SETTLE, move || {
+                    pending_for_timeout.borrow_mut().take();
+                    let Some(size) = resize.borrow_mut().settle() else {
+                        return;
+                    };
+                    if let Some(terminal) = terminal_weak.upgrade() {
+                        apply_terminal_viewport_size(&terminal, size, padding);
+                    }
+                });
+                *pending.borrow_mut() = Some(source);
+            }
+        }
+
+        gtk::glib::ControlFlow::Continue
+    });
+}
+
+fn apply_terminal_viewport_size(
+    terminal: &vte4::Terminal,
+    (width, height): (i32, i32),
+    padding: TerminalPadding,
+) {
+    let (columns, rows) = terminal_grid_size(
+        (width, height),
+        padding,
+        (terminal.char_width(), terminal.char_height()),
+    );
+    terminal.set_size(columns, rows);
+    terminal.set_size_request(width, height);
+}
+
+fn terminal_grid_size(
+    (width, height): (i32, i32),
+    padding: TerminalPadding,
+    (cell_width, cell_height): (i64, i64),
+) -> (i64, i64) {
+    let horizontal_padding = i32::from(padding.left()) + i32::from(padding.right());
+    let vertical_padding =
+        i32::from(padding.top()) + i32::from(padding.bottom()) + TERMINAL_TOP_BORDER;
+    let content_width = i64::from((width - horizontal_padding).max(1));
+    let content_height = i64::from((height - vertical_padding).max(1));
+
+    (
+        (content_width / cell_width.max(1)).max(1),
+        (content_height / cell_height.max(1)).max(1),
+    )
 }
 
 fn create_background(config: &AppConfig) -> gtk::DrawingArea {
@@ -1152,6 +1278,28 @@ fn spawn_shell(terminal: &vte4::Terminal, config: &AppConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_resize_applies_initial_size_and_defers_until_latest_size_settles() {
+        let mut resize = DeferredTerminalResize::default();
+
+        assert_eq!(
+            resize.observe((960, 600)),
+            TerminalResizeAction::ApplyNow((960, 600))
+        );
+        assert_eq!(resize.observe((960, 600)), TerminalResizeAction::Ignore);
+        assert_eq!(resize.observe((900, 580)), TerminalResizeAction::Defer);
+        assert_eq!(resize.observe((840, 560)), TerminalResizeAction::Defer);
+        assert_eq!(resize.settle(), Some((840, 560)));
+        assert_eq!(resize.settle(), None);
+    }
+
+    #[test]
+    fn terminal_grid_excludes_padding_and_the_content_divider() {
+        let padding = TerminalPadding::new(10, 20, 30, 40);
+
+        assert_eq!(terminal_grid_size((860, 541), padding, (10, 20)), (80, 25));
+    }
 
     #[test]
     fn tab_shortcuts_cover_creation_closing_and_navigation() {

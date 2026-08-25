@@ -19,7 +19,7 @@ sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
 
 ```
 
-## Run
+## Run [more...](docs/run.md)
 
 ```bash
 # Clone
@@ -28,39 +28,6 @@ cd zter
 
 # Run
 cargo run
-```
-
-## (Optional) Apply current settings
-
-```bash
-# Development
-cargo run -- settings apply
-
-# Build release
-cargo run --release -- settings apply
-```
-
-## (Optional) Build release to Application desktop
-
-```bash
-# Install
-./scripts/install-user.sh
-
-# Run app from any path
-zter
-
-# Remove
-./scripts/uninstall-user.sh
-```
-
-## (Optional) Development
-
-```bash
-# icon, metadata
-./scripts/install-dev-user.sh
-
-# Run app from any path
-zter-devel
 ```
 
 ## Documentation

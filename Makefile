@@ -1,14 +1,19 @@
+# Development
 settings:
 	cargo run -- settings apply
-
-settings-rel:
-	cargo run --release -- settings apply
 
 run:
 	cargo run
 
 install:
+	./scripts/install-dev-user.sh
+
+# Build release
+settings-rel:
+	cargo run --release -- settings apply
+
+install-rel:
 	./scripts/install-user.sh
 
-remove:
+remove-rel:
 	./scripts/uninstall-user.sh
