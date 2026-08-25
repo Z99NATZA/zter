@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const APPLICATION_DIRECTORY: &str = "zter";
+use crate::identity::SETTINGS_DIRECTORY;
+
 const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
@@ -222,7 +223,7 @@ impl Error for SettingsError {
 fn settings_path() -> Result<PathBuf, SettingsError> {
     if let Some(config_home) = env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(config_home)
-            .join(APPLICATION_DIRECTORY)
+            .join(SETTINGS_DIRECTORY)
             .join(SETTINGS_FILE));
     }
 
@@ -231,7 +232,7 @@ fn settings_path() -> Result<PathBuf, SettingsError> {
         .map(PathBuf::from)
         .map(|home| {
             home.join(".config")
-                .join(APPLICATION_DIRECTORY)
+                .join(SETTINGS_DIRECTORY)
                 .join(SETTINGS_FILE)
         })
         .ok_or(SettingsError::ConfigDirectoryUnavailable)

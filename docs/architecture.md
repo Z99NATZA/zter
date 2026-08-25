@@ -8,6 +8,7 @@ shell connection.
 
 ```text
 src/main.rs
+  -> select the debug or release identity in src/identity.rs
   -> load or create user settings in src/settings.rs
   -> combine settings and environment overrides in src/config.rs
   -> activate GTK application
@@ -19,6 +20,8 @@ src/main.rs
 ## Ownership
 
 - `src/main.rs` owns startup, failure reporting, and the GTK application.
+- `src/identity.rs` owns the profile-specific application ID, display name,
+  icon name, and settings namespace.
 - `src/settings.rs` owns the JSON schema, defaults, validation, migration, and
   atomic per-user persistence.
 - `src/config.rs` combines settings with environment-derived runtime values and

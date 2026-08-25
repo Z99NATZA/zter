@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=zter (Development)
+Comment=Development build of zter
+Exec=zter-devel
+Icon=io.github.znnn.zter.Devel
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+StartupWMClass=io.github.znnn.zter.Devel

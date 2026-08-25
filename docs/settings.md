@@ -5,11 +5,13 @@ zter keeps a complete default template at
 the binary, so a clone contains every supported key and an installed binary can
 create settings without the repository being present.
 
-At startup, zter reads `$XDG_CONFIG_HOME/zter/settings.json`. If
-`XDG_CONFIG_HOME` is missing or empty, it reads
-`$HOME/.config/zter/settings.json`. The file is created from the embedded
-template on first run. This per-user file is outside the repository and is not
-tracked by the project Git history.
+Release builds read `$XDG_CONFIG_HOME/zter/settings.json`. Debug builds use the
+separate `$XDG_CONFIG_HOME/zter-devel/settings.json`, so development changes do
+not affect the installed application. If `XDG_CONFIG_HOME` is missing or empty,
+the paths are `$HOME/.config/zter/settings.json` and
+`$HOME/.config/zter-devel/settings.json`. The selected file is created from the
+embedded template on first run. These per-user files are outside the repository
+and are not tracked by the project Git history.
 
 ## Apply Project Settings
 
@@ -18,6 +20,13 @@ file with:
 
 ```bash
 cargo run -- settings apply
+```
+
+This command uses the debug profile and therefore updates the development
+settings. Apply the current project settings to the release namespace with:
+
+```bash
+cargo run --release -- settings apply
 ```
 
 The command validates the project settings before changing the per-user file.

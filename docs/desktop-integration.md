@@ -1,13 +1,20 @@
 # Desktop Integration
 
-zter uses `io.github.znnn.zter` as its GTK application ID, desktop launcher ID,
-and icon name. Keeping these values identical lets the desktop environment match
-the running window to its launcher and dock icon.
+Release builds use `io.github.znnn.zter` as the GTK application ID, desktop
+launcher ID, and icon name. Debug builds use `io.github.znnn.zter.Devel` for the
+same three values. Keeping each set identical lets the desktop environment
+match both running windows to distinct dock icons while allowing the builds to
+run at the same time.
 
 The original scalable icon is tracked at
 `data/icons/hicolor/scalable/apps/io.github.znnn.zter.svg`. It uses the zter
 `>z` mark and the neutral One Half Dark palette. The launcher metadata is
 tracked at `data/io.github.znnn.zter.desktop`.
+
+The development icon keeps the same `>z` mark on a light `#dee2e4` background
+and is tracked at
+`data/icons/hicolor/scalable/apps/io.github.znnn.zter.Devel.svg`. Its desktop
+metadata is `data/io.github.znnn.zter.Devel.desktop`.
 
 ## User-local installation
 
@@ -43,3 +50,34 @@ Remove the same user-local files with:
 ```
 
 With the default paths, neither command writes to system directories.
+
+## Development integration
+
+Install the development desktop metadata and icon for the current user once:
+
+```bash
+./scripts/install-dev-user.sh
+```
+
+The command installs these paths:
+
+- `~/.local/bin/zter-devel`, as a symlink to the repository development runner
+- `~/.local/share/applications/io.github.znnn.zter.Devel.desktop`
+- `~/.local/share/icons/hicolor/scalable/apps/io.github.znnn.zter.Devel.svg`
+
+The desktop entry has `NoDisplay=true`: it supplies GNOME with the identity and
+icon for `cargo run` without adding a development launcher to Applications.
+The `zter-devel` runner resolves the repository through its symlink and invokes
+`cargo run`, so it also builds and starts the current debug code from any
+working directory. The installed release remains unchanged. `cargo run
+--release` uses the release identity and can therefore activate an already
+running installed release process.
+
+Debug and release builds also use separate settings paths as documented in
+[Settings](settings.md).
+
+Remove only the development metadata and icon with:
+
+```bash
+./scripts/uninstall-dev-user.sh
+```

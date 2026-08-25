@@ -1,4 +1,5 @@
 mod config;
+mod identity;
 mod settings;
 mod theme;
 mod ui;
@@ -9,9 +10,9 @@ use std::ffi::OsString;
 use gtk::prelude::*;
 
 use crate::config::AppConfig;
+use crate::identity::APPLICATION_ID;
 use crate::settings::Settings;
 
-pub(crate) const APPLICATION_ID: &str = "io.github.znnn.zter";
 const USAGE: &str = "usage: zter [settings apply]";
 
 fn main() -> gtk::glib::ExitCode {

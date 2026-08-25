@@ -5,7 +5,11 @@ use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::prelude::*;
 use vte4::prelude::*;
 
-use crate::{APPLICATION_ID, config::AppConfig, theme};
+use crate::{
+    config::AppConfig,
+    identity::{APPLICATION_NAME, ICON_NAME},
+    theme,
+};
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
@@ -15,8 +19,8 @@ const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Scr
 pub fn build(application: &gtk::Application, config: &AppConfig) {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
-        .title("zter")
-        .icon_name(APPLICATION_ID)
+        .title(APPLICATION_NAME)
+        .icon_name(ICON_NAME)
         .default_width(DEFAULT_WIDTH)
         .default_height(DEFAULT_HEIGHT)
         .build();
