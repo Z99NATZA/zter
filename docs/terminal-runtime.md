@@ -1,9 +1,31 @@
 # Terminal Runtime
 
-zter opens one VTE terminal in one GTK application window. VTE starts the shell
-selected by the user settings and environment with the UTF-8 entries from the
-parent process environment and the directory from which zter was launched. The
-window closes when that shell exits.
+zter opens one GTK application window with one terminal tab. Every tab has an
+independent VTE terminal and child shell. VTE starts each shell selected by the
+user settings and environment with the UTF-8 entries from the parent process
+environment and the directory from which zter was launched. A shell exit closes
+only its tab; the window closes after the last tab exits.
+
+## Tabs
+
+Tabs share one titlebar row with the window controls. The pinned symbolic `+`
+button beside the tab strip and `Ctrl+Shift+T` open a new tab. The close button
+and `Ctrl+Shift+W` close the current tab. `Ctrl+PageUp` and `Ctrl+PageDown`
+select the previous or next tab, and tabs can be reordered by dragging them.
+New tabs use the working directory captured when the zter window started.
+
+Each tab has the same height as the titlebar. Tab titles are ellipsized at the
+available width. The new-tab button follows the last tab while the tabs fit.
+When the tabs exceed the available titlebar space, the strip scrolls
+horizontally with a mouse wheel or trackpad and automatically reveals the
+selected tab, while the new-tab button and system window controls remain fixed.
+The titlebar content is `36px` high. Its blank area moves the window and
+double-clicking that area toggles maximization through GTK's window handle.
+
+A tab initially uses a title such as `bash in zter`, derived from the configured
+shell executable. VTE window-title updates from the running shell or terminal
+program replace that title. Control characters are converted to spaces before
+a title is shown, and the application window follows the active tab's title.
 
 ## Shell Selection
 
@@ -25,10 +47,16 @@ App-owned surfaces do not use shadows. The app window has one outer `1px`
 clipped to the same radius. The terminal content surface uses a top border of
 the same color as the only header/content divider. Its top, right, bottom, and
 left inner padding are independently configurable from `0px` through `128px`
-and default to `0px`. The GTK headerbar's theme border is disabled so it does not
+and default to `0px`. The GTK titlebar's theme border is disabled so it does not
 create a second dark line. The wallpaper does not add borders or shrink with
 terminal padding. Window-manager or compositor decoration remains system-owned
 and may include an outer window shadow beyond the app border.
+
+The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
+and the active tab uses `#3E4451`. Active state is communicated by this neutral
+fill change only; tabs have no app-owned border, outline, or shadow. Header
+hover transitions last `180ms`. Native window controls use compact spacing and
+do not receive an additional app-owned hover fill.
 
 ## Theme Palette
 

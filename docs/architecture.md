@@ -1,8 +1,9 @@
 # Architecture
 
-zter is one GTK4 desktop process. GTK owns the application lifecycle and
-window, while VTE owns terminal emulation, the pseudo-terminal, and the child
-shell connection.
+zter is one GTK4 desktop process. GTK owns the application lifecycle, windows,
+the unified titlebar tab controls, and the hidden-tab page container, while each
+tab has one VTE instance that owns terminal emulation, its pseudo-terminal, and
+its child shell connection.
 
 ## Runtime Flow
 
@@ -12,9 +13,11 @@ src/main.rs
   -> load or create user settings in src/settings.rs
   -> combine settings and environment overrides in src/config.rs
   -> activate GTK application
-      -> build the window and terminal surface in src/ui.rs
-          -> spawn the user's shell through VTE
-              -> close the window when the shell exits
+      -> build the window, titlebar tab strip, and page container in src/ui.rs
+          -> create one terminal surface and VTE instance per tab
+              -> spawn one user shell per VTE instance
+                  -> close the tab when its shell exits
+                      -> close the window after the last tab exits
 ```
 
 ## Ownership

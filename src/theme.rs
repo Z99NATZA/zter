@@ -9,6 +9,7 @@ struct Rgb(u8, u8, u8);
 const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
+const TAB_HOVER: Rgb = Rgb(0x35, 0x3b, 0x48);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
 const TRANSPARENT_BACKGROUND_CLASS: &str = "zter-transparent-background";
@@ -84,20 +85,102 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border: 1px solid {};
             border-radius: 12px;
         }}
-        window.zter-window headerbar,
-        window.zter-window .titlebar {{
+        window.zter-window .zter-window-handle,
+        window.zter-window .zter-header {{
             background-color: {};
             background-image: none;
             border-bottom-width: 0;
             color: {};
+            min-height: 36px;
+            padding: 0;
             box-shadow: none;
         }}
-        window.zter-window headerbar windowcontrols button {{
+        window.zter-window .zter-header windowcontrols button {{
             background-color: transparent;
             background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 2px;
+            padding: 0;
+            transition: all 180ms ease-out;
+        }}
+        window.zter-window .zter-header windowcontrols button:hover {{
+            background-color: transparent;
+        }}
+        notebook.zter-tabs,
+        notebook.zter-tabs > stack {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
             box-shadow: none;
         }}
-        window.zter-window headerbar windowcontrols button:hover {{
+        .zter-tab-scroller,
+        .zter-tab-strip {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+        }}
+        .zter-header-tab,
+        button.zter-tab-close,
+        button.zter-new-tab {{
+            transition: background-color 180ms ease-out;
+        }}
+        .zter-header-tab {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            min-height: 36px;
+            min-width: 220px;
+            outline-width: 0;
+            box-shadow: none;
+        }}
+        .zter-header-tab:hover {{
+            background-color: {};
+        }}
+        .zter-header-tab.zter-tab-active {{
+            background-color: {};
+            border-width: 0;
+            box-shadow: none;
+        }}
+        button.zter-tab-select {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            min-height: 36px;
+            padding: 0 8px;
+            box-shadow: none;
+        }}
+        button.zter-tab-select:hover {{
+            background-color: transparent;
+        }}
+        button.zter-tab-close {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+            min-height: 20px;
+            min-width: 20px;
+            margin-right: 8px;
+            padding: 2px;
+        }}
+        button.zter-new-tab {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 4px;
+            padding: 0;
+        }}
+        button.zter-tab-close:hover,
+        button.zter-new-tab:hover {{
             background-color: {};
         }}
         .zter-terminal {{
@@ -118,6 +201,9 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         SELECTION.css(),
         HEADER_BACKGROUND.css(),
         FOREGROUND.css(),
+        HEADER_BACKGROUND.css(),
+        TAB_HOVER.css(),
+        SELECTION.css(),
         SELECTION.css(),
         SELECTION.css(),
         terminal_padding.top(),
@@ -187,7 +273,7 @@ mod tests {
     fn header_uses_reference_tone_without_red_or_a_second_divider() {
         let css = application_css(TerminalPadding::default());
 
-        assert!(css.contains("window.zter-window headerbar"));
+        assert!(css.contains("window.zter-window .zter-header"));
         assert!(css.contains("background-color: #303643"));
         assert!(css.contains("border-bottom-width: 0"));
         assert!(!css.contains("#E06C75"));
@@ -218,5 +304,52 @@ mod tests {
         let css = application_css(TerminalPadding::new(1, 2, 3, 4));
 
         assert!(css.contains("padding: 1px 2px 3px 4px"));
+    }
+
+    #[test]
+    fn active_tab_uses_color_without_a_border_or_shadow() {
+        let css = application_css(TerminalPadding::default());
+        let (_, active_tab_rule) = css.split_once(".zter-header-tab.zter-tab-active").unwrap();
+        let (active_tab_rule, _) = active_tab_rule.split_once('}').unwrap();
+
+        assert!(active_tab_rule.contains("background-color: #3E4451"));
+        assert!(active_tab_rule.contains("border-width: 0"));
+        assert!(active_tab_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn unified_header_and_tabs_share_one_height() {
+        let css = application_css(TerminalPadding::default());
+        let (_, header_rule) = css.split_once("window.zter-window .zter-header").unwrap();
+        let (header_rule, _) = header_rule.split_once('}').unwrap();
+        let (_, tab_rule) = css.split_once(".zter-header-tab {").unwrap();
+        let (tab_rule, _) = tab_rule.split_once('}').unwrap();
+
+        assert!(header_rule.contains("min-height: 36px"));
+        assert!(tab_rule.contains("min-height: 36px"));
+    }
+
+    #[test]
+    fn header_controls_use_compact_spacing_without_a_rectangular_hover_fill() {
+        let css = application_css(TerminalPadding::default());
+        let selector = "window.zter-window .zter-header windowcontrols button";
+        let (_, control_rule) = css.split_once(selector).unwrap();
+        let (control_rule, remainder) = control_rule.split_once('}').unwrap();
+        let (_, hover_rule) = remainder.split_once(&format!("{selector}:hover")).unwrap();
+        let (hover_rule, _) = hover_rule.split_once('}').unwrap();
+
+        assert!(control_rule.contains("min-height: 28px"));
+        assert!(control_rule.contains("min-width: 28px"));
+        assert!(control_rule.contains("margin: 0 2px"));
+        assert!(control_rule.contains("border-radius: 999px"));
+        assert!(control_rule.contains("transition: all 180ms ease-out"));
+        assert!(hover_rule.contains("background-color: transparent"));
+    }
+
+    #[test]
+    fn app_owned_header_hover_transitions_last_180ms() {
+        let css = application_css(TerminalPadding::default());
+
+        assert!(css.contains("transition: background-color 180ms ease-out"));
     }
 }
