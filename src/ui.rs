@@ -1,7 +1,8 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::env;
 use std::f64::consts::{FRAC_PI_2, PI};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gtk::gdk::prelude::GdkCairoContextExt;
@@ -30,6 +31,43 @@ enum TabShortcut {
     Close,
     Previous,
     Next,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct TabTitleState {
+    automatic: String,
+    manual: Option<String>,
+}
+
+impl TabTitleState {
+    fn new(automatic: String) -> Self {
+        Self {
+            automatic,
+            manual: None,
+        }
+    }
+
+    fn displayed(&self) -> &str {
+        self.manual.as_deref().unwrap_or(&self.automatic)
+    }
+
+    fn update_automatic(&mut self, title: String) {
+        self.automatic = title;
+    }
+
+    fn save_manual(&mut self, title: &str) {
+        let title = sanitize_title(title);
+        self.manual = (!title.is_empty()).then_some(title);
+    }
+}
+
+struct TabHeader {
+    tab: gtk::Box,
+    title_label: gtk::Label,
+    title_stack: gtk::Stack,
+    title_entry: gtk::Entry,
+    select_button: gtk::Button,
+    close_button: gtk::Button,
 }
 
 pub fn build(application: &gtk::Application, config: &AppConfig) {
@@ -260,7 +298,11 @@ fn install_tab_switch_handler(
             return;
         };
         if let Some(window) = window_weak.upgrade() {
-            update_window_title(&window, &terminal, &fallback_title);
+            let title = tab_strip_weak
+                .upgrade()
+                .and_then(|tab_strip| displayed_tab_title(&tab_strip, &page.widget_name()))
+                .unwrap_or_else(|| terminal_display_title(&terminal, &fallback_title));
+            set_window_title(&window, &title);
         }
         if let (Some(tab_strip), Some(tab_scroller)) =
             (tab_strip_weak.upgrade(), tab_scroller_weak.upgrade())
@@ -283,15 +325,17 @@ fn add_terminal_tab(
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
     content.set_widget_name(&tab_id);
-    let (tab, title_label, select_button, close_button) =
-        create_header_tab(&fallback_title, &tab_id);
+    let header = create_header_tab(&fallback_title, &tab_id);
+    let title_state = Rc::new(RefCell::new(TabTitleState::new(fallback_title.clone())));
 
     let page_number = notebook.append_page(&content, None::<&gtk::Widget>);
-    tab_strip.append(&tab);
+    tab_strip.append(&header.tab);
+
+    install_tab_title_editing(window, notebook, &content, &header, title_state.clone());
 
     let notebook_weak = notebook.downgrade();
     let content_weak = content.downgrade();
-    select_button.connect_clicked(move |_| {
+    header.select_button.connect_clicked(move |_| {
         let (Some(notebook), Some(content)) = (notebook_weak.upgrade(), content_weak.upgrade())
         else {
             return;
@@ -305,8 +349,8 @@ fn add_terminal_tab(
         notebook,
         tab_strip,
         tab_scroller,
-        &tab,
-        &select_button,
+        &header.tab,
+        &header.select_button,
         &tab_id,
     );
 
@@ -315,7 +359,7 @@ fn add_terminal_tab(
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
     let content_weak = content.downgrade();
-    close_button.connect_clicked(move |_| {
+    header.close_button.connect_clicked(move |_| {
         let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
             window_weak.upgrade(),
             notebook_weak.upgrade(),
@@ -350,8 +394,17 @@ fn add_terminal_tab(
     let notebook_weak = notebook.downgrade();
     let content_weak = content.downgrade();
     let fallback_for_title = fallback_title.clone();
+    let title_label = header.title_label.clone();
     terminal.connect_window_title_changed(move |terminal| {
-        let title = terminal_display_title(terminal, &fallback_for_title);
+        let automatic = terminal_display_title(terminal, &fallback_for_title);
+        let title = {
+            let mut state = title_state.borrow_mut();
+            state.update_automatic(automatic);
+            state.manual.is_none().then(|| state.displayed().to_owned())
+        };
+        let Some(title) = title else {
+            return;
+        };
         title_label.set_text(&title);
 
         let (Some(window), Some(notebook), Some(content)) = (
@@ -374,11 +427,9 @@ fn add_terminal_tab(
     spawn_shell(&terminal, config);
 }
 
-fn create_header_tab(
-    title: &str,
-    tab_id: &str,
-) -> (gtk::Box, gtk::Label, gtk::Button, gtk::Button) {
+fn create_header_tab(title: &str, tab_id: &str) -> TabHeader {
     let label = gtk::Label::new(Some(title));
+    label.add_css_class("zter-tab-title");
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_hexpand(true);
     label.set_max_width_chars(28);
@@ -390,6 +441,21 @@ fn create_header_tab(
         .child(&label)
         .build();
     select_button.add_css_class("zter-tab-select");
+
+    let title_entry = gtk::Entry::new();
+    title_entry.add_css_class("zter-tab-title-entry");
+    title_entry.set_hexpand(true);
+    title_entry.set_max_length(256);
+    title_entry.set_width_chars(1);
+    title_entry.set_max_width_chars(28);
+
+    let title_stack = gtk::Stack::new();
+    title_stack.set_hexpand(true);
+    title_stack.set_hhomogeneous(true);
+    title_stack.set_vhomogeneous(true);
+    title_stack.add_named(&select_button, Some("display"));
+    title_stack.add_named(&title_entry, Some("editor"));
+    title_stack.set_visible_child_name("display");
 
     let close_button = gtk::Button::builder()
         .icon_name("window-close-symbolic")
@@ -403,10 +469,153 @@ fn create_header_tab(
     tab.add_css_class("zter-header-tab");
     tab.set_hexpand(false);
     tab.set_widget_name(tab_id);
-    tab.append(&select_button);
+    tab.append(&title_stack);
     tab.append(&close_button);
 
-    (tab, label, select_button, close_button)
+    TabHeader {
+        tab,
+        title_label: label,
+        title_stack,
+        title_entry,
+        select_button,
+        close_button,
+    }
+}
+
+fn install_tab_title_editing(
+    window: &gtk::ApplicationWindow,
+    notebook: &gtk::Notebook,
+    content: &gtk::Overlay,
+    header: &TabHeader,
+    title_state: Rc<RefCell<TabTitleState>>,
+) {
+    let editor_had_focus = Rc::new(Cell::new(false));
+    let double_click = gtk::GestureClick::new();
+    double_click.set_button(gtk::gdk::BUTTON_PRIMARY);
+    double_click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let stack_weak = header.title_stack.downgrade();
+    let entry_weak = header.title_entry.downgrade();
+    let state = title_state.clone();
+    let focus_state = editor_had_focus.clone();
+    double_click.connect_pressed(move |gesture, press_count, _, _| {
+        if press_count != 2 {
+            return;
+        }
+        let (Some(stack), Some(entry)) = (stack_weak.upgrade(), entry_weak.upgrade()) else {
+            return;
+        };
+        if stack.visible_child_name().as_deref() != Some("display") {
+            return;
+        }
+        // Stop GtkWindowHandle from treating the same press as a titlebar double-click.
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        entry.set_text(state.borrow().displayed());
+        focus_state.set(false);
+        stack.set_visible_child_name("editor");
+
+        let entry_weak = entry.downgrade();
+        let focus_state = focus_state.clone();
+        stack.add_tick_callback(move |stack, _| {
+            if stack.visible_child_name().as_deref() != Some("editor") {
+                return gtk::glib::ControlFlow::Break;
+            }
+            let Some(entry) = entry_weak.upgrade() else {
+                return gtk::glib::ControlFlow::Break;
+            };
+            if !entry.is_mapped() {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            if entry.grab_focus() {
+                focus_state.set(true);
+                entry.select_region(0, -1);
+            }
+            gtk::glib::ControlFlow::Break
+        });
+    });
+    header.title_stack.add_controller(double_click);
+
+    let window_weak = window.downgrade();
+    let notebook_weak = notebook.downgrade();
+    let content_weak = content.downgrade();
+    let stack_weak = header.title_stack.downgrade();
+    let entry_weak = header.title_entry.downgrade();
+    let label_weak = header.title_label.downgrade();
+    let state = title_state.clone();
+    let save = Rc::new(move |focus_terminal: bool| {
+        let (Some(window), Some(notebook), Some(content), Some(stack), Some(entry), Some(label)) = (
+            window_weak.upgrade(),
+            notebook_weak.upgrade(),
+            content_weak.upgrade(),
+            stack_weak.upgrade(),
+            entry_weak.upgrade(),
+            label_weak.upgrade(),
+        ) else {
+            return;
+        };
+
+        let title = {
+            let mut state = state.borrow_mut();
+            state.save_manual(&entry.text());
+            state.displayed().to_owned()
+        };
+        label.set_text(&title);
+        stack.set_visible_child_name("display");
+        if notebook.page_num(&content) == notebook.current_page() {
+            set_window_title(&window, &title);
+            if focus_terminal {
+                focus_current_terminal(&notebook);
+            }
+        }
+    });
+
+    let save_on_activate = save.clone();
+    header
+        .title_entry
+        .connect_activate(move |_| save_on_activate(true));
+
+    let stack_weak = header.title_stack.downgrade();
+    let save_on_focus_loss = save.clone();
+    let focus_state = editor_had_focus;
+    header.title_entry.connect_has_focus_notify(move |entry| {
+        let Some(stack) = stack_weak.upgrade() else {
+            return;
+        };
+        if entry.has_focus() {
+            focus_state.set(true);
+        } else if focus_state.replace(false)
+            && stack.visible_child_name().as_deref() == Some("editor")
+        {
+            save_on_focus_loss(false);
+        }
+    });
+
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let notebook_weak = notebook.downgrade();
+    let stack_weak = header.title_stack.downgrade();
+    let entry_weak = header.title_entry.downgrade();
+    let label_weak = header.title_label.downgrade();
+    let state = title_state;
+    key_controller.connect_key_pressed(move |_, key, _, _| {
+        if key != gtk::gdk::Key::Escape {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let (Some(notebook), Some(stack), Some(entry), Some(label)) = (
+            notebook_weak.upgrade(),
+            stack_weak.upgrade(),
+            entry_weak.upgrade(),
+            label_weak.upgrade(),
+        ) else {
+            return gtk::glib::Propagation::Stop;
+        };
+        let title = state.borrow().displayed().to_owned();
+        entry.set_text(&title);
+        label.set_text(&title);
+        stack.set_visible_child_name("display");
+        focus_current_terminal(&notebook);
+        gtk::glib::Propagation::Stop
+    });
+    header.title_entry.add_controller(key_controller);
 }
 
 fn next_tab_id() -> String {
@@ -511,6 +720,28 @@ fn tab_by_id(tab_strip: &gtk::Box, tab_id: &str) -> Option<gtk::Widget> {
             return Some(tab);
         }
         child = tab.next_sibling();
+    }
+    None
+}
+
+fn displayed_tab_title(tab_strip: &gtk::Box, tab_id: &str) -> Option<String> {
+    let tab = tab_by_id(tab_strip, tab_id)?;
+    find_tab_title_label(&tab).map(|label| label.text().to_string())
+}
+
+fn find_tab_title_label(widget: &gtk::Widget) -> Option<gtk::Label> {
+    if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+        if label.has_css_class("zter-tab-title") {
+            return Some(label);
+        }
+    }
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(label) = find_tab_title_label(&current) {
+            return Some(label);
+        }
+        child = current.next_sibling();
     }
     None
 }
@@ -694,7 +925,16 @@ fn display_title(title: Option<&str>, fallback: &str) -> String {
     let Some(title) = title else {
         return fallback.to_owned();
     };
-    let title: String = title
+    let title = sanitize_title(title);
+    if title.is_empty() {
+        fallback.to_owned()
+    } else {
+        title
+    }
+}
+
+fn sanitize_title(title: &str) -> String {
+    title
         .chars()
         .map(|character| {
             if character.is_control() {
@@ -703,17 +943,9 @@ fn display_title(title: Option<&str>, fallback: &str) -> String {
                 character
             }
         })
-        .collect();
-    let title = title.trim();
-    if title.is_empty() {
-        fallback.to_owned()
-    } else {
-        title.to_owned()
-    }
-}
-
-fn update_window_title(window: &gtk::ApplicationWindow, terminal: &vte4::Terminal, fallback: &str) {
-    set_window_title(window, &terminal_display_title(terminal, fallback));
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 fn set_window_title(window: &gtk::ApplicationWindow, title: &str) {
@@ -938,6 +1170,28 @@ mod tests {
         );
         assert_eq!(display_title(Some("\n\t"), "bash in zter"), "bash in zter");
         assert_eq!(display_title(None, "bash in zter"), "bash in zter");
+    }
+
+    #[test]
+    fn manual_tab_title_survives_automatic_title_updates() {
+        let mut state = TabTitleState::new("bash in zter".to_owned());
+
+        state.save_manual("  project\nserver  ");
+        state.update_automatic("vim main.rs".to_owned());
+
+        assert_eq!(state.displayed(), "project server");
+    }
+
+    #[test]
+    fn empty_manual_tab_title_returns_to_latest_automatic_title() {
+        let mut state = TabTitleState::new("bash in zter".to_owned());
+        state.save_manual("project");
+        state.update_automatic("codex".to_owned());
+
+        state.save_manual(" \n\t ");
+
+        assert_eq!(state.displayed(), "codex");
+        assert_eq!(state.manual, None);
     }
 
     #[test]

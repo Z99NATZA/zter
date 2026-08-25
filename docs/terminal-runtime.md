@@ -26,6 +26,10 @@ A tab initially uses a title such as `bash in zter`, derived from the configured
 shell executable. VTE window-title updates from the running shell or terminal
 program replace that title. Control characters are converted to spaces before
 a title is shown, and the application window follows the active tab's title.
+Double-clicking a tab title opens an inline editor. Enter or moving focus
+elsewhere saves the title, Escape cancels the edit, and saving an empty title
+returns the tab to automatic VTE title updates. A manual title lasts only until
+that tab closes and is not overwritten by later VTE title changes.
 
 ## Shell Selection
 

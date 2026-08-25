@@ -158,6 +158,17 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         button.zter-tab-select:hover {{
             background-color: transparent;
         }}
+        entry.zter-tab-title-entry {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            min-height: 28px;
+            margin: 4px 8px;
+            padding: 0 6px;
+            outline-width: 0;
+            box-shadow: none;
+        }}
         button.zter-tab-close {{
             background-color: transparent;
             background-image: none;
@@ -204,6 +215,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         HEADER_BACKGROUND.css(),
         TAB_HOVER.css(),
         SELECTION.css(),
+        BACKGROUND.css(),
         SELECTION.css(),
         SELECTION.css(),
         terminal_padding.top(),
@@ -315,6 +327,18 @@ mod tests {
         assert!(active_tab_rule.contains("background-color: #3E4451"));
         assert!(active_tab_rule.contains("border-width: 0"));
         assert!(active_tab_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn tab_title_editor_stays_compact_without_a_border_or_shadow() {
+        let css = application_css(TerminalPadding::default());
+        let (_, editor_rule) = css.split_once("entry.zter-tab-title-entry").unwrap();
+        let (editor_rule, _) = editor_rule.split_once('}').unwrap();
+
+        assert!(editor_rule.contains("background-color: #282C34"));
+        assert!(editor_rule.contains("min-height: 28px"));
+        assert!(editor_rule.contains("border-width: 0"));
+        assert!(editor_rule.contains("box-shadow: none"));
     }
 
     #[test]
