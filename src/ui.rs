@@ -1027,14 +1027,10 @@ fn create_background(config: &AppConfig) -> gtk::DrawingArea {
     let color = theme::background_color(config.theme());
     let wallpaper = config.wallpaper().and_then(|source| {
         load_wallpaper(source)
-            .map_err(|error| match source {
-                WallpaperSource::Bundled => eprintln!(
+            .map_err(|error| {
+                eprintln!(
                     "zter: could not load the bundled wallpaper: {error}; using the theme background"
-                ),
-                WallpaperSource::File(path) => eprintln!(
-                    "zter: could not load wallpaper {}: {error}; using the theme background",
-                    path.display()
-                ),
+                );
             })
             .ok()
     });
@@ -1070,11 +1066,22 @@ fn create_background(config: &AppConfig) -> gtk::DrawingArea {
 
 fn load_wallpaper(source: &WallpaperSource) -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error> {
     match source {
-        WallpaperSource::Bundled => {
-            gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(BUNDLED_WALLPAPER))
-        }
-        WallpaperSource::File(path) => gtk::gdk_pixbuf::Pixbuf::from_file(path),
+        WallpaperSource::Bundled => load_bundled_wallpaper(),
+        WallpaperSource::File(path) => match gtk::gdk_pixbuf::Pixbuf::from_file(path) {
+            Ok(wallpaper) => Ok(wallpaper),
+            Err(error) => {
+                eprintln!(
+                    "zter: warning: could not load wallpaper {}: {error}; using the bundled wallpaper",
+                    path.display()
+                );
+                load_bundled_wallpaper()
+            }
+        },
     }
+}
+
+fn load_bundled_wallpaper() -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error> {
+    gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(BUNDLED_WALLPAPER))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1233,6 +1240,18 @@ mod tests {
         assert!(wallpaper.width() > wallpaper.height());
         assert!(wallpaper.width() > 0);
         assert!(wallpaper.height() > 0);
+    }
+
+    #[test]
+    fn unreadable_external_wallpaper_falls_back_to_the_bundled_image() {
+        let path =
+            env::temp_dir().join(format!("zter-invalid-wallpaper-{}.png", std::process::id()));
+        std::fs::write(&path, b"not an image").unwrap();
+
+        let wallpaper = load_wallpaper(&WallpaperSource::File(path.clone())).unwrap();
+
+        std::fs::remove_file(path).unwrap();
+        assert!(wallpaper.width() > wallpaper.height());
     }
 
     #[test]

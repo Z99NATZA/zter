@@ -48,7 +48,7 @@ impl AppConfig {
     ) -> Result<Self, ConfigError> {
         let shell = parse_shell(settings.shell(), environment_shell)?;
         let working_directory = path_to_string(working_directory)?;
-        let wallpaper = parse_wallpaper(settings.wallpaper(), wallpaper_override)?;
+        let wallpaper = parse_wallpaper(settings.wallpaper(), wallpaper_override);
 
         Ok(Self {
             shell,
@@ -106,7 +106,6 @@ pub enum ConfigError {
     CurrentDirectory(std::io::Error),
     NonUnicodePath(PathBuf),
     NonUnicodeShell,
-    WallpaperNotFile(PathBuf),
 }
 
 impl fmt::Display for ConfigError {
@@ -122,11 +121,6 @@ impl fmt::Display for ConfigError {
                 path.display()
             ),
             Self::NonUnicodeShell => write!(formatter, "SHELL is not valid UTF-8"),
-            Self::WallpaperNotFile(path) => write!(
-                formatter,
-                "the configured wallpaper does not point to a file: {}",
-                path.display()
-            ),
         }
     }
 }
@@ -136,7 +130,7 @@ impl Error for ConfigError {
         match self {
             Self::Settings(error) => Some(error),
             Self::CurrentDirectory(error) => Some(error),
-            Self::NonUnicodePath(_) | Self::NonUnicodeShell | Self::WallpaperNotFile(_) => None,
+            Self::NonUnicodePath(_) | Self::NonUnicodeShell => None,
         }
     }
 }
@@ -167,24 +161,26 @@ fn path_to_string(path: PathBuf) -> Result<String, ConfigError> {
 fn parse_wallpaper(
     configured_wallpaper: Option<&Path>,
     wallpaper_override: Option<OsString>,
-) -> Result<Option<WallpaperSource>, ConfigError> {
+) -> Option<WallpaperSource> {
     let wallpaper = match wallpaper_override {
-        Some(value) if value.is_empty() => None,
+        Some(value) if value.is_empty() => return None,
         Some(value) => Some(PathBuf::from(value)),
         None => configured_wallpaper.map(Path::to_owned),
     };
 
-    let Some(path) = wallpaper else {
-        return Ok(None);
-    };
+    let path = wallpaper?;
     if path == Path::new(BUNDLED_WALLPAPER_SETTING) {
-        return Ok(Some(WallpaperSource::Bundled));
+        return Some(WallpaperSource::Bundled);
     }
     if !path.is_file() {
-        return Err(ConfigError::WallpaperNotFile(path));
+        eprintln!(
+            "zter: warning: wallpaper {} is not a file; using the bundled wallpaper",
+            path.display()
+        );
+        return Some(WallpaperSource::Bundled);
     }
 
-    Ok(Some(WallpaperSource::File(path)))
+    Some(WallpaperSource::File(path))
 }
 
 #[cfg(test)]
@@ -261,12 +257,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_wallpaper_is_rejected() {
+    fn missing_wallpaper_falls_back_to_the_bundled_wallpaper() {
         let missing = PathBuf::from("/zter-test/missing-wallpaper.png");
 
-        let error = config(None, Some(missing.clone().into_os_string())).unwrap_err();
+        let config = config(None, Some(missing.into_os_string())).unwrap();
 
-        assert!(matches!(error, ConfigError::WallpaperNotFile(path) if path == missing));
+        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
     }
 
     #[test]
@@ -277,14 +273,17 @@ mod tests {
         assert_eq!(config.font_family(), "Monospace");
         assert_eq!(config.font_size(), 12.0);
         assert_eq!(config.scrollback_lines(), 10_000);
-        assert_eq!(config.wallpaper_opacity(), 0.1);
+        assert_eq!(config.wallpaper_opacity(), 0.15);
     }
 
     #[test]
     fn terminal_padding_is_exposed_to_the_ui() {
         let config = config(None, None).unwrap();
 
-        assert_eq!(config.terminal_padding(), TerminalPadding::default());
+        assert_eq!(
+            config.terminal_padding(),
+            TerminalPadding::new(16, 16, 16, 16)
+        );
     }
 
     fn customized_settings(shell: serde_json::Value, wallpaper: serde_json::Value) -> Settings {

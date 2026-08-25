@@ -80,8 +80,13 @@ pub struct Settings {
 
 impl Settings {
     pub fn load_or_create() -> Result<Self, SettingsError> {
-        let path = settings_path()?;
-        Self::load_or_create_at(&path)
+        match settings_path() {
+            Ok(path) => Self::load_or_create_at(&path),
+            Err(error) => {
+                eprintln!("zter: warning: {error}; continuing with embedded settings defaults");
+                settings_from_value(project_settings_value()?, project_settings_path())
+            }
+        }
     }
 
     pub fn apply_project() -> Result<ApplyOutcome, SettingsError> {
@@ -96,23 +101,27 @@ impl Settings {
         let source = match fs::read_to_string(path) {
             Ok(source) => source,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                write_settings(path, &defaults)?;
+                if let Err(error) = write_settings(path, &defaults) {
+                    warn_settings_fallback(path, &error.to_string());
+                }
                 return Ok(defaults);
             }
             Err(source) => {
-                return Err(SettingsError::Read {
-                    path: path.to_owned(),
-                    source,
-                });
+                warn_settings_fallback(path, &format!("cannot read the file: {source}"));
+                return Ok(defaults);
             }
         };
-        let mut value = parse_json(&source, path)?;
-        let migrated = migrate_settings(&mut value, path)?;
-        let changed = merge_missing_keys(&mut value, &default_value, path)?;
-        let settings = settings_from_value(value, path)?;
+        let value = match parse_json(&source, path) {
+            Ok(value) => value,
+            Err(error) => {
+                warn_settings_fallback(path, &error.to_string());
+                return Ok(defaults);
+            }
+        };
+        let (settings, changed) = resolve_user_settings(value, &default_value, path)?;
 
-        if migrated || changed {
-            write_settings(path, &settings)?;
+        if changed && let Err(error) = write_settings(path, &settings) {
+            warn_settings_fallback(path, &error.to_string());
         }
 
         Ok(settings)
@@ -322,31 +331,85 @@ where
         .map_or(DEFAULT_PADDING, |value| value as u16))
 }
 
-fn migrate_settings(value: &mut Value, path: &Path) -> Result<bool, SettingsError> {
-    let settings = value
-        .as_object_mut()
-        .ok_or_else(|| invalid(path, "the top-level value must be a JSON object"))?;
+fn legacy_shade_to_opacity(shade: f64) -> f64 {
+    (((1.0 - shade) * 100.0).round() / 100.0).min(0.6)
+}
 
-    if settings.get("schema_version").and_then(Value::as_u64) != Some(1) {
-        return Ok(false);
+fn resolve_user_settings(
+    value: Value,
+    defaults: &Value,
+    path: &Path,
+) -> Result<(Settings, bool), SettingsError> {
+    let default_settings = defaults
+        .as_object()
+        .ok_or_else(|| invalid(path, "the embedded defaults must be a JSON object"))?;
+    let Some(mut user_settings) = value.as_object().cloned() else {
+        warn_settings_fallback(path, "the top-level value is not a JSON object");
+        return settings_from_value(defaults.clone(), project_settings_path())
+            .map(|settings| (settings, false));
+    };
+
+    let mut changed = false;
+    let mut has_invalid_keys = false;
+    match user_settings.get("schema_version") {
+        Some(value) if value.as_u64() == Some(1) => {
+            migrate_legacy_settings(&mut user_settings, &mut has_invalid_keys);
+            changed = true;
+        }
+        Some(value) if value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)) => {}
+        None => changed = true,
+        Some(Value::Null) => has_invalid_keys = true,
+        Some(Value::String(value)) if value.trim().is_empty() => {
+            has_invalid_keys = true;
+        }
+        Some(_) => {
+            warn_settings_fallback(path, "schema_version is unsupported");
+            return settings_from_value(defaults.clone(), project_settings_path())
+                .map(|settings| (settings, false));
+        }
     }
 
+    let mut resolved = default_settings.clone();
+    for key in default_settings.keys() {
+        match user_settings.get(key) {
+            Some(value) => match normalize_setting(key, value) {
+                Some(value) => {
+                    resolved.insert(key.clone(), value);
+                }
+                None => has_invalid_keys = true,
+            },
+            None => changed = true,
+        }
+    }
+    for key in user_settings.keys() {
+        if !default_settings.contains_key(key) {
+            has_invalid_keys = true;
+        }
+    }
+
+    let settings = settings_from_value(Value::Object(resolved), path)?;
+    Ok((settings, changed && !has_invalid_keys))
+}
+
+fn migrate_legacy_settings(
+    settings: &mut serde_json::Map<String, Value>,
+    has_invalid_keys: &mut bool,
+) {
     if !settings.contains_key("wallpaper_opacity")
         && let Some(shade) = settings.get("wallpaper_shade")
     {
-        let shade = shade
+        match shade
             .as_f64()
-            .ok_or_else(|| invalid(path, "wallpaper_shade in schema version 1 must be a number"))?;
-        if !shade.is_finite() || !(0.0..=1.0).contains(&shade) {
-            return Err(invalid(
-                path,
-                "wallpaper_shade in schema version 1 must be between 0 and 1",
-            ));
+            .filter(|shade| shade.is_finite() && (0.0..=1.0).contains(shade))
+        {
+            Some(shade) => {
+                settings.insert(
+                    "wallpaper_opacity".to_owned(),
+                    Value::from(legacy_shade_to_opacity(shade)),
+                );
+            }
+            None => *has_invalid_keys = true,
         }
-        settings.insert(
-            "wallpaper_opacity".to_owned(),
-            Value::from(legacy_shade_to_opacity(shade)),
-        );
     }
 
     settings.remove("wallpaper_shade");
@@ -354,34 +417,50 @@ fn migrate_settings(value: &mut Value, path: &Path) -> Result<bool, SettingsErro
         "schema_version".to_owned(),
         Value::from(CURRENT_SCHEMA_VERSION),
     );
-    Ok(true)
 }
 
-fn legacy_shade_to_opacity(shade: f64) -> f64 {
-    (((1.0 - shade) * 100.0).round() / 100.0).min(0.6)
-}
-
-fn merge_missing_keys(
-    value: &mut Value,
-    defaults: &Value,
-    path: &Path,
-) -> Result<bool, SettingsError> {
-    let settings = value
-        .as_object_mut()
-        .ok_or_else(|| invalid(path, "the top-level value must be a JSON object"))?;
-    let default_settings = defaults
-        .as_object()
-        .ok_or_else(|| invalid(path, "the embedded defaults must be a JSON object"))?;
-    let mut changed = false;
-
-    for (key, default_value) in default_settings {
-        if !settings.contains_key(key) {
-            settings.insert(key.clone(), default_value.clone());
-            changed = true;
-        }
+fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
+    match key {
+        "schema_version" => (value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)))
+            .then(|| Value::from(CURRENT_SCHEMA_VERSION)),
+        "shell" | "wallpaper" => match value {
+            Value::Null => Some(Value::Null),
+            Value::String(value) if value.trim().is_empty() => Some(Value::Null),
+            Value::String(_) => Some(value.clone()),
+            _ => None,
+        },
+        "theme" => serde_json::from_value::<Theme>(value.clone())
+            .ok()
+            .map(|_| value.clone()),
+        "font_family" => value
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+            .map(|_| value.clone()),
+        "font_size" => value
+            .as_f64()
+            .filter(|value| value.is_finite() && (6.0..=72.0).contains(value))
+            .map(|_| value.clone()),
+        "padding_top" | "padding_right" | "padding_bottom" | "padding_left" => value
+            .as_u64()
+            .filter(|value| *value <= u64::from(MAX_PADDING))
+            .map(Value::from),
+        "scrollback_lines" => value
+            .as_i64()
+            .filter(|value| (0..=1_000_000).contains(value))
+            .map(Value::from),
+        "wallpaper_opacity" => value
+            .as_f64()
+            .filter(|value| value.is_finite() && (0.0..=0.6).contains(value))
+            .map(|_| value.clone()),
+        _ => None,
     }
+}
 
-    Ok(changed)
+fn warn_settings_fallback(path: &Path, reason: &str) {
+    eprintln!(
+        "zter: warning: could not use all settings from {}: {reason}; continuing with safe defaults",
+        path.display()
+    );
 }
 
 fn settings_from_value(value: Value, path: &Path) -> Result<Settings, SettingsError> {
@@ -619,15 +698,56 @@ mod tests {
         let directory = test_directory("invalid-padding");
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
-        let invalid = PROJECT_SETTINGS_JSON
-            .replace("\"padding_top\": 0", "\"padding_top\": -1")
-            .replace("\"padding_right\": 0", "\"padding_right\": null");
+        let mut value = project_settings_value().unwrap();
+        let values = value.as_object_mut().unwrap();
+        values.insert("padding_top".to_owned(), Value::from(-1));
+        values.insert("padding_right".to_owned(), Value::Null);
+        let invalid = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         fs::write(&path, &invalid).unwrap();
 
         let settings = Settings::load_or_create_at(&path).unwrap();
 
-        assert_eq!(settings.terminal_padding(), TerminalPadding::default());
+        assert_eq!(
+            settings.terminal_padding(),
+            Settings::defaults().terminal_padding()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn null_and_empty_values_fall_back_without_discarding_other_keys() {
+        let directory = test_directory("null-empty");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let mut value = project_settings_value().unwrap();
+        let values = value.as_object_mut().unwrap();
+        values.insert("shell".to_owned(), Value::from(""));
+        values.insert("wallpaper".to_owned(), Value::from(""));
+        values.insert("theme".to_owned(), Value::Null);
+        values.insert("font_family".to_owned(), Value::from(""));
+        values.insert("font_size".to_owned(), Value::from(""));
+        values.insert("padding_top".to_owned(), Value::Null);
+        values.insert("padding_right".to_owned(), Value::from(""));
+        values.insert("padding_bottom".to_owned(), Value::from(999));
+        values.insert("padding_left".to_owned(), Value::from(4.5));
+        values.insert("scrollback_lines".to_owned(), Value::from(""));
+        values.insert("wallpaper_opacity".to_owned(), Value::Null);
+        let source = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
+        fs::write(&path, &source).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+        let defaults = Settings::defaults();
+
+        assert_eq!(settings.shell(), None);
+        assert_eq!(settings.wallpaper(), None);
+        assert_eq!(settings.theme(), defaults.theme());
+        assert_eq!(settings.font_family(), defaults.font_family());
+        assert_eq!(settings.font_size(), defaults.font_size());
+        assert_eq!(settings.terminal_padding(), defaults.terminal_padding());
+        assert_eq!(settings.scrollback_lines(), defaults.scrollback_lines());
+        assert_eq!(settings.wallpaper_opacity(), defaults.wallpaper_opacity());
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -665,41 +785,106 @@ mod tests {
         let malformed = "{ this is not JSON";
         fs::write(&path, malformed).unwrap();
 
-        assert!(Settings::load_or_create_at(&path).is_err());
+        assert_eq!(
+            Settings::load_or_create_at(&path).unwrap(),
+            Settings::defaults()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), malformed);
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn invalid_value_is_rejected_without_overwriting_the_file() {
+    fn non_utf8_file_uses_defaults_without_overwriting_the_file() {
+        let directory = test_directory("non-utf8");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let source = b"{\"font_size\":\xff}";
+        fs::write(&path, source).unwrap();
+
+        assert_eq!(
+            Settings::load_or_create_at(&path).unwrap(),
+            Settings::defaults()
+        );
+        assert_eq!(fs::read(&path).unwrap(), source);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_value_uses_its_default_without_discarding_valid_values() {
         let directory = test_directory("invalid");
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
-        let invalid = PROJECT_SETTINGS_JSON.replace("12.0", "100.0");
+        let mut value = project_settings_value().unwrap();
+        let values = value.as_object_mut().unwrap();
+        values.insert("shell".to_owned(), Value::from("/bin/zsh"));
+        values.insert("font_size".to_owned(), Value::from(100.0));
+        let invalid = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         fs::write(&path, &invalid).unwrap();
 
-        assert!(matches!(
-            Settings::load_or_create_at(&path),
-            Err(SettingsError::Invalid { .. })
-        ));
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(settings.shell(), Some("/bin/zsh"));
+        assert_eq!(settings.font_size(), Settings::defaults().font_size());
         assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn wallpaper_opacity_above_the_supported_maximum_is_rejected() {
+    fn wallpaper_opacity_above_the_supported_maximum_uses_its_default() {
         let directory = test_directory("invalid-opacity");
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
-        let invalid = PROJECT_SETTINGS_JSON
-            .replace("\"wallpaper_opacity\": 0.1", "\"wallpaper_opacity\": 0.7");
+        let mut value = project_settings_value().unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("wallpaper_opacity".to_owned(), Value::from(0.7));
+        let invalid = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         fs::write(&path, &invalid).unwrap();
 
-        assert!(matches!(
-            Settings::load_or_create_at(&path),
-            Err(SettingsError::Invalid { .. })
-        ));
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(
+            settings.wallpaper_opacity(),
+            Settings::defaults().wallpaper_opacity()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unsupported_schema_uses_defaults_without_overwriting_the_file() {
+        let directory = test_directory("unsupported-schema");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let source =
+            PROJECT_SETTINGS_JSON.replace("\"schema_version\": 2", "\"schema_version\": 99");
+        fs::write(&path, &source).unwrap();
+
+        assert_eq!(
+            Settings::load_or_create_at(&path).unwrap(),
+            Settings::defaults()
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unknown_keys_are_ignored_without_discarding_known_values() {
+        let directory = test_directory("unknown-key");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let mut value = project_settings_value().unwrap();
+        let values = value.as_object_mut().unwrap();
+        values.insert("font_size".to_owned(), Value::from(18.0));
+        values.insert("future_setting".to_owned(), Value::Bool(true));
+        let source = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
+        fs::write(&path, &source).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(settings.font_size(), 18.0);
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
         fs::remove_dir_all(directory).unwrap();
     }
 

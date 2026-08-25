@@ -33,10 +33,11 @@ that tab closes and is not overwritten by later VTE title changes.
 
 ## Shell Selection
 
-The `shell` setting selects the executable when it is a string. A `null` value
-uses `$SHELL`; a missing or empty environment value falls back to `/bin/sh`. A
-non-UTF-8 `$SHELL` value stops startup with an error. A shell spawn failure is
-written to standard error and displayed inside the terminal surface.
+The `shell` setting selects the executable when it is a non-empty string. A
+`null` or empty value uses `$SHELL`; a missing or empty environment value falls
+back to `/bin/sh`. A non-UTF-8 `$SHELL` value stops startup with an error. A
+shell spawn failure is written to standard error and displayed inside the
+terminal surface.
 
 ## Terminal Surface
 
@@ -51,7 +52,7 @@ App-owned surfaces do not use shadows. The app window has one outer `1px`
 clipped to the same radius. The terminal content surface uses a top border of
 the same color as the only header/content divider. Its top, right, bottom, and
 left inner padding are independently configurable from `0px` through `128px`
-and default to `0px`. The GTK titlebar's theme border is disabled so it does not
+and default to `16px`. The GTK titlebar's theme border is disabled so it does not
 create a second dark line. The wallpaper does not add borders or shrink with
 terminal padding. Window-manager or compositor decoration remains system-owned
 and may include an outer window shadow beyond the app border.
@@ -86,11 +87,12 @@ Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
 ## Wallpaper
 
 The `wallpaper` setting defaults to `"builtin"`, which selects the original
-zter wallpaper embedded in every debug and release binary. Another string
-selects an image path, while `null` disables the wallpaper. `ZTER_WALLPAPER`
-overrides that value for one process, and an empty override disables the
-wallpaper. zter verifies that a selected external path is a file before opening
-the application.
+zter wallpaper embedded in every debug and release binary. Another non-empty
+string selects an image path, while `null` or an empty string disables the
+wallpaper. `ZTER_WALLPAPER` overrides that value for one process, and an empty
+override disables the wallpaper. A missing or unreadable external image falls
+back to the bundled wallpaper; if the bundled image cannot load, zter uses the
+solid theme background.
 
 zter centers and scales the selected image to cover the content while
 preserving its aspect ratio. The image is drawn over the One Half Dark
