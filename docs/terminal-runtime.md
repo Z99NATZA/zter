@@ -85,10 +85,14 @@ Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
 
 ## Wallpaper
 
-The `wallpaper` setting accepts a path to an image file. `ZTER_WALLPAPER`
+The `wallpaper` setting defaults to `"builtin"`, which selects the original
+zter wallpaper embedded in every debug and release binary. Another string
+selects an image path, while `null` disables the wallpaper. `ZTER_WALLPAPER`
 overrides that value for one process, and an empty override disables the
-wallpaper. zter verifies that the selected path is a file before opening the
-application. zter centers and scales a valid image to cover the content while
+wallpaper. zter verifies that a selected external path is a file before opening
+the application.
+
+zter centers and scales the selected image to cover the content while
 preserving its aspect ratio. The image is drawn over the One Half Dark
 background with the Screen blend mode and the configured opacity, so it adds
 subtle light and color without replacing the readable theme base. Both VTE

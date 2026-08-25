@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::f64::consts::{FRAC_PI_2, PI};
+use std::io::Cursor;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,7 +11,7 @@ use gtk::prelude::*;
 use vte4::prelude::*;
 
 use crate::{
-    config::AppConfig,
+    config::{AppConfig, WallpaperSource},
     identity::{APPLICATION_NAME, ICON_NAME},
     theme,
 };
@@ -19,6 +20,7 @@ const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
 const WINDOW_CORNER_RADIUS: f64 = 12.0;
 const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Screen;
+const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
 const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
@@ -1023,13 +1025,16 @@ fn create_background(config: &AppConfig) -> gtk::DrawingArea {
     background.set_vexpand(true);
 
     let color = theme::background_color(config.theme());
-    let wallpaper = config.wallpaper().and_then(|path| {
-        gtk::gdk_pixbuf::Pixbuf::from_file(path)
-            .map_err(|error| {
-                eprintln!(
+    let wallpaper = config.wallpaper().and_then(|source| {
+        load_wallpaper(source)
+            .map_err(|error| match source {
+                WallpaperSource::Bundled => eprintln!(
+                    "zter: could not load the bundled wallpaper: {error}; using the theme background"
+                ),
+                WallpaperSource::File(path) => eprintln!(
                     "zter: could not load wallpaper {}: {error}; using the theme background",
                     path.display()
-                );
+                ),
             })
             .ok()
     });
@@ -1061,6 +1066,15 @@ fn create_background(config: &AppConfig) -> gtk::DrawingArea {
     });
 
     background
+}
+
+fn load_wallpaper(source: &WallpaperSource) -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error> {
+    match source {
+        WallpaperSource::Bundled => {
+            gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(BUNDLED_WALLPAPER))
+        }
+        WallpaperSource::File(path) => gtk::gdk_pixbuf::Pixbuf::from_file(path),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1210,6 +1224,15 @@ mod tests {
         assert!((placement.scale - (16.0 / 15.0)).abs() < f64::EPSILON);
         assert_eq!(placement.x, 0.0);
         assert!((placement.y + 553.333_333_333_333_4).abs() < 1e-10);
+    }
+
+    #[test]
+    fn bundled_wallpaper_decodes_as_a_wide_image() {
+        let wallpaper = load_wallpaper(&WallpaperSource::Bundled).unwrap();
+
+        assert!(wallpaper.width() > wallpaper.height());
+        assert!(wallpaper.width() > 0);
+        assert!(wallpaper.height() > 0);
     }
 
     #[test]

@@ -48,7 +48,7 @@ Every settings file contains every supported key.
 | --- | --- | --- | --- |
 | `schema_version` | integer | `2` | Selects the settings schema understood by this zter version. |
 | `shell` | string or `null` | `null` | Shell executable. `null` uses `$SHELL`, then `/bin/sh` if the environment value is missing or empty. |
-| `wallpaper` | string or `null` | `null` | Image path behind the terminal. `null` disables the wallpaper. |
+| `wallpaper` | string or `null` | `"builtin"` | `"builtin"` selects the wallpaper embedded in zter, another string selects an image path, and `null` disables the wallpaper. |
 | `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |
@@ -59,9 +59,9 @@ Every settings file contains every supported key.
 | `scrollback_lines` | integer | `10000` | Retained terminal history, from `0` through `1000000` lines. |
 | `wallpaper_opacity` | number | `0.10` | Screen-blended wallpaper opacity, from `0` through `0.6`. |
 
-`ZTER_WALLPAPER` overrides the `wallpaper` key for one process. Setting the
-environment variable to an empty value disables the configured wallpaper for
-that process.
+`ZTER_WALLPAPER` overrides the `wallpaper` key for one process. It accepts the
+same `"builtin"` value or an image path. Setting the environment variable to an
+empty value disables the configured wallpaper for that process.
 
 ## Loading And Failure Handling
 

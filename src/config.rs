@@ -7,13 +7,20 @@ use std::path::{Path, PathBuf};
 use crate::settings::{Settings, SettingsError, TerminalPadding, Theme};
 
 const FALLBACK_SHELL: &str = "/bin/sh";
+const BUNDLED_WALLPAPER_SETTING: &str = "builtin";
 pub const WALLPAPER_ENV: &str = "ZTER_WALLPAPER";
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum WallpaperSource {
+    Bundled,
+    File(PathBuf),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppConfig {
     shell: String,
     working_directory: String,
-    wallpaper: Option<PathBuf>,
+    wallpaper: Option<WallpaperSource>,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -64,8 +71,8 @@ impl AppConfig {
         &self.working_directory
     }
 
-    pub fn wallpaper(&self) -> Option<&Path> {
-        self.wallpaper.as_deref()
+    pub fn wallpaper(&self) -> Option<&WallpaperSource> {
+        self.wallpaper.as_ref()
     }
 
     pub fn theme(&self) -> Theme {
@@ -160,18 +167,24 @@ fn path_to_string(path: PathBuf) -> Result<String, ConfigError> {
 fn parse_wallpaper(
     configured_wallpaper: Option<&Path>,
     wallpaper_override: Option<OsString>,
-) -> Result<Option<PathBuf>, ConfigError> {
+) -> Result<Option<WallpaperSource>, ConfigError> {
     let wallpaper = match wallpaper_override {
         Some(value) if value.is_empty() => None,
         Some(value) => Some(PathBuf::from(value)),
         None => configured_wallpaper.map(Path::to_owned),
     };
 
-    if let Some(path) = wallpaper.as_ref().filter(|path| !path.is_file()) {
-        return Err(ConfigError::WallpaperNotFile(path.clone()));
+    let Some(path) = wallpaper else {
+        return Ok(None);
+    };
+    if path == Path::new(BUNDLED_WALLPAPER_SETTING) {
+        return Ok(Some(WallpaperSource::Bundled));
+    }
+    if !path.is_file() {
+        return Err(ConfigError::WallpaperNotFile(path));
     }
 
-    Ok(wallpaper)
+    Ok(Some(WallpaperSource::File(path)))
 }
 
 #[cfg(test)]
@@ -221,6 +234,28 @@ mod tests {
     #[test]
     fn empty_wallpaper_override_disables_wallpaper() {
         let config = config(None, Some(OsString::new())).unwrap();
+
+        assert_eq!(config.wallpaper(), None);
+    }
+
+    #[test]
+    fn project_settings_use_the_bundled_wallpaper() {
+        let config = config(None, None).unwrap();
+
+        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
+    }
+
+    #[test]
+    fn bundled_wallpaper_override_is_supported() {
+        let config = config(None, Some(OsString::from(BUNDLED_WALLPAPER_SETTING))).unwrap();
+
+        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
+    }
+
+    #[test]
+    fn null_wallpaper_setting_disables_wallpaper() {
+        let settings = customized_settings(serde_json::Value::Null, serde_json::Value::Null);
+        let config = AppConfig::from_values(settings, None, PathBuf::from("/tmp"), None).unwrap();
 
         assert_eq!(config.wallpaper(), None);
     }
