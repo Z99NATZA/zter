@@ -1,12 +1,5 @@
 # Run
 
-## (Optional) Apply current settings
-
-```bash
-cargo run -- settings apply
-cargo run
-```
-
 ## (Optional) Build release to Application desktop
 
 ```bash
@@ -29,8 +22,7 @@ zter
 
 # Apply current settings
 cargo run --release -- settings apply
-./scripts/uninstall-user.sh
-./scripts/install-user.sh
+cargo run --release -- settings reload
 ```
 
 ## (Optional) Development

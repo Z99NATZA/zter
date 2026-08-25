@@ -13,7 +13,7 @@ use vte4::prelude::*;
 
 use crate::{
     config::{AppConfig, WallpaperSource},
-    identity::{APPLICATION_NAME, ICON_NAME},
+    identity::{APPLICATION_NAME, ICON_NAME, SETTINGS_RELOAD_ACTION},
     settings::TerminalPadding,
     theme,
 };
@@ -75,25 +75,106 @@ struct TabHeader {
     close_button: gtk::Button,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct WallpaperAsset {
-    texture: Option<gtk::gdk::Texture>,
+    inner: Rc<WallpaperAssetInner>,
+}
+
+#[derive(Default)]
+struct WallpaperAssetInner {
+    texture: RefCell<Option<gtk::gdk::Texture>>,
+    backgrounds: RefCell<Vec<gtk::glib::WeakRef<gtk::Picture>>>,
+    reload_generation: Cell<u64>,
+}
+
+impl WallpaperAsset {
+    fn new(texture: Option<gtk::gdk::Texture>) -> Self {
+        Self {
+            inner: Rc::new(WallpaperAssetInner {
+                texture: RefCell::new(texture),
+                ..WallpaperAssetInner::default()
+            }),
+        }
+    }
+
+    fn create_background(&self) -> gtk::Picture {
+        let background = gtk::Picture::new();
+        background.add_css_class("zter-background");
+        background.set_can_target(false);
+        background.set_can_shrink(true);
+        background.set_content_fit(gtk::ContentFit::Cover);
+        background.set_hexpand(true);
+        background.set_vexpand(true);
+        background.set_paintable(self.inner.texture.borrow().as_ref());
+        self.inner
+            .backgrounds
+            .borrow_mut()
+            .push(background.downgrade());
+        background
+    }
+
+    fn replace(&self, texture: Option<gtk::gdk::Texture>) {
+        *self.inner.texture.borrow_mut() = texture.clone();
+        self.inner.backgrounds.borrow_mut().retain(|background| {
+            let Some(background) = background.upgrade() else {
+                return false;
+            };
+            background.set_paintable(texture.as_ref());
+            true
+        });
+    }
+
+    fn begin_reload(&self) -> u64 {
+        let generation = self.inner.reload_generation.get().wrapping_add(1);
+        self.inner.reload_generation.set(generation);
+        generation
+    }
+
+    fn is_current_reload(&self, generation: u64) -> bool {
+        self.inner.reload_generation.get() == generation
+    }
+}
+
+impl Default for WallpaperAsset {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+#[derive(Clone)]
+struct WallpaperPreparation {
+    source: Option<WallpaperSource>,
+    display_size: (i32, i32),
+    background: [f64; 4],
+    opacity: f64,
+}
+
+struct PreparedWallpaper {
+    width: i32,
+    height: i32,
+    stride: usize,
+    pixels: Vec<u8>,
 }
 
 #[derive(Debug)]
 enum WallpaperPreparationError {
+    Load(String),
     Cairo(gtk::cairo::Error),
     Downscale,
-    PixelConversion,
+    PixelAccess(String),
 }
 
 impl fmt::Display for WallpaperPreparationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Load(error) => write!(formatter, "could not load the wallpaper: {error}"),
             Self::Cairo(error) => write!(formatter, "could not blend the wallpaper: {error}"),
             Self::Downscale => formatter.write_str("could not downscale the wallpaper"),
-            Self::PixelConversion => {
-                formatter.write_str("could not convert the prepared wallpaper to pixels")
+            Self::PixelAccess(error) => {
+                write!(
+                    formatter,
+                    "could not read the prepared wallpaper pixels: {error}"
+                )
             }
         }
     }
@@ -157,6 +238,11 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
         config.terminal_padding(),
     );
     let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
+    install_settings_reload_action(
+        application,
+        &gtk::prelude::WidgetExt::display(&window),
+        &wallpaper,
+    );
 
     let notebook = create_notebook();
     let (header, tab_strip, tab_scroller) = create_header(&window, &notebook, config, &wallpaper);
@@ -1226,34 +1312,101 @@ fn terminal_grid_size(
 }
 
 fn prepare_wallpaper_asset(config: &AppConfig, display: &gtk::gdk::Display) -> WallpaperAsset {
-    let Some(source) = config.wallpaper() else {
-        return WallpaperAsset::default();
-    };
-    let wallpaper = match load_wallpaper(source) {
-        Ok(wallpaper) => wallpaper,
-        Err(error) => {
-            eprintln!(
-                "zter: could not load the bundled wallpaper: {error}; using the theme background"
-            );
-            return WallpaperAsset::default();
-        }
-    };
-    let display_size = display_pixel_size(display);
-    let wallpaper = match prepare_wallpaper_pixels(
-        &wallpaper,
-        display_size,
-        &theme::background_color(config.theme()),
-        config.wallpaper_opacity(),
-    ) {
-        Ok(wallpaper) => wallpaper,
+    let preparation = wallpaper_preparation(config, display);
+    match prepare_wallpaper(preparation).map(wallpaper_texture) {
+        Ok(texture) => WallpaperAsset::new(texture),
         Err(error) => {
             eprintln!("zter: {error}; using the theme background");
-            return WallpaperAsset::default();
+            WallpaperAsset::default()
         }
-    };
+    }
+}
 
-    WallpaperAsset {
-        texture: Some(gtk::gdk::Texture::for_pixbuf(&wallpaper)),
+fn install_settings_reload_action(
+    application: &gtk::Application,
+    display: &gtk::gdk::Display,
+    wallpaper: &WallpaperAsset,
+) {
+    if application.lookup_action(SETTINGS_RELOAD_ACTION).is_some() {
+        return;
+    }
+
+    let action = gtk::gio::SimpleAction::new(SETTINGS_RELOAD_ACTION, None);
+    let display = display.clone();
+    let wallpaper = wallpaper.clone();
+    action.connect_activate(move |_, _| {
+        let config = match AppConfig::from_environment() {
+            Ok(config) => config,
+            Err(error) => {
+                eprintln!("zter: could not reload settings: {error}");
+                return;
+            }
+        };
+        reload_wallpaper(&wallpaper, wallpaper_preparation(&config, &display));
+    });
+    application.add_action(&action);
+}
+
+fn reload_wallpaper(wallpaper: &WallpaperAsset, preparation: WallpaperPreparation) {
+    let generation = wallpaper.begin_reload();
+    let worker = std::thread::spawn(move || {
+        prepare_wallpaper(preparation).map_err(|error| error.to_string())
+    });
+    let worker = Rc::new(RefCell::new(Some(worker)));
+    let wallpaper = wallpaper.clone();
+
+    gtk::glib::timeout_add_local(Duration::from_millis(16), move || {
+        let is_finished = worker
+            .borrow()
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished);
+        if !is_finished {
+            return gtk::glib::ControlFlow::Continue;
+        }
+
+        let result = worker
+            .borrow_mut()
+            .take()
+            .expect("finished wallpaper worker must be present")
+            .join();
+        if !wallpaper.is_current_reload(generation) {
+            return gtk::glib::ControlFlow::Break;
+        }
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                eprintln!(
+                    "zter: wallpaper reload worker stopped unexpectedly; keeping the current wallpaper"
+                );
+                return gtk::glib::ControlFlow::Break;
+            }
+        };
+        let texture = match result {
+            Ok(prepared) => wallpaper_texture(prepared),
+            Err(error) => {
+                eprintln!("zter: {error}; keeping the current wallpaper");
+                return gtk::glib::ControlFlow::Break;
+            }
+        };
+
+        wallpaper.replace(texture);
+        eprintln!("zter: reloaded wallpaper settings");
+        gtk::glib::ControlFlow::Break
+    });
+}
+
+fn wallpaper_preparation(config: &AppConfig, display: &gtk::gdk::Display) -> WallpaperPreparation {
+    let background = theme::background_color(config.theme());
+    WallpaperPreparation {
+        source: config.wallpaper().cloned(),
+        display_size: display_pixel_size(display),
+        background: [
+            f64::from(background.red()),
+            f64::from(background.green()),
+            f64::from(background.blue()),
+            f64::from(background.alpha()),
+        ],
+        opacity: config.wallpaper_opacity(),
     }
 }
 
@@ -1278,31 +1431,73 @@ fn display_pixel_size(display: &gtk::gdk::Display) -> (i32, i32) {
     (width, height)
 }
 
-fn prepare_wallpaper_pixels(
-    wallpaper: &gtk::gdk_pixbuf::Pixbuf,
-    display_size: (i32, i32),
-    background_color: &gtk::gdk::RGBA,
-    opacity: f64,
-) -> Result<gtk::gdk_pixbuf::Pixbuf, WallpaperPreparationError> {
-    let size = downscaled_wallpaper_size((wallpaper.width(), wallpaper.height()), display_size);
+fn prepare_wallpaper(
+    preparation: WallpaperPreparation,
+) -> Result<Option<PreparedWallpaper>, WallpaperPreparationError> {
+    let Some(source) = preparation.source.as_ref() else {
+        return Ok(None);
+    };
+    let wallpaper = load_wallpaper(source)
+        .map_err(|error| WallpaperPreparationError::Load(error.to_string()))?;
+    let size = downscaled_wallpaper_size(
+        (wallpaper.width(), wallpaper.height()),
+        preparation.display_size,
+    );
     let wallpaper = if size == (wallpaper.width(), wallpaper.height()) {
-        wallpaper.clone()
+        wallpaper
     } else {
         wallpaper
             .scale_simple(size.0, size.1, gtk::gdk_pixbuf::InterpType::Hyper)
             .ok_or(WallpaperPreparationError::Downscale)?
     };
-    let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, size.0, size.1)?;
+    let mut surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, size.0, size.1)?;
     let context = gtk::cairo::Context::new(&surface)?;
-    context.set_source_color(background_color);
+    context.set_source_rgba(
+        preparation.background[0],
+        preparation.background[1],
+        preparation.background[2],
+        preparation.background[3],
+    );
     context.paint()?;
     context.set_operator(WALLPAPER_BLEND_OPERATOR);
     context.set_source_pixbuf(&wallpaper, 0.0, 0.0);
-    context.paint_with_alpha(opacity)?;
+    context.paint_with_alpha(preparation.opacity)?;
+    drop(context);
     surface.flush();
 
-    gtk::gdk::pixbuf_get_from_surface(surface.as_ref(), 0, 0, size.0, size.1)
-        .ok_or(WallpaperPreparationError::PixelConversion)
+    let stride = usize::try_from(surface.stride())
+        .map_err(|error| WallpaperPreparationError::PixelAccess(error.to_string()))?;
+    let pixels = surface
+        .data()
+        .map_err(|error| WallpaperPreparationError::PixelAccess(error.to_string()))?
+        .to_vec();
+    Ok(Some(PreparedWallpaper {
+        width: size.0,
+        height: size.1,
+        stride,
+        pixels,
+    }))
+}
+
+fn wallpaper_texture(prepared: Option<PreparedWallpaper>) -> Option<gtk::gdk::Texture> {
+    let Some(prepared) = prepared else {
+        return None;
+    };
+    let bytes = gtk::glib::Bytes::from_owned(prepared.pixels);
+    #[cfg(target_endian = "little")]
+    let format = gtk::gdk::MemoryFormat::B8g8r8a8Premultiplied;
+    #[cfg(target_endian = "big")]
+    let format = gtk::gdk::MemoryFormat::A8r8g8b8Premultiplied;
+    Some(
+        gtk::gdk::MemoryTexture::new(
+            prepared.width,
+            prepared.height,
+            format,
+            &bytes,
+            prepared.stride,
+        )
+        .upcast(),
+    )
 }
 
 fn downscaled_wallpaper_size(
@@ -1320,16 +1515,7 @@ fn downscaled_wallpaper_size(
 }
 
 fn create_background(wallpaper: &WallpaperAsset) -> gtk::Picture {
-    let background = gtk::Picture::new();
-    background.add_css_class("zter-background");
-    background.set_can_target(false);
-    background.set_can_shrink(true);
-    background.set_content_fit(gtk::ContentFit::Cover);
-    background.set_hexpand(true);
-    background.set_vexpand(true);
-    background.set_paintable(wallpaper.texture.as_ref());
-
-    background
+    wallpaper.create_background()
 }
 
 fn load_wallpaper(source: &WallpaperSource) -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error> {
@@ -1507,30 +1693,66 @@ mod tests {
     #[test]
     fn wallpaper_is_blended_once_into_opaque_display_pixels() {
         let wallpaper = load_wallpaper(&WallpaperSource::Bundled).unwrap();
-        let prepared = prepare_wallpaper_pixels(
-            &wallpaper,
-            (960, 600),
-            &theme::background_color(crate::settings::Theme::OneHalfDark),
-            0.15,
-        )
+        let background = theme::background_color(crate::settings::Theme::OneHalfDark);
+        let prepared = prepare_wallpaper(WallpaperPreparation {
+            source: Some(WallpaperSource::Bundled),
+            display_size: (960, 600),
+            background: [
+                f64::from(background.red()),
+                f64::from(background.green()),
+                f64::from(background.blue()),
+                f64::from(background.alpha()),
+            ],
+            opacity: 0.15,
+        })
+        .unwrap()
         .unwrap();
 
         assert_eq!(
-            (prepared.width(), prepared.height()),
+            (prepared.width, prepared.height),
             downscaled_wallpaper_size((wallpaper.width(), wallpaper.height()), (960, 600))
         );
-        assert_eq!(prepared.n_channels(), 4);
-        let pixels = prepared.read_pixel_bytes();
-        let pixels = pixels.as_ref();
+        #[cfg(target_endian = "little")]
+        let alpha_offset = 3;
+        #[cfg(target_endian = "big")]
+        let alpha_offset = 0;
         for (x, y) in [
             (0, 0),
-            (prepared.width() / 2, prepared.height() / 2),
-            (prepared.width() - 1, prepared.height() - 1),
+            (prepared.width / 2, prepared.height / 2),
+            (prepared.width - 1, prepared.height - 1),
         ] {
-            let alpha =
-                usize::try_from(y * prepared.rowstride() + x * prepared.n_channels() + 3).unwrap();
-            assert_eq!(pixels[alpha], u8::MAX);
+            let alpha = usize::try_from(y).unwrap() * prepared.stride
+                + usize::try_from(x).unwrap() * 4
+                + alpha_offset;
+            assert_eq!(prepared.pixels[alpha], u8::MAX);
         }
+    }
+
+    #[test]
+    fn disabled_wallpaper_prepares_without_image_work() {
+        let prepared = prepare_wallpaper(WallpaperPreparation {
+            source: None,
+            display_size: (960, 600),
+            background: [0.0, 0.0, 0.0, 1.0],
+            opacity: 0.15,
+        })
+        .unwrap();
+
+        assert!(prepared.is_none());
+    }
+
+    #[test]
+    fn wallpaper_reload_uses_sendable_worker_data_and_latest_generation() {
+        fn assert_send<T: Send>() {}
+        assert_send::<WallpaperPreparation>();
+        assert_send::<PreparedWallpaper>();
+
+        let wallpaper = WallpaperAsset::default();
+        let first = wallpaper.begin_reload();
+        let second = wallpaper.begin_reload();
+
+        assert!(!wallpaper.is_current_reload(first));
+        assert!(wallpaper.is_current_reload(second));
     }
 
     #[test]

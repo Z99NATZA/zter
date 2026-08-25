@@ -18,6 +18,8 @@ pub(crate) const SETTINGS_DIRECTORY: &str = "zter-devel";
 #[cfg(not(debug_assertions))]
 pub(crate) const SETTINGS_DIRECTORY: &str = "zter";
 
+pub(crate) const SETTINGS_RELOAD_ACTION: &str = "settings-reload";
+
 #[cfg(test)]
 mod tests {
     use super::*;

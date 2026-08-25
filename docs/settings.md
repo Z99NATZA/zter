@@ -40,6 +40,23 @@ The current binary contains the project settings available when it was built.
 With `cargo run`, changing `config/settings.json` causes Cargo to rebuild before
 the command applies those values.
 
+## Reload Running Wallpaper Settings
+
+After changing the release settings or a referenced local image, ask a running
+installed application to reload its wallpaper source and opacity with:
+
+```bash
+zter settings reload
+```
+
+Use `cargo run -- settings reload` for the separate development application.
+The command prepares the replacement image on a temporary worker thread and
+updates every current tab together; tabs opened later share the replacement
+texture. Other settings continue using their startup values until zter is
+restarted. A preparation failure warns and keeps the current wallpaper. If the
+matching application is not running, the command succeeds without opening a
+window because the next startup reads the current settings.
+
 ## Keys
 
 Every settings file contains every supported key.
@@ -61,7 +78,8 @@ Every settings file contains every supported key.
 
 `ZTER_WALLPAPER` overrides the `wallpaper` key for one process. It accepts the
 same `"builtin"` value or a local image path. Setting the environment variable
-to an empty value disables the configured wallpaper for that process.
+to an empty value disables the configured wallpaper for that process. A running
+application retains its startup environment override during `settings reload`.
 
 ## Loading And Failure Handling
 

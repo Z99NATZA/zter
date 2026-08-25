@@ -1,19 +1,25 @@
 # Development
+run:
+	cargo run
+
 settings:
 	cargo run -- settings apply
 
-run:
-	cargo run
+reload:
+	cargo run -- settings reload
 
 install:
 	./scripts/install-dev-user.sh
 
 # Build release
-settings-rel:
+rel-settings:
 	cargo run --release -- settings apply
 
-install-rel:
+rel-reload:
+	cargo run --release -- settings reload
+
+rel-install:
 	./scripts/install-user.sh
 
-remove-rel:
+rel-rm:
 	./scripts/uninstall-user.sh

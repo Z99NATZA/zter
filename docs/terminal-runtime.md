@@ -109,5 +109,11 @@ terminal redraws do not decode, resize, or blend the wallpaper again. Both VTE
 background painting and the terminal widget's GTK CSS background remain
 transparent.
 
+`zter settings reload` rereads wallpaper-related settings in the running
+profile-matched application. Image preparation runs on a temporary worker
+thread, and the completed texture replaces the shared texture for all tabs on
+the GTK main thread. Reloading does not restart terminal children; a failure
+keeps the active texture.
+
 Settings paths, defaults, ranges, and failure handling are documented in
 [Settings](settings.md).

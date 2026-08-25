@@ -10,16 +10,17 @@ use std::ffi::OsString;
 use gtk::prelude::*;
 
 use crate::config::AppConfig;
-use crate::identity::APPLICATION_ID;
+use crate::identity::{APPLICATION_ID, SETTINGS_RELOAD_ACTION};
 use crate::settings::Settings;
 
-const USAGE: &str = "usage: zter [settings apply]";
+const USAGE: &str = "usage: zter [settings apply|settings reload]";
 
 fn main() -> gtk::glib::ExitCode {
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
     match command_from_arguments(&arguments) {
         Ok(Command::Run) => run_terminal(),
         Ok(Command::SettingsApply) => apply_project_settings(),
+        Ok(Command::SettingsReload) => reload_running_settings(),
         Ok(Command::Help) => {
             println!("{USAGE}");
             gtk::glib::ExitCode::SUCCESS
@@ -35,6 +36,7 @@ fn main() -> gtk::glib::ExitCode {
 enum Command {
     Run,
     SettingsApply,
+    SettingsReload,
     Help,
 }
 
@@ -45,8 +47,28 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         [settings, apply] if settings == "settings" && apply == "apply" => {
             Ok(Command::SettingsApply)
         }
+        [settings, reload] if settings == "settings" && reload == "reload" => {
+            Ok(Command::SettingsReload)
+        }
         _ => Err("unknown command"),
     }
+}
+
+fn reload_running_settings() -> gtk::glib::ExitCode {
+    let application =
+        gtk::gio::Application::new(Some(APPLICATION_ID), gtk::gio::ApplicationFlags::empty());
+    if let Err(error) = application.register(None::<&gtk::gio::Cancellable>) {
+        eprintln!("zter: could not contact the running application: {error}");
+        return gtk::glib::ExitCode::FAILURE;
+    }
+    if !application.is_remote() {
+        println!("zter: no running application; settings will load on the next start");
+        return gtk::glib::ExitCode::SUCCESS;
+    }
+
+    application.activate_action(SETTINGS_RELOAD_ACTION, None);
+    println!("zter: requested settings reload");
+    gtk::glib::ExitCode::SUCCESS
 }
 
 fn apply_project_settings() -> gtk::glib::ExitCode {
@@ -105,6 +127,16 @@ mod tests {
         assert_eq!(
             command_from_arguments(&arguments),
             Ok(Command::SettingsApply)
+        );
+    }
+
+    #[test]
+    fn settings_reload_selects_the_reload_command() {
+        let arguments = [OsString::from("settings"), OsString::from("reload")];
+
+        assert_eq!(
+            command_from_arguments(&arguments),
+            Ok(Command::SettingsReload)
         );
     }
 

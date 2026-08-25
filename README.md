@@ -30,6 +30,13 @@ cd zter
 cargo run
 ```
 
+## (Optional) Apply current settings
+
+```bash
+cargo run -- settings apply
+cargo run -- settings reload
+```
+
 ## Documentation
 
 - [Settings](docs/settings.md)
