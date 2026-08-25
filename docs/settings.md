@@ -52,6 +52,10 @@ Every settings file contains every supported key.
 | `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |
+| `padding_top` | integer | `0` | Inner terminal padding above the content in pixels, from `0` through `128`. |
+| `padding_right` | integer | `0` | Inner terminal padding to the right of the content in pixels, from `0` through `128`. |
+| `padding_bottom` | integer | `0` | Inner terminal padding below the content in pixels, from `0` through `128`. |
+| `padding_left` | integer | `0` | Inner terminal padding to the left of the content in pixels, from `0` through `128`. |
 | `scrollback_lines` | integer | `10000` | Retained terminal history, from `0` through `1000000` lines. |
 | `wallpaper_opacity` | number | `0.10` | Screen-blended wallpaper opacity, from `0` through `0.6`. |
 
@@ -68,7 +72,9 @@ previous image contribution where possible. zter also adds missing supported
 keys from the embedded project settings and atomically replaces the file while
 retaining existing values.
 
-Unknown keys, malformed JSON, unsupported schema versions, invalid values, and
-wallpaper paths that are not files stop startup with an error. Normal startup
-does not overwrite a malformed or invalid file; `settings apply` is the
-explicit recovery path.
+Each padding field independently and silently uses its default when its value is
+not an integer from `0` through `128`. Unknown keys, malformed JSON, unsupported
+schema versions, invalid values for other settings, and wallpaper paths that are
+not files stop startup with an error. Normal startup does not overwrite
+malformed JSON or invalid non-padding values; `settings apply` is the explicit
+recovery path.

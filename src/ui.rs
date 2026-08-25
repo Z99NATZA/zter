@@ -25,7 +25,10 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
         .default_height(DEFAULT_HEIGHT)
         .build();
     window.add_css_class("zter-window");
-    theme::install_display_styles(&gtk::prelude::WidgetExt::display(&window));
+    theme::install_display_styles(
+        &gtk::prelude::WidgetExt::display(&window),
+        config.terminal_padding(),
+    );
 
     let terminal = create_terminal(config);
     let content = create_content(&terminal, config);

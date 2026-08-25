@@ -1,7 +1,7 @@
 use gtk::gdk;
 use vte4::prelude::*;
 
-use crate::settings::Theme;
+use crate::settings::{TerminalPadding, Theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rgb(u8, u8, u8);
@@ -63,9 +63,9 @@ pub fn background_color(theme: Theme) -> gdk::RGBA {
     }
 }
 
-pub fn install_display_styles(display: &gdk::Display) {
+pub fn install_display_styles(display: &gdk::Display, terminal_padding: TerminalPadding) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(&application_css());
+    provider.load_from_data(&application_css(terminal_padding));
     gtk::style_context_add_provider_for_display(
         display,
         &provider,
@@ -73,7 +73,7 @@ pub fn install_display_styles(display: &gdk::Display) {
     );
 }
 
-fn application_css() -> String {
+fn application_css(terminal_padding: TerminalPadding) -> String {
     format!(
         "\
         window.zter-window {{
@@ -103,7 +103,7 @@ fn application_css() -> String {
         .zter-terminal {{
             border-top: 1px solid {};
             box-shadow: none;
-            padding: 8px;
+            padding: {}px {}px {}px {}px;
         }}
         .zter-terminal.zter-transparent-background {{
             background-color: transparent;
@@ -119,7 +119,11 @@ fn application_css() -> String {
         HEADER_BACKGROUND.css(),
         FOREGROUND.css(),
         SELECTION.css(),
-        SELECTION.css()
+        SELECTION.css(),
+        terminal_padding.top(),
+        terminal_padding.right(),
+        terminal_padding.bottom(),
+        terminal_padding.left()
     )
 }
 
@@ -161,7 +165,7 @@ mod tests {
 
     #[test]
     fn app_css_uses_only_outer_and_divider_borders_and_disables_owned_shadows() {
-        let css = application_css();
+        let css = application_css(TerminalPadding::default());
         let shadow_rules: Vec<&str> = css
             .lines()
             .filter(|line| line.contains("box-shadow:"))
@@ -181,7 +185,7 @@ mod tests {
 
     #[test]
     fn header_uses_reference_tone_without_red_or_a_second_divider() {
-        let css = application_css();
+        let css = application_css(TerminalPadding::default());
 
         assert!(css.contains("window.zter-window headerbar"));
         assert!(css.contains("background-color: #303643"));
@@ -191,7 +195,7 @@ mod tests {
 
     #[test]
     fn composed_terminal_css_is_explicitly_transparent() {
-        let css = application_css();
+        let css = application_css(TerminalPadding::default());
         let (_, wallpaper_rule) = css
             .split_once(".zter-terminal.zter-transparent-background")
             .unwrap();
@@ -203,9 +207,16 @@ mod tests {
 
     #[test]
     fn app_css_rounds_the_window_and_lower_content() {
-        let css = application_css();
+        let css = application_css(TerminalPadding::default());
 
         assert!(css.contains("border-radius: 12px"));
         assert!(css.contains("border-radius: 0 0 12px 12px"));
+    }
+
+    #[test]
+    fn terminal_padding_uses_css_edge_order() {
+        let css = application_css(TerminalPadding::new(1, 2, 3, 4));
+
+        assert!(css.contains("padding: 1px 2px 3px 4px"));
     }
 }

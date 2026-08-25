@@ -5,19 +5,56 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::identity::SETTINGS_DIRECTORY;
 
 const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 2;
+const DEFAULT_PADDING: u16 = 0;
+const MAX_PADDING: u16 = 128;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
     OneHalfDark,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TerminalPadding {
+    top: u16,
+    right: u16,
+    bottom: u16,
+    left: u16,
+}
+
+impl TerminalPadding {
+    pub(crate) fn new(top: u16, right: u16, bottom: u16, left: u16) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+
+    pub fn top(self) -> u16 {
+        self.top
+    }
+
+    pub fn right(self) -> u16 {
+        self.right
+    }
+
+    pub fn bottom(self) -> u16 {
+        self.bottom
+    }
+
+    pub fn left(self) -> u16 {
+        self.left
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -29,6 +66,14 @@ pub struct Settings {
     theme: Theme,
     font_family: String,
     font_size: f64,
+    #[serde(default = "default_padding", deserialize_with = "deserialize_padding")]
+    padding_top: u16,
+    #[serde(default = "default_padding", deserialize_with = "deserialize_padding")]
+    padding_right: u16,
+    #[serde(default = "default_padding", deserialize_with = "deserialize_padding")]
+    padding_bottom: u16,
+    #[serde(default = "default_padding", deserialize_with = "deserialize_padding")]
+    padding_left: u16,
     scrollback_lines: i64,
     wallpaper_opacity: f64,
 }
@@ -117,6 +162,15 @@ impl Settings {
 
     pub fn font_size(&self) -> f64 {
         self.font_size
+    }
+
+    pub fn terminal_padding(&self) -> TerminalPadding {
+        TerminalPadding::new(
+            self.padding_top,
+            self.padding_right,
+            self.padding_bottom,
+            self.padding_left,
+        )
     }
 
     pub fn scrollback_lines(&self) -> i64 {
@@ -251,6 +305,21 @@ fn project_settings_value() -> Result<Value, SettingsError> {
 
 fn project_settings_path() -> &'static Path {
     Path::new("config/settings.json")
+}
+
+fn default_padding() -> u16 {
+    DEFAULT_PADDING
+}
+
+fn deserialize_padding<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .filter(|value| *value <= u64::from(MAX_PADDING))
+        .map_or(DEFAULT_PADDING, |value| value as u16))
 }
 
 fn migrate_settings(value: &mut Value, path: &Path) -> Result<bool, SettingsError> {
@@ -467,6 +536,10 @@ mod tests {
             [
                 "font_family",
                 "font_size",
+                "padding_bottom",
+                "padding_left",
+                "padding_right",
+                "padding_top",
                 "schema_version",
                 "scrollback_lines",
                 "shell",
@@ -503,7 +576,58 @@ mod tests {
 
         assert_eq!(settings.font_size(), 16.0);
         assert_eq!(saved["font_size"], 16.0);
-        assert_eq!(saved.as_object().unwrap().len(), 8);
+        assert_eq!(saved.as_object().unwrap().len(), 12);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn padding_accepts_each_supported_boundary() {
+        let mut value = project_settings_value().unwrap();
+        let settings = value.as_object_mut().unwrap();
+        settings.insert("padding_top".to_owned(), Value::from(0));
+        settings.insert("padding_right".to_owned(), Value::from(MAX_PADDING));
+        settings.insert("padding_bottom".to_owned(), Value::from(24));
+        settings.insert("padding_left".to_owned(), Value::from(8));
+
+        let settings = settings_from_value(value, project_settings_path()).unwrap();
+
+        assert_eq!(
+            settings.terminal_padding(),
+            TerminalPadding::new(0, MAX_PADDING, 24, 8)
+        );
+    }
+
+    #[test]
+    fn invalid_padding_fields_fall_back_independently() {
+        let mut value = project_settings_value().unwrap();
+        let settings = value.as_object_mut().unwrap();
+        settings.insert("padding_top".to_owned(), Value::from(12));
+        settings.insert("padding_right".to_owned(), Value::from(129));
+        settings.insert("padding_bottom".to_owned(), Value::from("8"));
+        settings.insert("padding_left".to_owned(), Value::from(4.5));
+
+        let settings = settings_from_value(value, project_settings_path()).unwrap();
+
+        assert_eq!(
+            settings.terminal_padding(),
+            TerminalPadding::new(12, 0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn invalid_padding_does_not_prevent_loading_or_overwrite_the_file() {
+        let directory = test_directory("invalid-padding");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let invalid = PROJECT_SETTINGS_JSON
+            .replace("\"padding_top\": 0", "\"padding_top\": -1")
+            .replace("\"padding_right\": 0", "\"padding_right\": null");
+        fs::write(&path, &invalid).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(settings.terminal_padding(), TerminalPadding::default());
+        assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
         fs::remove_dir_all(directory).unwrap();
     }
 

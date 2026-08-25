@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::settings::{Settings, SettingsError, Theme};
+use crate::settings::{Settings, SettingsError, TerminalPadding, Theme};
 
 const FALLBACK_SHELL: &str = "/bin/sh";
 pub const WALLPAPER_ENV: &str = "ZTER_WALLPAPER";
@@ -17,6 +17,7 @@ pub struct AppConfig {
     theme: Theme,
     font_family: String,
     font_size: f64,
+    terminal_padding: TerminalPadding,
     scrollback_lines: i64,
     wallpaper_opacity: f64,
 }
@@ -49,6 +50,7 @@ impl AppConfig {
             theme: settings.theme(),
             font_family: settings.font_family().to_owned(),
             font_size: settings.font_size(),
+            terminal_padding: settings.terminal_padding(),
             scrollback_lines: settings.scrollback_lines(),
             wallpaper_opacity: settings.wallpaper_opacity(),
         })
@@ -76,6 +78,10 @@ impl AppConfig {
 
     pub fn font_size(&self) -> f64 {
         self.font_size
+    }
+
+    pub fn terminal_padding(&self) -> TerminalPadding {
+        self.terminal_padding
     }
 
     pub fn scrollback_lines(&self) -> i64 {
@@ -239,6 +245,13 @@ mod tests {
         assert_eq!(config.wallpaper_opacity(), 0.1);
     }
 
+    #[test]
+    fn terminal_padding_is_exposed_to_the_ui() {
+        let config = config(None, None).unwrap();
+
+        assert_eq!(config.terminal_padding(), TerminalPadding::default());
+    }
+
     fn customized_settings(shell: serde_json::Value, wallpaper: serde_json::Value) -> Settings {
         serde_json::from_value(serde_json::json!({
             "schema_version": 2,
@@ -247,6 +260,10 @@ mod tests {
             "theme": "one-half-dark",
             "font_family": "Monospace",
             "font_size": 12.0,
+            "padding_top": 0,
+            "padding_right": 0,
+            "padding_bottom": 0,
+            "padding_left": 0,
             "scrollback_lines": 10000,
             "wallpaper_opacity": 0.1
         }))

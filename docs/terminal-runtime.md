@@ -23,11 +23,12 @@ One Half Dark background while VTE remains transparent.
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 `#3E4451` border and `12px` rounded corners. The lower composition layer is
 clipped to the same radius. The terminal content surface uses a top border of
-the same color as the only header/content divider and has `8px` inner padding.
-The GTK headerbar's theme border is disabled so it does not create a second dark
-line. The wallpaper does not add borders. Window-manager or compositor
-decoration remains system-owned and may include an outer window shadow beyond
-the app border.
+the same color as the only header/content divider. Its top, right, bottom, and
+left inner padding are independently configurable from `0px` through `128px`
+and default to `0px`. The GTK headerbar's theme border is disabled so it does not
+create a second dark line. The wallpaper does not add borders or shrink with
+terminal padding. Window-manager or compositor decoration remains system-owned
+and may include an outer window shadow beyond the app border.
 
 ## Theme Palette
 

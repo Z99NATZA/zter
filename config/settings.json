@@ -5,6 +5,10 @@
   "theme": "one-half-dark",
   "font_family": "Monospace",
   "font_size": 12.0,
+  "padding_top": 20,
+  "padding_right": 20,
+  "padding_bottom": 20,
+  "padding_left": 20,
   "scrollback_lines": 10000,
   "wallpaper_opacity": 0.15
 }
