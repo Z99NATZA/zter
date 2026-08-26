@@ -42,6 +42,12 @@ enum ClipboardShortcut {
     Paste,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClipboardPasteRoute {
+    PasteText,
+    PassThrough,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct TabTitleState {
     automatic: String,
@@ -1146,7 +1152,17 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
             Some(ClipboardShortcut::Copy) | None => {
                 return gtk::glib::Propagation::Proceed;
             }
-            Some(ClipboardShortcut::Paste) => terminal.paste_clipboard(),
+            Some(ClipboardShortcut::Paste) => {
+                let clipboard = terminal.clipboard();
+                match clipboard_paste_route(
+                    clipboard.formats().contains_type(gtk::glib::Type::STRING),
+                ) {
+                    ClipboardPasteRoute::PasteText => terminal.paste_clipboard(),
+                    ClipboardPasteRoute::PassThrough => {
+                        return gtk::glib::Propagation::Proceed;
+                    }
+                }
+            }
         }
 
         gtk::glib::Propagation::Stop
@@ -1169,6 +1185,14 @@ fn clipboard_shortcut(
         gtk::gdk::Key::c => Some(ClipboardShortcut::Copy),
         gtk::gdk::Key::v => Some(ClipboardShortcut::Paste),
         _ => None,
+    }
+}
+
+fn clipboard_paste_route(clipboard_contains_text: bool) -> ClipboardPasteRoute {
+    if clipboard_contains_text {
+        ClipboardPasteRoute::PasteText
+    } else {
+        ClipboardPasteRoute::PassThrough
     }
 }
 
@@ -1666,6 +1690,15 @@ mod tests {
         assert_eq!(
             clipboard_shortcut(gtk::gdk::Key::c, gtk::gdk::ModifierType::empty()),
             None
+        );
+    }
+
+    #[test]
+    fn clipboard_paste_routes_text_to_vte_and_passes_non_text_through() {
+        assert_eq!(clipboard_paste_route(true), ClipboardPasteRoute::PasteText);
+        assert_eq!(
+            clipboard_paste_route(false),
+            ClipboardPasteRoute::PassThrough
         );
     }
 
