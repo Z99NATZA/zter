@@ -302,10 +302,7 @@ fn create_header(
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
     close_protection: &CloseProtection,
-) -> (gtk::WindowHandle, gtk::Box, gtk::ScrolledWindow) {
-    let window_handle = gtk::WindowHandle::new();
-    window_handle.add_css_class("zter-window-handle");
-
+) -> (gtk::Box, gtk::Box, gtk::ScrolledWindow) {
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     header.add_css_class("zter-header");
 
@@ -346,7 +343,7 @@ fn create_header(
     );
     pinned_new_tab.set_visible(false);
 
-    let drag_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let drag_space = gtk::WindowHandle::new();
     drag_space.set_hexpand(true);
     scroll_content.append(&inline_new_tab);
     scroll_content.append(&drag_space);
@@ -358,9 +355,8 @@ fn create_header(
     header.append(&tab_scroller);
     header.append(&pinned_new_tab);
     header.append(&window_controls);
-    window_handle.set_child(Some(&header));
 
-    (window_handle, tab_strip, tab_scroller)
+    (header, tab_strip, tab_scroller)
 }
 
 fn create_new_tab_button(
@@ -739,7 +735,7 @@ fn install_tab_title_editing(
         if stack.visible_child_name().as_deref() != Some("display") {
             return;
         }
-        // Stop GtkWindowHandle from treating the same press as a titlebar double-click.
+        // Keep the title edit gesture separate from tab activation and drag-and-drop.
         gesture.set_state(gtk::EventSequenceState::Claimed);
         entry.set_text(state.borrow().displayed());
         focus_state.set(false);
