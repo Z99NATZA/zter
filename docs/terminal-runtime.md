@@ -43,9 +43,12 @@ terminal surface.
 
 The terminal uses the configured font family, font size, scrollback line count,
 and theme. It scrolls to input on a keystroke, hides the pointer while typing,
-and recognizes hyperlinks. `Ctrl+Shift+C` copies selected text and
-`Ctrl+Shift+V` pastes clipboard text. The composition layer paints the opaque
-One Half Dark background while VTE remains transparent.
+and recognizes hyperlinks. `Ctrl+C` copies selected text; without a selection,
+it retains the terminal interrupt behavior. `Ctrl+V` pastes clipboard text.
+Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
+and right-aligned shortcut hints; Copy is disabled when there is no selection.
+The composition layer paints the opaque One Half Dark background while VTE
+remains transparent.
 
 During continuous window resizing, the wallpaper follows the window while the
 terminal grid remains at its last applied size. After the window allocation is

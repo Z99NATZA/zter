@@ -194,6 +194,40 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         button.zter-new-tab:hover {{
             background-color: {};
         }}
+        popover.zter-clipboard-menu {{
+            background-color: transparent;
+            background-image: none;
+            box-shadow: none;
+            padding: 0;
+        }}
+        popover.zter-clipboard-menu > contents {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 8px;
+            box-shadow: none;
+            padding: 4px;
+        }}
+        popover.zter-clipboard-menu button.zter-clipboard-menu-item {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 4px;
+            box-shadow: none;
+            color: {};
+            min-height: 30px;
+            min-width: 168px;
+            padding: 0 10px;
+        }}
+        popover.zter-clipboard-menu button.zter-clipboard-menu-item:hover {{
+            background-color: {};
+        }}
+        popover.zter-clipboard-menu button.zter-clipboard-menu-item:disabled {{
+            opacity: 0.45;
+        }}
+        popover.zter-clipboard-menu .zter-clipboard-shortcut {{
+            color: {};
+        }}
         .zter-terminal {{
             border-top: 1px solid {};
             box-shadow: none;
@@ -222,6 +256,11 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         SELECTION.css(),
         BACKGROUND.css(),
         SELECTION.css(),
+        HEADER_BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        SELECTION.css(),
+        Rgb(0x9d, 0xa5, 0xb4).css(),
         SELECTION.css(),
         terminal_padding.top(),
         terminal_padding.right(),
@@ -268,14 +307,14 @@ mod tests {
     }
 
     #[test]
-    fn app_css_uses_only_outer_and_divider_borders_and_disables_owned_shadows() {
+    fn app_css_uses_only_meaningful_borders_and_disables_owned_shadows() {
         let css = application_css(TerminalPadding::default());
         let shadow_rules: Vec<&str> = css
             .lines()
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 1);
+        assert_eq!(css.matches("border:").count(), 2);
         assert_eq!(css.matches("border-top:").count(), 1);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -285,6 +324,25 @@ mod tests {
         );
         assert!(css.contains("border: 1px solid #3E4451"));
         assert!(css.contains("border-top: 1px solid #3E4451"));
+    }
+
+    #[test]
+    fn clipboard_menu_is_compact_and_uses_the_neutral_palette() {
+        let css = application_css(TerminalPadding::default());
+        let (_, surface_rule) = css
+            .split_once("popover.zter-clipboard-menu > contents")
+            .unwrap();
+        let (surface_rule, _) = surface_rule.split_once('}').unwrap();
+        let (_, item_rule) = css.split_once("button.zter-clipboard-menu-item {").unwrap();
+        let (item_rule, _) = item_rule.split_once('}').unwrap();
+
+        assert!(surface_rule.contains("background-color: #303643"));
+        assert!(surface_rule.contains("border: 1px solid #3E4451"));
+        assert!(surface_rule.contains("box-shadow: none"));
+        assert!(surface_rule.contains("padding: 4px"));
+        assert!(item_rule.contains("min-height: 30px"));
+        assert!(item_rule.contains("min-width: 168px"));
+        assert!(item_rule.contains("padding: 0 10px"));
     }
 
     #[test]

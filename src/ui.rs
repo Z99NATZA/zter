@@ -38,6 +38,12 @@ enum TabShortcut {
     Next,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClipboardShortcut {
+    Copy,
+    Paste,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct TabTitleState {
     automatic: String,
@@ -1169,6 +1175,7 @@ fn create_terminal(config: &AppConfig) -> vte4::Terminal {
     terminal.set_allow_hyperlink(true);
     terminal.set_font(Some(&terminal_font(config)));
     install_clipboard_shortcuts(&terminal);
+    install_clipboard_context_menu(&terminal);
     theme::apply_to(&terminal, config.theme());
 
     terminal
@@ -1187,27 +1194,114 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
 
     let terminal_weak = terminal.downgrade();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let is_terminal_shortcut = modifiers
-            .contains(gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::SHIFT_MASK);
-
-        if !is_terminal_shortcut {
-            return gtk::glib::Propagation::Proceed;
-        }
-
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
 
-        match key.to_lower() {
-            gtk::gdk::Key::c => terminal.copy_clipboard_format(vte4::Format::Text),
-            gtk::gdk::Key::v => terminal.paste_clipboard(),
-            _ => return gtk::glib::Propagation::Proceed,
+        match clipboard_shortcut(key, modifiers) {
+            Some(ClipboardShortcut::Copy) if terminal.has_selection() => {
+                terminal.copy_clipboard_format(vte4::Format::Text)
+            }
+            Some(ClipboardShortcut::Copy) | None => {
+                return gtk::glib::Propagation::Proceed;
+            }
+            Some(ClipboardShortcut::Paste) => terminal.paste_clipboard(),
         }
 
         gtk::glib::Propagation::Stop
     });
 
     terminal.add_controller(controller);
+}
+
+fn clipboard_shortcut(
+    key: gtk::gdk::Key,
+    modifiers: gtk::gdk::ModifierType,
+) -> Option<ClipboardShortcut> {
+    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+    let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+    if !control || shift {
+        return None;
+    }
+
+    match key.to_lower() {
+        gtk::gdk::Key::c => Some(ClipboardShortcut::Copy),
+        gtk::gdk::Key::v => Some(ClipboardShortcut::Paste),
+        _ => None,
+    }
+}
+
+fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
+    let popover = gtk::Popover::new();
+    popover.add_css_class("zter-clipboard-menu");
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_parent(terminal);
+
+    let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let copy_button = clipboard_menu_button("Copy", "Ctrl+C");
+    let paste_button = clipboard_menu_button("Paste", "Ctrl+V");
+    menu.append(&copy_button);
+    menu.append(&paste_button);
+    popover.set_child(Some(&menu));
+
+    let terminal_weak = terminal.downgrade();
+    let popover_weak = popover.downgrade();
+    copy_button.connect_clicked(move |_| {
+        if let Some(terminal) = terminal_weak.upgrade() {
+            terminal.copy_clipboard_format(vte4::Format::Text);
+        }
+        if let Some(popover) = popover_weak.upgrade() {
+            popover.popdown();
+        }
+    });
+
+    let terminal_weak = terminal.downgrade();
+    let popover_weak = popover.downgrade();
+    paste_button.connect_clicked(move |_| {
+        if let Some(terminal) = terminal_weak.upgrade() {
+            terminal.paste_clipboard();
+        }
+        if let Some(popover) = popover_weak.upgrade() {
+            popover.popdown();
+        }
+    });
+
+    let click = gtk::GestureClick::new();
+    click.set_button(gtk::gdk::BUTTON_SECONDARY);
+    click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let terminal_weak = terminal.downgrade();
+    let popover_weak = popover.downgrade();
+    click.connect_pressed(move |gesture, _, x, y| {
+        let (Some(terminal), Some(popover)) = (terminal_weak.upgrade(), popover_weak.upgrade())
+        else {
+            return;
+        };
+        copy_button.set_sensitive(terminal.has_selection());
+        popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        popover.popup();
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+    });
+    terminal.add_controller(click);
+}
+
+fn clipboard_menu_button(label: &str, shortcut: &str) -> gtk::Button {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+
+    let label = gtk::Label::new(Some(label));
+    label.set_halign(gtk::Align::Start);
+    label.set_hexpand(true);
+    row.append(&label);
+
+    let shortcut = gtk::Label::new(Some(shortcut));
+    shortcut.add_css_class("zter-clipboard-shortcut");
+    shortcut.set_halign(gtk::Align::End);
+    row.append(&shortcut);
+
+    let button = gtk::Button::new();
+    button.add_css_class("zter-clipboard-menu-item");
+    button.set_child(Some(&row));
+    button
 }
 
 fn create_content(
@@ -1617,6 +1711,27 @@ mod tests {
             Some(TabShortcut::Next)
         );
         assert_eq!(tab_shortcut(gtk::gdk::Key::c, control_shift), None);
+    }
+
+    #[test]
+    fn clipboard_shortcuts_use_control_without_shift() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::c, control),
+            Some(ClipboardShortcut::Copy)
+        );
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::v, control),
+            Some(ClipboardShortcut::Paste)
+        );
+        assert_eq!(clipboard_shortcut(gtk::gdk::Key::c, control_shift), None);
+        assert_eq!(clipboard_shortcut(gtk::gdk::Key::v, control_shift), None);
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::c, gtk::gdk::ModifierType::empty()),
+            None
+        );
     }
 
     #[test]
