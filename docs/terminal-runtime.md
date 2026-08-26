@@ -9,10 +9,10 @@ only its tab; the window closes after the last tab exits.
 ## Tabs
 
 Tabs share one titlebar row with the window controls. The pinned symbolic `+`
-button beside the tab strip and `Ctrl+Shift+T` open a new tab. The close button
-and `Ctrl+Shift+W` close the current tab. `Ctrl+PageUp` and `Ctrl+PageDown`
-select the previous or next tab, and tabs can be reordered by dragging them.
-New tabs use the working directory captured when the zter window started.
+button beside the tab strip opens a new tab, and the close button closes the
+current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or next tab,
+and tabs can be reordered by dragging them. New tabs use the working directory
+captured when the zter window started.
 
 Each tab has the same height as the titlebar. Tab titles are ellipsized at the
 available width. The new-tab button follows the last tab while the tabs fit.
