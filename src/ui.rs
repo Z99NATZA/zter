@@ -25,6 +25,7 @@ const DEFAULT_HEIGHT: i32 = 600;
 const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Screen;
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
+const TAB_DROP_TARGET_CLASS: &str = "zter-tab-drop-target";
 const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
@@ -870,11 +871,49 @@ fn install_tab_drag_and_drop(
     drag_handle.add_controller(drag_source);
 
     let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    drop_target.set_preload(true);
+    let hovering = Rc::new(Cell::new(false));
+
+    let tab_weak = tab.downgrade();
+    let target_id = tab_id.to_owned();
+    let hovering_on_enter = hovering.clone();
+    drop_target.connect_enter(move |drop_target, _, _| {
+        hovering_on_enter.set(true);
+        if let Some(tab) = tab_weak.upgrade() {
+            sync_tab_drop_highlight(drop_target, &tab, &target_id, true);
+        }
+        gtk::gdk::DragAction::MOVE
+    });
+
+    let tab_weak = tab.downgrade();
+    let target_id = tab_id.to_owned();
+    let hovering_on_value = hovering.clone();
+    drop_target.connect_value_notify(move |drop_target| {
+        if let Some(tab) = tab_weak.upgrade() {
+            sync_tab_drop_highlight(drop_target, &tab, &target_id, hovering_on_value.get());
+        }
+    });
+
+    let tab_weak = tab.downgrade();
+    let hovering_on_leave = hovering.clone();
+    drop_target.connect_leave(move |_| {
+        hovering_on_leave.set(false);
+        if let Some(tab) = tab_weak.upgrade() {
+            tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+        }
+    });
+
     let notebook_weak = notebook.downgrade();
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
+    let tab_weak = tab.downgrade();
+    let hovering_on_drop = hovering;
     let target_id = tab_id.to_owned();
     drop_target.connect_drop(move |_, value, _, _| {
+        hovering_on_drop.set(false);
+        if let Some(tab) = tab_weak.upgrade() {
+            tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+        }
         let Ok(source_id) = value.get::<String>() else {
             return false;
         };
@@ -889,6 +928,32 @@ fn install_tab_drag_and_drop(
         reorder_tab(&notebook, &tab_strip, &tab_scroller, &source_id, &target_id)
     });
     tab.add_controller(drop_target);
+}
+
+fn sync_tab_drop_highlight(
+    drop_target: &gtk::DropTarget,
+    tab: &gtk::Box,
+    target_id: &str,
+    hovering: bool,
+) {
+    let source_id = drop_target
+        .value()
+        .and_then(|value| value.get::<String>().ok());
+    if should_highlight_tab_drop_target(source_id.as_deref(), target_id, hovering) {
+        tab.add_css_class(TAB_DROP_TARGET_CLASS);
+    } else {
+        tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+    }
+}
+
+fn should_highlight_tab_drop_target(
+    source_id: Option<&str>,
+    target_id: &str,
+    hovering: bool,
+) -> bool {
+    hovering
+        && source_id
+            .is_some_and(|source_id| source_id.starts_with(TAB_ID_PREFIX) && source_id != target_id)
 }
 
 fn reorder_tab(
@@ -2020,6 +2085,31 @@ mod tests {
             Some(TabShortcut::Next)
         );
         assert_eq!(tab_shortcut(gtk::gdk::Key::Page_Up, control_shift), None);
+    }
+
+    #[test]
+    fn tab_drop_highlight_requires_another_tab_under_the_pointer() {
+        assert!(should_highlight_tab_drop_target(
+            Some("zter-tab-1"),
+            "zter-tab-2",
+            true
+        ));
+        assert!(!should_highlight_tab_drop_target(
+            Some("zter-tab-1"),
+            "zter-tab-1",
+            true
+        ));
+        assert!(!should_highlight_tab_drop_target(
+            Some("external-item"),
+            "zter-tab-2",
+            true
+        ));
+        assert!(!should_highlight_tab_drop_target(
+            Some("zter-tab-1"),
+            "zter-tab-2",
+            false
+        ));
+        assert!(!should_highlight_tab_drop_target(None, "zter-tab-2", true));
     }
 
     #[test]

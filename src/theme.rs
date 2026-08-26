@@ -10,6 +10,7 @@ const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
 const TAB_HOVER: Rgb = Rgb(0x35, 0x3b, 0x48);
+const TAB_DROP_TARGET: Rgb = Rgb(0xff, 0xff, 0xff);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
 const TRANSPARENT_BACKGROUND_CLASS: &str = "zter-transparent-background";
@@ -141,6 +142,12 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         .zter-header-tab.zter-tab-active {{
             background-color: {};
             border-width: 0;
+            box-shadow: none;
+        }}
+        .zter-header-tab.zter-tab-drop-target {{
+            border-width: 0;
+            outline: 1px solid {};
+            outline-offset: -1px;
             box-shadow: none;
         }}
         button.zter-tab-select {{
@@ -298,6 +305,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         HEADER_BACKGROUND.css(),
         TAB_HOVER.css(),
         SELECTION.css(),
+        TAB_DROP_TARGET.css(),
         BACKGROUND.css(),
         SELECTION.css(),
         HEADER_BACKGROUND.css(),
@@ -474,6 +482,21 @@ mod tests {
         assert!(active_tab_rule.contains("background-color: #3E4451"));
         assert!(active_tab_rule.contains("border-width: 0"));
         assert!(active_tab_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn tab_drop_target_uses_an_inset_white_outline() {
+        let css = application_css(TerminalPadding::default());
+        let (_, target_rule) = css
+            .split_once(".zter-header-tab.zter-tab-drop-target")
+            .unwrap();
+        let (target_rule, _) = target_rule.split_once('}').unwrap();
+
+        assert!(!target_rule.contains("background-color:"));
+        assert!(target_rule.contains("border-width: 0"));
+        assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
+        assert!(target_rule.contains("outline-offset: -1px"));
+        assert!(target_rule.contains("box-shadow: none"));
     }
 
     #[test]
