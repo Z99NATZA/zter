@@ -1588,21 +1588,32 @@ fn create_terminal_viewport<F>(
     terminal: &vte4::Terminal,
     padding: TerminalPadding,
     on_initial_size: F,
-) -> gtk::Fixed
+) -> gtk::ScrolledWindow
 where
     F: FnOnce() + 'static,
 {
-    let viewport = gtk::Fixed::new();
-    viewport.set_hexpand(true);
-    viewport.set_vexpand(true);
-    viewport.set_overflow(gtk::Overflow::Hidden);
-    viewport.put(terminal, 0.0, 0.0);
+    let terminal_surface = gtk::Fixed::new();
+    terminal_surface.put(terminal, 0.0, 0.0);
+    let scroll_content = gtk::Viewport::builder()
+        .scroll_to_focus(false)
+        .child(&terminal_surface)
+        .build();
+
+    let viewport = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::External)
+        .vscrollbar_policy(gtk::PolicyType::External)
+        .has_frame(false)
+        .kinetic_scrolling(false)
+        .hexpand(true)
+        .vexpand(true)
+        .child(&scroll_content)
+        .build();
     install_deferred_terminal_resize(&viewport, terminal, padding, on_initial_size);
     viewport
 }
 
 fn install_deferred_terminal_resize<F>(
-    viewport: &gtk::Fixed,
+    viewport: &gtk::ScrolledWindow,
     terminal: &vte4::Terminal,
     padding: TerminalPadding,
     on_initial_size: F,
@@ -1973,6 +1984,8 @@ mod tests {
         assert_eq!(resize.observe((900, 580)), TerminalResizeAction::Defer);
         assert_eq!(resize.observe((840, 560)), TerminalResizeAction::Defer);
         assert_eq!(resize.settle(), Some((840, 560)));
+        assert_eq!(resize.observe((1_020, 640)), TerminalResizeAction::Defer);
+        assert_eq!(resize.settle(), Some((1_020, 640)));
         assert_eq!(resize.settle(), None);
     }
 
