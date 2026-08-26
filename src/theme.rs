@@ -226,6 +226,50 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         popover.zter-clipboard-menu .zter-clipboard-shortcut {{
             color: {};
         }}
+        window.zter-close-dialog {{
+            background-color: transparent;
+            background-image: none;
+            border-radius: 12px;
+            box-shadow: none;
+        }}
+        window.zter-close-dialog .zter-close-dialog-surface {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 12px;
+            box-shadow: none;
+            min-width: 320px;
+        }}
+        window.zter-close-dialog .zter-close-dialog-message {{
+            color: {};
+            min-height: 58px;
+            padding: 0 20px;
+        }}
+        window.zter-close-dialog .zter-close-dialog-actions {{
+            border-top: 1px solid {};
+        }}
+        window.zter-close-dialog button {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            box-shadow: none;
+            color: {};
+            min-height: 44px;
+            padding: 0 18px;
+            transition: background-color 140ms ease-out;
+        }}
+        window.zter-close-dialog button:hover {{
+            background-color: {};
+        }}
+        window.zter-close-dialog button.zter-close-dialog-confirm {{
+            background-color: rgba(224, 108, 117, 0.14);
+            border-left: 1px solid {};
+            color: {};
+        }}
+        window.zter-close-dialog button.zter-close-dialog-confirm:hover {{
+            background-color: rgba(224, 108, 117, 0.23);
+        }}
         .zter-terminal {{
             border-top: 1px solid {};
             box-shadow: none;
@@ -259,6 +303,15 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         FOREGROUND.css(),
         SELECTION.css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
+        HEADER_BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        TAB_HOVER.css(),
+        BACKGROUND.css(),
+        Rgb(0xe0, 0x6c, 0x75).css(),
         SELECTION.css(),
         terminal_padding.top(),
         terminal_padding.right(),
@@ -312,8 +365,8 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 2);
-        assert_eq!(css.matches("border-top:").count(), 1);
+        assert_eq!(css.matches("border:").count(), 3);
+        assert_eq!(css.matches("border-top:").count(), 2);
         assert!(!shadow_rules.is_empty());
         assert!(
             shadow_rules
@@ -322,6 +375,26 @@ mod tests {
         );
         assert!(css.contains("border: 1px solid #3E4451"));
         assert!(css.contains("border-top: 1px solid #3E4451"));
+    }
+
+    #[test]
+    fn close_dialog_has_uniform_corners_and_a_soft_red_close_action() {
+        let css = application_css(TerminalPadding::default());
+        let (_, window_rule) = css.split_once("window.zter-close-dialog {").unwrap();
+        let (window_rule, _) = window_rule.split_once('}').unwrap();
+        let (_, surface_rule) = css
+            .split_once("window.zter-close-dialog .zter-close-dialog-surface {")
+            .unwrap();
+        let (surface_rule, _) = surface_rule.split_once('}').unwrap();
+        let (_, close_rule) = css
+            .split_once("button.zter-close-dialog-confirm {")
+            .unwrap();
+        let (close_rule, _) = close_rule.split_once('}').unwrap();
+
+        assert!(window_rule.contains("border-radius: 12px"));
+        assert!(surface_rule.contains("border-radius: 12px"));
+        assert!(close_rule.contains("background-color: rgba(224, 108, 117, 0.14)"));
+        assert!(close_rule.contains("color: #E06C75"));
     }
 
     #[test]

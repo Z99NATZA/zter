@@ -739,6 +739,7 @@ name = "zter"
 version = "0.1.0"
 dependencies = [
  "gtk4",
+ "libc",
  "serde",
  "serde_json",
  "vte4",

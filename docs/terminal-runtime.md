@@ -14,6 +14,15 @@ current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or next tab,
 and tabs can be reordered by dragging them. New tabs use the working directory
 captured when the zter window started.
 
+Closing an idle tab removes it immediately, including when it is the last tab.
+If that tab has a foreground process other than its shell, zter instead shows a
+modal with `A process is still running. Close this tab?` and the actions Cancel
+and Close. Closing the window checks every tab and uses the message `Processes
+are still running. Close zter?` when any foreground process is active. Cancel is
+the default action, Escape cancels, and only Close confirms. The modal uses a
+uniform `12px` corner radius, while Close uses a restrained red accent. A child
+shell exit still removes its tab immediately without showing the modal.
+
 Each tab has the same height as the titlebar. Tab titles are ellipsized at the
 available width. The new-tab button follows the last tab while the tabs fit.
 When the tabs exceed the available titlebar space, the strip scrolls

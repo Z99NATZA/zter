@@ -1,7 +1,9 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::io::Cursor;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -83,6 +85,13 @@ struct TabHeader {
     title_entry: gtk::Entry,
     select_button: gtk::Button,
     close_button: gtk::Button,
+}
+
+#[derive(Clone, Default)]
+struct CloseProtection {
+    shell_pids: Rc<RefCell<HashMap<String, Option<libc::pid_t>>>>,
+    prompt_open: Rc<Cell<bool>>,
+    window_close_confirmed: Rc<Cell<bool>>,
 }
 
 #[derive(Clone)]
@@ -255,9 +264,12 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
     );
 
     let notebook = create_notebook();
-    let (header, tab_strip, tab_scroller) = create_header(&window, &notebook, config, &wallpaper);
+    let close_protection = CloseProtection::default();
+    let (header, tab_strip, tab_scroller) =
+        create_header(&window, &notebook, config, &wallpaper, &close_protection);
     install_tab_shortcuts(&window, &notebook);
     install_tab_switch_handler(&window, &notebook, &tab_strip, &tab_scroller, config);
+    install_window_close_protection(&window, &notebook, &close_protection);
 
     window.set_titlebar(Some(&header));
     window.set_child(Some(&notebook));
@@ -268,6 +280,7 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
         &tab_scroller,
         config,
         &wallpaper,
+        &close_protection,
     );
     window.present();
     focus_current_terminal(&notebook);
@@ -288,6 +301,7 @@ fn create_header(
     notebook: &gtk::Notebook,
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
+    close_protection: &CloseProtection,
 ) -> (gtk::WindowHandle, gtk::Box, gtk::ScrolledWindow) {
     let window_handle = gtk::WindowHandle::new();
     window_handle.add_css_class("zter-window-handle");
@@ -319,6 +333,7 @@ fn create_header(
         &tab_scroller,
         config,
         wallpaper,
+        close_protection,
     );
     let pinned_new_tab = create_new_tab_button(
         window,
@@ -327,6 +342,7 @@ fn create_header(
         &tab_scroller,
         config,
         wallpaper,
+        close_protection,
     );
     pinned_new_tab.set_visible(false);
 
@@ -354,6 +370,7 @@ fn create_new_tab_button(
     tab_scroller: &gtk::ScrolledWindow,
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
+    close_protection: &CloseProtection,
 ) -> gtk::Button {
     let button = gtk::Button::builder()
         .icon_name("list-add-symbolic")
@@ -369,6 +386,7 @@ fn create_new_tab_button(
     let tab_scroller_weak = tab_scroller.downgrade();
     let config = config.clone();
     let wallpaper = wallpaper.clone();
+    let close_protection = close_protection.clone();
     button.connect_clicked(move |_| {
         let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller)) = (
             window_weak.upgrade(),
@@ -385,6 +403,7 @@ fn create_new_tab_button(
             &tab_scroller,
             &config,
             &wallpaper,
+            &close_protection,
         );
     });
 
@@ -502,12 +521,17 @@ fn add_terminal_tab(
     tab_scroller: &gtk::ScrolledWindow,
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
+    close_protection: &CloseProtection,
 ) {
     let terminal = create_terminal(config);
     let content = create_content(&terminal, config, wallpaper);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
     content.set_widget_name(&tab_id);
+    close_protection
+        .shell_pids
+        .borrow_mut()
+        .insert(tab_id.clone(), None);
     let header = create_header_tab(&fallback_title, &tab_id);
     let title_state = Rc::new(RefCell::new(TabTitleState::new(fallback_title.clone())));
 
@@ -542,6 +566,7 @@ fn add_terminal_tab(
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
     let content_weak = content.downgrade();
+    let close_protection_for_button = close_protection.clone();
     header.close_button.connect_clicked(move |_| {
         let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
             window_weak.upgrade(),
@@ -552,7 +577,14 @@ fn add_terminal_tab(
         ) else {
             return;
         };
-        close_tab(&window, &notebook, &tab_strip, &tab_scroller, &content);
+        request_close_tab(
+            &window,
+            &notebook,
+            &tab_strip,
+            &tab_scroller,
+            &content,
+            &close_protection_for_button,
+        );
     });
 
     let window_weak = window.downgrade();
@@ -560,6 +592,7 @@ fn add_terminal_tab(
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
     let content_weak = content.downgrade();
+    let close_protection_for_exit = close_protection.clone();
     terminal.connect_child_exited(move |_, _| {
         let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
             window_weak.upgrade(),
@@ -570,7 +603,14 @@ fn add_terminal_tab(
         ) else {
             return;
         };
-        close_tab(&window, &notebook, &tab_strip, &tab_scroller, &content);
+        close_tab(
+            &window,
+            &notebook,
+            &tab_strip,
+            &tab_scroller,
+            &content,
+            &close_protection_for_exit,
+        );
     });
 
     let window_weak = window.downgrade();
@@ -607,7 +647,7 @@ fn add_terminal_tab(
     sync_header_tabs(notebook, tab_strip, tab_scroller);
     terminal.grab_focus();
 
-    spawn_shell(&terminal, config);
+    spawn_shell(&terminal, config, &tab_id, close_protection);
 }
 
 fn create_header_tab(title: &str, tab_id: &str) -> TabHeader {
@@ -1003,12 +1043,252 @@ fn reveal_tab(tab_scroller: &gtk::ScrolledWindow, tab: &gtk::Widget, tab_positio
     });
 }
 
+fn install_window_close_protection(
+    window: &gtk::ApplicationWindow,
+    notebook: &gtk::Notebook,
+    close_protection: &CloseProtection,
+) {
+    let notebook_weak = notebook.downgrade();
+    let close_protection = close_protection.clone();
+    window.connect_close_request(move |window| {
+        if close_protection.window_close_confirmed.replace(false) {
+            return gtk::glib::Propagation::Proceed;
+        }
+
+        let Some(notebook) = notebook_weak.upgrade() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        if !notebook_has_running_foreground_process(&notebook, &close_protection) {
+            return gtk::glib::Propagation::Proceed;
+        }
+        if close_protection.prompt_open.get() {
+            return gtk::glib::Propagation::Stop;
+        }
+
+        let window_weak = window.downgrade();
+        let close_protection_for_confirm = close_protection.clone();
+        show_close_confirmation(
+            window,
+            &close_protection,
+            "Processes are still running. Close zter?",
+            move || {
+                let Some(window) = window_weak.upgrade() else {
+                    return;
+                };
+                close_protection_for_confirm
+                    .window_close_confirmed
+                    .set(true);
+                window.close();
+            },
+        );
+        gtk::glib::Propagation::Stop
+    });
+}
+
+fn request_close_tab(
+    window: &gtk::ApplicationWindow,
+    notebook: &gtk::Notebook,
+    tab_strip: &gtk::Box,
+    tab_scroller: &gtk::ScrolledWindow,
+    content: &impl IsA<gtk::Widget>,
+    close_protection: &CloseProtection,
+) {
+    if !tab_has_running_foreground_process(content, close_protection) {
+        close_tab(
+            window,
+            notebook,
+            tab_strip,
+            tab_scroller,
+            content,
+            close_protection,
+        );
+        return;
+    }
+    if close_protection.prompt_open.get() {
+        return;
+    }
+
+    let window_weak = window.downgrade();
+    let notebook_weak = notebook.downgrade();
+    let tab_strip_weak = tab_strip.downgrade();
+    let tab_scroller_weak = tab_scroller.downgrade();
+    let content_weak = content.as_ref().downgrade();
+    let close_protection_for_confirm = close_protection.clone();
+    show_close_confirmation(
+        window,
+        close_protection,
+        "A process is still running. Close this tab?",
+        move || {
+            let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
+                window_weak.upgrade(),
+                notebook_weak.upgrade(),
+                tab_strip_weak.upgrade(),
+                tab_scroller_weak.upgrade(),
+                content_weak.upgrade(),
+            ) else {
+                return;
+            };
+            close_tab(
+                &window,
+                &notebook,
+                &tab_strip,
+                &tab_scroller,
+                &content,
+                &close_protection_for_confirm,
+            );
+        },
+    );
+}
+
+fn show_close_confirmation<F>(
+    window: &gtk::ApplicationWindow,
+    close_protection: &CloseProtection,
+    message: &str,
+    on_confirm: F,
+) where
+    F: FnOnce() + 'static,
+{
+    if close_protection.prompt_open.replace(true) {
+        return;
+    }
+
+    let dialog = gtk::Window::builder()
+        .transient_for(window)
+        .modal(true)
+        .decorated(false)
+        .resizable(false)
+        .destroy_with_parent(true)
+        .build();
+    dialog.add_css_class("zter-close-dialog");
+
+    let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    surface.add_css_class("zter-close-dialog-surface");
+    surface.set_overflow(gtk::Overflow::Hidden);
+
+    let message_label = gtk::Label::builder()
+        .label(message)
+        .justify(gtk::Justification::Center)
+        .wrap(true)
+        .build();
+    message_label.add_css_class("zter-close-dialog-message");
+    surface.append(&message_label);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    actions.add_css_class("zter-close-dialog-actions");
+    actions.set_homogeneous(true);
+
+    let cancel_button = gtk::Button::builder()
+        .label("Cancel")
+        .has_frame(false)
+        .receives_default(true)
+        .build();
+    cancel_button.add_css_class("zter-close-dialog-cancel");
+    let close_button = gtk::Button::builder()
+        .label("Close")
+        .has_frame(false)
+        .build();
+    close_button.add_css_class("zter-close-dialog-confirm");
+    actions.append(&cancel_button);
+    actions.append(&close_button);
+    surface.append(&actions);
+
+    dialog.set_child(Some(&surface));
+    dialog.set_default_widget(Some(&cancel_button));
+
+    let prompt_open = close_protection.prompt_open.clone();
+    dialog.connect_destroy(move |_| prompt_open.set(false));
+
+    let dialog_weak = dialog.downgrade();
+    cancel_button.connect_clicked(move |_| {
+        if let Some(dialog) = dialog_weak.upgrade() {
+            dialog.close();
+        }
+    });
+
+    let on_confirm = Rc::new(RefCell::new(Some(on_confirm)));
+    let dialog_weak = dialog.downgrade();
+    let prompt_open = close_protection.prompt_open.clone();
+    close_button.connect_clicked(move |_| {
+        prompt_open.set(false);
+        if let Some(dialog) = dialog_weak.upgrade() {
+            dialog.close();
+        }
+        if let Some(on_confirm) = on_confirm.borrow_mut().take() {
+            on_confirm();
+        }
+    });
+
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let dialog_weak = dialog.downgrade();
+    key_controller.connect_key_pressed(move |_, key, _, _| {
+        if key != gtk::gdk::Key::Escape {
+            return gtk::glib::Propagation::Proceed;
+        }
+        if let Some(dialog) = dialog_weak.upgrade() {
+            dialog.close();
+        }
+        gtk::glib::Propagation::Stop
+    });
+    dialog.add_controller(key_controller);
+
+    dialog.present();
+    cancel_button.grab_focus();
+}
+
+fn notebook_has_running_foreground_process(
+    notebook: &gtk::Notebook,
+    close_protection: &CloseProtection,
+) -> bool {
+    (0..notebook.n_pages()).any(|page_number| {
+        notebook
+            .nth_page(Some(page_number))
+            .is_some_and(|page| tab_has_running_foreground_process(&page, close_protection))
+    })
+}
+
+fn tab_has_running_foreground_process(
+    content: &impl IsA<gtk::Widget>,
+    close_protection: &CloseProtection,
+) -> bool {
+    let shell_pid = close_protection
+        .shell_pids
+        .borrow()
+        .get(content.widget_name().as_str())
+        .copied()
+        .flatten();
+    let Some((terminal, shell_pid)) = find_terminal(content.as_ref()).zip(shell_pid) else {
+        return false;
+    };
+    let Some(pty) = terminal.pty() else {
+        return false;
+    };
+
+    // SAFETY: VTE owns the PTY and keeps its borrowed file descriptor valid for
+    // the duration of this call. Both functions report failure with `-1`.
+    let foreground_process_group = unsafe { libc::tcgetpgrp(pty.fd().as_raw_fd()) };
+    // SAFETY: `shell_pid` came from VTE's successful spawn result. A process
+    // that has already exited is handled by `getpgid` returning `-1`.
+    let shell_process_group = unsafe { libc::getpgid(shell_pid) };
+    process_groups_have_running_foreground_process(shell_process_group, foreground_process_group)
+}
+
+fn process_groups_have_running_foreground_process(
+    shell_process_group: libc::pid_t,
+    foreground_process_group: libc::pid_t,
+) -> bool {
+    shell_process_group > 0
+        && foreground_process_group > 0
+        && shell_process_group != foreground_process_group
+}
+
 fn close_tab(
     window: &gtk::ApplicationWindow,
     notebook: &gtk::Notebook,
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
     content: &impl IsA<gtk::Widget>,
+    close_protection: &CloseProtection,
 ) {
     let Some(page_number) = notebook.page_num(content) else {
         return;
@@ -1016,6 +1296,10 @@ fn close_tab(
     if let Some(tab) = tab_by_id(tab_strip, &content.widget_name()) {
         tab_strip.remove(&tab);
     }
+    close_protection
+        .shell_pids
+        .borrow_mut()
+        .remove(content.widget_name().as_str());
     notebook.remove_page(Some(page_number));
 
     if notebook.n_pages() == 0 {
@@ -1597,7 +1881,12 @@ fn load_bundled_wallpaper() -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error>
     gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(BUNDLED_WALLPAPER))
 }
 
-fn spawn_shell(terminal: &vte4::Terminal, config: &AppConfig) {
+fn spawn_shell(
+    terminal: &vte4::Terminal,
+    config: &AppConfig,
+    tab_id: &str,
+    close_protection: &CloseProtection,
+) {
     let argv = [config.shell()];
     let environment: Vec<String> = env::vars_os()
         .filter_map(|(key, value)| {
@@ -1608,6 +1897,8 @@ fn spawn_shell(terminal: &vte4::Terminal, config: &AppConfig) {
         .collect();
     let environment: Vec<&str> = environment.iter().map(String::as_str).collect();
     let terminal_for_error = terminal.clone();
+    let tab_id = tab_id.to_owned();
+    let close_protection = close_protection.clone();
 
     terminal.spawn_async(
         vte4::PtyFlags::DEFAULT,
@@ -1618,8 +1909,17 @@ fn spawn_shell(terminal: &vte4::Terminal, config: &AppConfig) {
         || {},
         -1,
         None::<&gtk::gio::Cancellable>,
-        move |result| {
-            if let Err(error) = result {
+        move |result| match result {
+            Ok(pid) => {
+                if let Some(shell_pid) = close_protection
+                    .shell_pids
+                    .borrow_mut()
+                    .get_mut(tab_id.as_str())
+                {
+                    *shell_pid = Some(pid.0);
+                }
+            }
+            Err(error) => {
                 eprintln!("zter: could not start the shell: {error}");
                 terminal_for_error
                     .feed(format!("zter: could not start the shell: {error}\r\n").as_bytes());
@@ -1700,6 +2000,22 @@ mod tests {
             clipboard_paste_route(false),
             ClipboardPasteRoute::PassThrough
         );
+    }
+
+    #[test]
+    fn close_protection_allows_an_idle_shell_to_close_immediately() {
+        assert!(!process_groups_have_running_foreground_process(42, 42));
+    }
+
+    #[test]
+    fn close_protection_detects_a_foreground_process_started_by_the_shell() {
+        assert!(process_groups_have_running_foreground_process(42, 84));
+    }
+
+    #[test]
+    fn close_protection_does_not_block_when_process_groups_are_unavailable() {
+        assert!(!process_groups_have_running_foreground_process(-1, 84));
+        assert!(!process_groups_have_running_foreground_process(42, -1));
     }
 
     #[test]
