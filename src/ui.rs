@@ -1602,6 +1602,12 @@ fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
     popover.set_autohide(true);
     popover.set_has_arrow(false);
     popover.set_parent(terminal);
+    let popover_for_destroy = popover.clone();
+    terminal.connect_destroy(move |_| {
+        if popover_for_destroy.parent().is_some() {
+            popover_for_destroy.unparent();
+        }
+    });
 
     let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let copy_button = clipboard_menu_button("Copy", "Ctrl+C");
