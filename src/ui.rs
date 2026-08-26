@@ -35,6 +35,7 @@ static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TabShortcut {
+    New,
     Previous,
     Next,
 }
@@ -268,7 +269,15 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
     let close_protection = CloseProtection::default();
     let (header, tab_strip, tab_scroller) =
         create_header(&window, &notebook, config, &wallpaper, &close_protection);
-    install_tab_shortcuts(&window, &notebook);
+    install_tab_shortcuts(
+        &window,
+        &notebook,
+        &tab_strip,
+        &tab_scroller,
+        config,
+        &wallpaper,
+        &close_protection,
+    );
     install_tab_switch_handler(&window, &notebook, &tab_strip, &tab_scroller, config);
     install_window_close_protection(&window, &notebook, &close_protection);
 
@@ -456,11 +465,25 @@ fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {
     scroller.add_controller(controller);
 }
 
-fn install_tab_shortcuts(window: &gtk::ApplicationWindow, notebook: &gtk::Notebook) {
+fn install_tab_shortcuts(
+    window: &gtk::ApplicationWindow,
+    notebook: &gtk::Notebook,
+    tab_strip: &gtk::Box,
+    tab_scroller: &gtk::ScrolledWindow,
+    config: &AppConfig,
+    wallpaper: &WallpaperAsset,
+    close_protection: &CloseProtection,
+) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
 
+    let window_weak = window.downgrade();
     let notebook_weak = notebook.downgrade();
+    let tab_strip_weak = tab_strip.downgrade();
+    let tab_scroller_weak = tab_scroller.downgrade();
+    let config = config.clone();
+    let wallpaper = wallpaper.clone();
+    let close_protection = close_protection.clone();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
         let Some(shortcut) = tab_shortcut(key, modifiers) else {
             return gtk::glib::Propagation::Proceed;
@@ -470,6 +493,24 @@ fn install_tab_shortcuts(window: &gtk::ApplicationWindow, notebook: &gtk::Notebo
         };
 
         match shortcut {
+            TabShortcut::New => {
+                let (Some(window), Some(tab_strip), Some(tab_scroller)) = (
+                    window_weak.upgrade(),
+                    tab_strip_weak.upgrade(),
+                    tab_scroller_weak.upgrade(),
+                ) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                add_terminal_tab(
+                    &window,
+                    &notebook,
+                    &tab_strip,
+                    &tab_scroller,
+                    &config,
+                    &wallpaper,
+                    &close_protection,
+                );
+            }
             TabShortcut::Previous => notebook.prev_page(),
             TabShortcut::Next => notebook.next_page(),
         }
@@ -1414,7 +1455,12 @@ fn tab_shortcut(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType) -> Option
         return None;
     }
 
-    match key {
+    let system_modifiers = gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK
+        | gtk::gdk::ModifierType::META_MASK;
+    match key.to_lower() {
+        gtk::gdk::Key::t if !modifiers.intersects(system_modifiers) => Some(TabShortcut::New),
         gtk::gdk::Key::Page_Up => Some(TabShortcut::Previous),
         gtk::gdk::Key::Page_Down => Some(TabShortcut::Next),
         _ => None,
@@ -2070,11 +2116,21 @@ mod tests {
     }
 
     #[test]
-    fn tab_shortcuts_only_cover_navigation() {
+    fn tab_shortcuts_cover_creation_and_navigation() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
 
+        assert_eq!(
+            tab_shortcut(gtk::gdk::Key::t, control),
+            Some(TabShortcut::New)
+        );
+        assert_eq!(
+            tab_shortcut(gtk::gdk::Key::T, control),
+            Some(TabShortcut::New)
+        );
         assert_eq!(tab_shortcut(gtk::gdk::Key::t, control_shift), None);
+        assert_eq!(tab_shortcut(gtk::gdk::Key::t, control_alt), None);
         assert_eq!(tab_shortcut(gtk::gdk::Key::w, control_shift), None);
         assert_eq!(
             tab_shortcut(gtk::gdk::Key::Page_Up, control),
