@@ -63,11 +63,12 @@ highlight adapts to colored terminal output instead of using one fixed color.
 The composition layer paints the opaque One Half Dark background while VTE
 remains transparent.
 
-During continuous window resizing, the wallpaper follows the window while the
-terminal grid remains at its last applied size. After the window allocation is
-stable for `120ms`, zter applies the latest grid size and VTE reflows once. This
-prevents interactive line editors from committing intermediate prompt redraws
-to terminal history.
+Each tab waits for its first positive viewport allocation, applies that terminal
+grid, and only then starts its shell. During continuous window resizing, the
+wallpaper follows the window while the terminal grid remains at its last applied
+size. After the window allocation is stable for `120ms`, zter applies the latest
+grid size and VTE reflows once. This prevents interactive line editors from
+committing intermediate prompt redraws to terminal history.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 `#3E4451` border and `12px` rounded corners. The lower composition layer is

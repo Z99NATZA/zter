@@ -208,7 +208,7 @@ impl From<gtk::cairo::Error> for WallpaperPreparationError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TerminalResizeAction {
     Ignore,
-    ApplyNow((i32, i32)),
+    ApplyInitial((i32, i32)),
     Defer,
 }
 
@@ -227,7 +227,7 @@ impl DeferredTerminalResize {
         self.observed = Some(size);
         if self.applied.is_none() {
             self.applied = Some(size);
-            TerminalResizeAction::ApplyNow(size)
+            TerminalResizeAction::ApplyInitial(size)
         } else {
             TerminalResizeAction::Defer
         }
@@ -524,14 +524,25 @@ fn add_terminal_tab(
     close_protection: &CloseProtection,
 ) {
     let terminal = create_terminal(config);
-    let content = create_content(&terminal, config, wallpaper);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
-    content.set_widget_name(&tab_id);
     close_protection
         .shell_pids
         .borrow_mut()
         .insert(tab_id.clone(), None);
+    let terminal_for_spawn = terminal.clone();
+    let config_for_spawn = config.clone();
+    let tab_id_for_spawn = tab_id.clone();
+    let close_protection_for_spawn = close_protection.clone();
+    let content = create_content(&terminal, config, wallpaper, move || {
+        spawn_shell(
+            &terminal_for_spawn,
+            &config_for_spawn,
+            &tab_id_for_spawn,
+            &close_protection_for_spawn,
+        );
+    });
+    content.set_widget_name(&tab_id);
     let header = create_header_tab(&fallback_title, &tab_id);
     let title_state = Rc::new(RefCell::new(TabTitleState::new(fallback_title.clone())));
 
@@ -646,8 +657,6 @@ fn add_terminal_tab(
     set_window_title(window, &fallback_title);
     sync_header_tabs(notebook, tab_strip, tab_scroller);
     terminal.grab_focus();
-
-    spawn_shell(&terminal, config, &tab_id, close_protection);
 }
 
 fn create_header_tab(title: &str, tab_id: &str) -> TabHeader {
@@ -1553,49 +1562,69 @@ fn clipboard_menu_button(label: &str, shortcut: &str) -> gtk::Button {
     button
 }
 
-fn create_content(
+fn create_content<F>(
     terminal: &vte4::Terminal,
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
-) -> gtk::Overlay {
+    on_initial_size: F,
+) -> gtk::Overlay
+where
+    F: FnOnce() + 'static,
+{
     let overlay = gtk::Overlay::new();
     overlay.add_css_class("zter-content");
     overlay.set_overflow(gtk::Overflow::Hidden);
 
     let background = create_background(wallpaper);
-    let terminal_viewport = create_terminal_viewport(terminal, config.terminal_padding());
+    let terminal_viewport =
+        create_terminal_viewport(terminal, config.terminal_padding(), on_initial_size);
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
 
     overlay
 }
 
-fn create_terminal_viewport(terminal: &vte4::Terminal, padding: TerminalPadding) -> gtk::Fixed {
+fn create_terminal_viewport<F>(
+    terminal: &vte4::Terminal,
+    padding: TerminalPadding,
+    on_initial_size: F,
+) -> gtk::Fixed
+where
+    F: FnOnce() + 'static,
+{
     let viewport = gtk::Fixed::new();
     viewport.set_hexpand(true);
     viewport.set_vexpand(true);
     viewport.set_overflow(gtk::Overflow::Hidden);
     viewport.put(terminal, 0.0, 0.0);
-    install_deferred_terminal_resize(&viewport, terminal, padding);
+    install_deferred_terminal_resize(&viewport, terminal, padding, on_initial_size);
     viewport
 }
 
-fn install_deferred_terminal_resize(
+fn install_deferred_terminal_resize<F>(
     viewport: &gtk::Fixed,
     terminal: &vte4::Terminal,
     padding: TerminalPadding,
-) {
+    on_initial_size: F,
+) where
+    F: FnOnce() + 'static,
+{
     let resize = Rc::new(RefCell::new(DeferredTerminalResize::default()));
     let pending = Rc::new(RefCell::new(None::<gtk::glib::SourceId>));
+    let on_initial_size = RefCell::new(Some(on_initial_size));
     let terminal_weak = terminal.downgrade();
 
     viewport.add_tick_callback(move |viewport, _| {
         let size = (viewport.width(), viewport.height());
         match resize.borrow_mut().observe(size) {
             TerminalResizeAction::Ignore => {}
-            TerminalResizeAction::ApplyNow(size) => {
+            TerminalResizeAction::ApplyInitial(size) => {
                 if let Some(terminal) = terminal_weak.upgrade() {
                     apply_terminal_viewport_size(&terminal, size, padding);
+                    let on_initial_size = on_initial_size.borrow_mut().take();
+                    if let Some(on_initial_size) = on_initial_size {
+                        on_initial_size();
+                    }
                 }
             }
             TerminalResizeAction::Defer => {
@@ -1938,13 +1967,25 @@ mod tests {
 
         assert_eq!(
             resize.observe((960, 600)),
-            TerminalResizeAction::ApplyNow((960, 600))
+            TerminalResizeAction::ApplyInitial((960, 600))
         );
         assert_eq!(resize.observe((960, 600)), TerminalResizeAction::Ignore);
         assert_eq!(resize.observe((900, 580)), TerminalResizeAction::Defer);
         assert_eq!(resize.observe((840, 560)), TerminalResizeAction::Defer);
         assert_eq!(resize.settle(), Some((840, 560)));
         assert_eq!(resize.settle(), None);
+    }
+
+    #[test]
+    fn terminal_resize_waits_for_a_positive_initial_allocation() {
+        let mut resize = DeferredTerminalResize::default();
+
+        assert_eq!(resize.observe((0, 0)), TerminalResizeAction::Ignore);
+        assert_eq!(resize.observe((960, 0)), TerminalResizeAction::Ignore);
+        assert_eq!(
+            resize.observe((960, 600)),
+            TerminalResizeAction::ApplyInitial((960, 600))
+        );
     }
 
     #[test]
