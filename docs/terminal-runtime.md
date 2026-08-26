@@ -47,6 +47,8 @@ and recognizes hyperlinks. `Ctrl+C` copies selected text; without a selection,
 it retains the terminal interrupt behavior. `Ctrl+V` pastes clipboard text.
 Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
 and right-aligned shortcut hints; Copy is disabled when there is no selection.
+Selected cells swap their existing foreground and background colors, so the
+highlight adapts to colored terminal output instead of using one fixed color.
 The composition layer paints the opaque One Half Dark background while VTE
 remains transparent.
 

@@ -44,16 +44,14 @@ fn apply_one_half_dark(terminal: &vte4::Terminal) {
     let background = rgba(BACKGROUND);
     let cursor = rgba(CURSOR);
     let cursor_foreground = rgba(BACKGROUND);
-    let selection = rgba(SELECTION);
-    let selection_foreground = rgba(FOREGROUND);
     let palette: Vec<gdk::RGBA> = ANSI_PALETTE.into_iter().map(rgba).collect();
     let palette: Vec<&gdk::RGBA> = palette.iter().collect();
 
     terminal.set_colors(Some(&foreground), Some(&background), &palette);
     terminal.set_color_cursor(Some(&cursor));
     terminal.set_color_cursor_foreground(Some(&cursor_foreground));
-    terminal.set_color_highlight(Some(&selection));
-    terminal.set_color_highlight_foreground(Some(&selection_foreground));
+    terminal.set_color_highlight(None);
+    terminal.set_color_highlight_foreground(None);
     terminal.add_css_class(TRANSPARENT_BACKGROUND_CLASS);
     terminal.set_clear_background(false);
 }
