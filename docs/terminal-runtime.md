@@ -6,6 +6,12 @@ user settings and environment with the UTF-8 entries from the parent process
 environment and the directory from which zter was launched. A shell exit closes
 only its tab; the window closes after the last tab exits.
 
+Starting `zter` without an option activates the profile-matched application. If
+that application is already running, the new window belongs to its existing
+process. `zter -s` and `zter --standalone` start a separate application instance
+and window in the new process, ignoring any existing instance. A settings reload
+targets the normal profile-matched application rather than standalone instances.
+
 ## Tabs
 
 Tabs share one titlebar row with the window controls. The pinned symbolic `+`

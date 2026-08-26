@@ -30,11 +30,15 @@ cd zter
 cargo run
 ```
 
-## (Optional) Apply current settings
+## (Optional)
 
 ```bash
+# Apply current settings
 cargo run -- settings apply
 cargo run -- settings reload
+
+# Standalone
+cargo run -- -s
 ```
 
 ## Documentation

@@ -11,15 +11,21 @@ reload:
 install:
 	./scripts/install-dev-user.sh
 
+alone:
+	cargo run -- -s
+
 # Build release
 rel-settings:
-	cargo run --release -- settings apply
+	zter settings apply
 
 rel-reload:
-	cargo run --release -- settings reload
+	zter settings reload
 
 rel-install:
 	./scripts/install-user.sh
 
 rel-rm:
 	./scripts/uninstall-user.sh
+
+rel-alone:
+	zter -s

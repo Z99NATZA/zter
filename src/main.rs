@@ -13,12 +13,12 @@ use crate::config::AppConfig;
 use crate::identity::{APPLICATION_ID, SETTINGS_RELOAD_ACTION};
 use crate::settings::Settings;
 
-const USAGE: &str = "usage: zter [settings apply|settings reload]";
+const USAGE: &str = "usage: zter [-s|--standalone]\n       zter settings <apply|reload>";
 
 fn main() -> gtk::glib::ExitCode {
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
     match command_from_arguments(&arguments) {
-        Ok(Command::Run) => run_terminal(),
+        Ok(Command::Run { standalone }) => run_terminal(standalone),
         Ok(Command::SettingsApply) => apply_project_settings(),
         Ok(Command::SettingsReload) => reload_running_settings(),
         Ok(Command::Help) => {
@@ -34,7 +34,7 @@ fn main() -> gtk::glib::ExitCode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
-    Run,
+    Run { standalone: bool },
     SettingsApply,
     SettingsReload,
     Help,
@@ -42,7 +42,10 @@ enum Command {
 
 fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static str> {
     match arguments {
-        [] => Ok(Command::Run),
+        [] => Ok(Command::Run { standalone: false }),
+        [argument] if argument == "--standalone" || argument == "-s" => {
+            Ok(Command::Run { standalone: true })
+        }
         [argument] if argument == "--help" || argument == "-h" => Ok(Command::Help),
         [settings, apply] if settings == "settings" && apply == "apply" => {
             Ok(Command::SettingsApply)
@@ -51,6 +54,14 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
             Ok(Command::SettingsReload)
         }
         _ => Err("unknown command"),
+    }
+}
+
+fn application_flags(standalone: bool) -> gtk::gio::ApplicationFlags {
+    if standalone {
+        gtk::gio::ApplicationFlags::NON_UNIQUE
+    } else {
+        gtk::gio::ApplicationFlags::empty()
     }
 }
 
@@ -91,7 +102,7 @@ fn apply_project_settings() -> gtk::glib::ExitCode {
     gtk::glib::ExitCode::SUCCESS
 }
 
-fn run_terminal() -> gtk::glib::ExitCode {
+fn run_terminal(standalone: bool) -> gtk::glib::ExitCode {
     let config = match AppConfig::from_environment() {
         Ok(config) => config,
         Err(error) => {
@@ -102,13 +113,14 @@ fn run_terminal() -> gtk::glib::ExitCode {
 
     let application = gtk::Application::builder()
         .application_id(APPLICATION_ID)
+        .flags(application_flags(standalone))
         .build();
 
     application.connect_activate(move |application| {
         ui::build(application, &config);
     });
 
-    application.run()
+    application.run_with_args(&["zter"])
 }
 
 #[cfg(test)]
@@ -117,7 +129,46 @@ mod tests {
 
     #[test]
     fn no_arguments_runs_the_terminal() {
-        assert_eq!(command_from_arguments(&[]), Ok(Command::Run));
+        assert_eq!(
+            command_from_arguments(&[]),
+            Ok(Command::Run { standalone: false })
+        );
+    }
+
+    #[test]
+    fn long_standalone_option_runs_a_separate_instance() {
+        let arguments = [OsString::from("--standalone")];
+
+        assert_eq!(
+            command_from_arguments(&arguments),
+            Ok(Command::Run { standalone: true })
+        );
+    }
+
+    #[test]
+    fn short_standalone_option_runs_a_separate_instance() {
+        let arguments = [OsString::from("-s")];
+
+        assert_eq!(
+            command_from_arguments(&arguments),
+            Ok(Command::Run { standalone: true })
+        );
+    }
+
+    #[test]
+    fn standalone_uses_a_non_unique_gtk_application() {
+        assert_eq!(
+            application_flags(true),
+            gtk::gio::ApplicationFlags::NON_UNIQUE
+        );
+    }
+
+    #[test]
+    fn normal_startup_uses_a_unique_gtk_application() {
+        assert_eq!(
+            application_flags(false),
+            gtk::gio::ApplicationFlags::empty()
+        );
     }
 
     #[test]

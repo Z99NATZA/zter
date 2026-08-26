@@ -1,9 +1,12 @@
 # Architecture
 
-zter is one GTK4 desktop process. GTK owns the application lifecycle, windows,
-the unified titlebar tab controls, and the hidden-tab page container, while each
-tab has one VTE instance that owns terminal emulation, its pseudo-terminal, and
-its child shell connection.
+Each zter application instance is one GTK4 desktop process. GTK owns the
+application lifecycle, windows, the unified titlebar tab controls, and the
+hidden-tab page container, while each tab has one VTE instance that owns
+terminal emulation, its pseudo-terminal, and its child shell connection. A
+normal startup activates the existing profile-matched application process when
+one is running. `zter -s` and `zter --standalone` instead start a non-unique GTK
+application instance in the new process.
 
 ## Runtime Flow
 

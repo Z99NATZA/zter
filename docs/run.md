@@ -21,8 +21,11 @@ zter
 # ------------------------------
 
 # Apply current settings
-cargo run --release -- settings apply
-cargo run --release -- settings reload
+zter settings apply
+zter settings reload
+
+# Standalone shortcut
+zter -s
 ```
 
 ## (Optional) Development
