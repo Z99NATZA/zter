@@ -9,7 +9,8 @@ project_directory=$(CDPATH= cd -- "$script_directory/.." && pwd)
 
 data_directory=${XDG_DATA_HOME:-"$HOME/.local/share"}
 binary_directory=${ZTER_BIN_DIR:-"$HOME/.local/bin"}
-application_id=io.github.znnn.zter
+application_id=io.github.z99natza.zter
+legacy_application_id=io.github.znnn.zter
 icon_theme_directory="$data_directory/icons/hicolor"
 
 case "$data_directory:$binary_directory" in
@@ -44,6 +45,9 @@ install -Dm644 \
 install -Dm644 \
     "$project_directory/data/icons/hicolor/scalable/apps/$application_id.svg" \
     "$data_directory/icons/hicolor/scalable/apps/$application_id.svg"
+rm -f -- \
+    "$data_directory/applications/$legacy_application_id.desktop" \
+    "$data_directory/icons/hicolor/scalable/apps/$legacy_application_id.svg"
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$data_directory/applications"

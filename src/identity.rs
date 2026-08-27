@@ -1,7 +1,7 @@
 #[cfg(debug_assertions)]
-pub(crate) const APPLICATION_ID: &str = "io.github.znnn.zter.Devel";
+pub(crate) const APPLICATION_ID: &str = "io.github.z99natza.zter.Devel";
 #[cfg(not(debug_assertions))]
-pub(crate) const APPLICATION_ID: &str = "io.github.znnn.zter";
+pub(crate) const APPLICATION_ID: &str = "io.github.z99natza.zter";
 
 #[cfg(debug_assertions)]
 pub(crate) const APPLICATION_NAME: &str = "zter (Development)";
@@ -9,9 +9,9 @@ pub(crate) const APPLICATION_NAME: &str = "zter (Development)";
 pub(crate) const APPLICATION_NAME: &str = "zter";
 
 #[cfg(debug_assertions)]
-pub(crate) const ICON_NAME: &str = "io.github.znnn.zter.Devel";
+pub(crate) const ICON_NAME: &str = "io.github.z99natza.zter.Devel";
 #[cfg(not(debug_assertions))]
-pub(crate) const ICON_NAME: &str = "io.github.znnn.zter";
+pub(crate) const ICON_NAME: &str = "io.github.z99natza.zter";
 
 #[cfg(debug_assertions)]
 pub(crate) const SETTINGS_DIRECTORY: &str = "zter-devel";
@@ -35,9 +35,9 @@ mod tests {
                 SETTINGS_DIRECTORY,
             ),
             (
-                "io.github.znnn.zter.Devel",
+                "io.github.z99natza.zter.Devel",
                 "zter (Development)",
-                "io.github.znnn.zter.Devel",
+                "io.github.z99natza.zter.Devel",
                 "zter-devel",
             )
         );
@@ -50,7 +50,12 @@ mod tests {
                 ICON_NAME,
                 SETTINGS_DIRECTORY,
             ),
-            ("io.github.znnn.zter", "zter", "io.github.znnn.zter", "zter",)
+            (
+                "io.github.z99natza.zter",
+                "zter",
+                "io.github.z99natza.zter",
+                "zter",
+            )
         );
     }
 }

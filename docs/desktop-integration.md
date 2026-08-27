@@ -1,20 +1,20 @@
 # Desktop Integration
 
-Release builds use `io.github.znnn.zter` as the GTK application ID, desktop
-launcher ID, and icon name. Debug builds use `io.github.znnn.zter.Devel` for the
+Release builds use `io.github.z99natza.zter` as the GTK application ID, desktop
+launcher ID, and icon name. Debug builds use `io.github.z99natza.zter.Devel` for the
 same three values. Keeping each set identical lets the desktop environment
 match both running windows to distinct dock icons while allowing the builds to
 run at the same time.
 
 The original scalable icon is tracked at
-`data/icons/hicolor/scalable/apps/io.github.znnn.zter.svg`. It uses the zter
+`data/icons/hicolor/scalable/apps/io.github.z99natza.zter.svg`. It uses the zter
 `>z` mark and the neutral One Half Dark palette. The launcher metadata is
-tracked at `data/io.github.znnn.zter.desktop`.
+tracked at `data/io.github.z99natza.zter.desktop`.
 
 The development icon keeps the same `>z` mark on a light `#dee2e4` background
 and is tracked at
-`data/icons/hicolor/scalable/apps/io.github.znnn.zter.Devel.svg`. Its desktop
-metadata is `data/io.github.znnn.zter.Devel.desktop`.
+`data/icons/hicolor/scalable/apps/io.github.z99natza.zter.Devel.svg`. Its desktop
+metadata is `data/io.github.z99natza.zter.Devel.desktop`.
 
 The original zter wallpaper is tracked at
 `data/wallpapers/zter-wallpaper.png` and embedded in both debug and release
@@ -32,8 +32,8 @@ Install a release build and its desktop files for the current user:
 The command installs only these paths:
 
 - `~/.local/bin/zter`
-- `~/.local/share/applications/io.github.znnn.zter.desktop`
-- `~/.local/share/icons/hicolor/scalable/apps/io.github.znnn.zter.svg`
+- `~/.local/share/applications/io.github.z99natza.zter.desktop`
+- `~/.local/share/icons/hicolor/scalable/apps/io.github.z99natza.zter.svg`
 
 When `XDG_DATA_HOME` is set, the launcher and icon use that data directory
 instead of `~/.local/share`.
@@ -42,7 +42,8 @@ After changing the desktop files, the install and uninstall commands refresh
 the desktop database when `update-desktop-database` is available. They also
 refresh the user-local hicolor icon cache with `gtk4-update-icon-cache`, or
 `gtk-update-icon-cache` as a fallback, so a running desktop shell can promptly
-observe icon changes.
+observe icon changes. Both commands also remove launcher and icon files that
+used the previous `io.github.znnn.zter` identity.
 
 The binary directory must be present in the graphical session's `PATH`. On a
 new Ubuntu user session, `~/.local/bin` is normally added after signing out and
@@ -67,8 +68,8 @@ Install the development desktop metadata and icon for the current user once:
 The command installs these paths:
 
 - `~/.local/bin/zter-devel`, as a symlink to the repository development runner
-- `~/.local/share/applications/io.github.znnn.zter.Devel.desktop`
-- `~/.local/share/icons/hicolor/scalable/apps/io.github.znnn.zter.Devel.svg`
+- `~/.local/share/applications/io.github.z99natza.zter.Devel.desktop`
+- `~/.local/share/icons/hicolor/scalable/apps/io.github.z99natza.zter.Devel.svg`
 
 The desktop entry has `NoDisplay=true`: it supplies GNOME with the identity and
 icon for `cargo run` without adding a development launcher to Applications.
@@ -86,3 +87,6 @@ Remove only the development metadata and icon with:
 ```bash
 ./scripts/uninstall-dev-user.sh
 ```
+
+The development install and uninstall commands also remove metadata and icon
+files that used the previous `io.github.znnn.zter.Devel` identity.
