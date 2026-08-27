@@ -69,6 +69,10 @@ the clipboard offers no text, zter passes the key to the terminal child so its
 application can handle non-text content such as images. Secondary-click opens a
 compact One Half Dark menu with Copy and Paste actions and right-aligned shortcut
 hints; Copy is disabled when there is no selection.
+`Ctrl+D` retains its normal shell behavior when no other foreground process is
+running. While a foreground process owns the terminal, zter suppresses `Ctrl+D`
+to prevent accidentally closing that program. Modified forms such as
+`Ctrl+Shift+D` continue to reach the terminal child.
 Each tab shows a vertical overlay scrollbar when its retained history exceeds
 the visible page. The scrollbar uses that tab's VTE scroll adjustment and does
 not participate in viewport measurement, so appearing or disappearing does not

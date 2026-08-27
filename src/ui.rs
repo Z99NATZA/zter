@@ -587,6 +587,7 @@ fn add_terminal_tab(
         .shell_pids
         .borrow_mut()
         .insert(tab_id.clone(), None);
+    install_control_d_protection(&terminal, &tab_id, close_protection);
     let terminal_for_spawn = terminal.clone();
     let config_for_spawn = config.clone();
     let tab_id_for_spawn = tab_id.clone();
@@ -1438,6 +1439,14 @@ fn tab_has_running_foreground_process(
     let Some((terminal, shell_pid)) = find_terminal(content.as_ref()).zip(shell_pid) else {
         return false;
     };
+
+    terminal_has_running_foreground_process(&terminal, shell_pid)
+}
+
+fn terminal_has_running_foreground_process(
+    terminal: &vte4::Terminal,
+    shell_pid: libc::pid_t,
+) -> bool {
     let Some(pty) = terminal.pty() else {
         return false;
     };
@@ -1593,6 +1602,55 @@ fn create_terminal(config: &AppConfig) -> vte4::Terminal {
     theme::apply_to(&terminal, config.theme());
 
     terminal
+}
+
+fn install_control_d_protection(
+    terminal: &vte4::Terminal,
+    tab_id: &str,
+    close_protection: &CloseProtection,
+) {
+    let controller = gtk::EventControllerKey::new();
+    controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+
+    let terminal_weak = terminal.downgrade();
+    let tab_id = tab_id.to_owned();
+    let close_protection = close_protection.clone();
+    controller.connect_key_pressed(move |_, key, _, modifiers| {
+        if !is_plain_control_d(key, modifiers) {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let Some(terminal) = terminal_weak.upgrade() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        let shell_pid = close_protection
+            .shell_pids
+            .borrow()
+            .get(tab_id.as_str())
+            .copied()
+            .flatten();
+        let Some(shell_pid) = shell_pid else {
+            return gtk::glib::Propagation::Proceed;
+        };
+
+        if terminal_has_running_foreground_process(&terminal, shell_pid) {
+            gtk::glib::Propagation::Stop
+        } else {
+            gtk::glib::Propagation::Proceed
+        }
+    });
+
+    terminal.add_controller(controller);
+}
+
+fn is_plain_control_d(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType) -> bool {
+    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+    let other_modifiers = gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK
+        | gtk::gdk::ModifierType::META_MASK;
+
+    control && !modifiers.intersects(other_modifiers) && key.to_lower() == gtk::gdk::Key::d
 }
 
 fn terminal_font(config: &AppConfig) -> gtk::pango::FontDescription {
@@ -2312,6 +2370,23 @@ mod tests {
             clipboard_shortcut(gtk::gdk::Key::c, gtk::gdk::ModifierType::empty()),
             None
         );
+    }
+
+    #[test]
+    fn control_d_protection_matches_only_plain_control_d() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
+
+        assert!(is_plain_control_d(gtk::gdk::Key::d, control));
+        assert!(is_plain_control_d(gtk::gdk::Key::D, control));
+        assert!(!is_plain_control_d(gtk::gdk::Key::d, control_shift));
+        assert!(!is_plain_control_d(gtk::gdk::Key::d, control_alt));
+        assert!(!is_plain_control_d(
+            gtk::gdk::Key::d,
+            gtk::gdk::ModifierType::empty()
+        ));
+        assert!(!is_plain_control_d(gtk::gdk::Key::c, control));
     }
 
     #[test]
