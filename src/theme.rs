@@ -122,6 +122,9 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border-width: 0;
             box-shadow: none;
         }}
+        .zter-drag-space {{
+            min-width: 40px;
+        }}
         .zter-header-tab,
         button.zter-tab-close,
         button.zter-new-tab {{
@@ -191,11 +194,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             box-shadow: none;
             min-height: 28px;
             min-width: 28px;
-            margin: 0 30px 0 4px;
+            margin: 0 0 0 4px;
             padding: 0;
-        }}
-        .zter-tab-scroller button.zter-new-tab {{
-            margin-right: 0;
         }}
         button.zter-tab-close:hover,
         button.zter-new-tab:hover {{
@@ -524,6 +524,15 @@ mod tests {
     }
 
     #[test]
+    fn titlebar_drag_spaces_keep_a_40px_minimum() {
+        let css = application_css(TerminalPadding::default());
+        let (_, drag_space_rule) = css.split_once(".zter-drag-space").unwrap();
+        let (drag_space_rule, _) = drag_space_rule.split_once('}').unwrap();
+
+        assert!(drag_space_rule.contains("min-width: 40px"));
+    }
+
+    #[test]
     fn header_controls_use_compact_spacing_without_a_rectangular_hover_fill() {
         let css = application_css(TerminalPadding::default());
         let selector = "window.zter-window .zter-header windowcontrols button";
@@ -548,29 +557,13 @@ mod tests {
     }
 
     #[test]
-    fn new_tab_and_window_controls_keep_a_32px_minimum_gap() {
+    fn new_tab_buttons_touch_their_following_drag_spaces() {
         let css = application_css(TerminalPadding::default());
         let (_, new_tab_rule) = css
             .split_once("button.zter-new-tab {\n            background-color")
             .unwrap();
         let (new_tab_rule, _) = new_tab_rule.split_once('}').unwrap();
-        let (_, control_rule) = css
-            .split_once("window.zter-window .zter-header windowcontrols button {")
-            .unwrap();
-        let (control_rule, _) = control_rule.split_once('}').unwrap();
 
-        assert!(new_tab_rule.contains("margin: 0 30px 0 4px"));
-        assert!(control_rule.contains("margin: 0 2px"));
-    }
-
-    #[test]
-    fn inline_new_tab_touches_the_drag_space() {
-        let css = application_css(TerminalPadding::default());
-        let (_, inline_new_tab_rule) = css
-            .split_once(".zter-tab-scroller button.zter-new-tab {")
-            .unwrap();
-        let (inline_new_tab_rule, _) = inline_new_tab_rule.split_once('}').unwrap();
-
-        assert!(inline_new_tab_rule.contains("margin-right: 0"));
+        assert!(new_tab_rule.contains("margin: 0 0 0 4px"));
     }
 }

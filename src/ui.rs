@@ -354,16 +354,26 @@ fn create_header(
     pinned_new_tab.set_visible(false);
 
     let drag_space = gtk::WindowHandle::new();
+    drag_space.add_css_class("zter-drag-space");
     drag_space.set_hexpand(true);
+    let overflow_drag_space = gtk::WindowHandle::new();
+    overflow_drag_space.add_css_class("zter-drag-space");
+    overflow_drag_space.set_visible(false);
     scroll_content.append(&inline_new_tab);
     scroll_content.append(&drag_space);
-    install_tab_overflow(&tab_scroller, &inline_new_tab, &pinned_new_tab);
+    install_tab_overflow(
+        &tab_scroller,
+        &inline_new_tab,
+        &pinned_new_tab,
+        &overflow_drag_space,
+    );
 
     let window_controls = gtk::WindowControls::new(gtk::PackType::End);
     window_controls.set_valign(gtk::Align::Center);
 
     header.append(&tab_scroller);
     header.append(&pinned_new_tab);
+    header.append(&overflow_drag_space);
     header.append(&window_controls);
 
     (header, tab_strip, tab_scroller)
@@ -420,24 +430,30 @@ fn install_tab_overflow(
     scroller: &gtk::ScrolledWindow,
     inline_button: &gtk::Button,
     pinned_button: &gtk::Button,
+    drag_space: &gtk::WindowHandle,
 ) {
     let inline_weak = inline_button.downgrade();
     let pinned_weak = pinned_button.downgrade();
+    let drag_space_weak = drag_space.downgrade();
     scroller.hadjustment().connect_changed(move |adjustment| {
-        let (Some(inline_button), Some(pinned_button)) =
-            (inline_weak.upgrade(), pinned_weak.upgrade())
-        else {
+        let (Some(inline_button), Some(pinned_button), Some(drag_space)) = (
+            inline_weak.upgrade(),
+            pinned_weak.upgrade(),
+            drag_space_weak.upgrade(),
+        ) else {
             return;
         };
         let overflow = adjustment.upper() > adjustment.page_size() + 0.5;
         inline_button.set_visible(!overflow);
         pinned_button.set_visible(overflow);
+        drag_space.set_visible(overflow);
     });
 
     let adjustment = scroller.hadjustment();
     let overflow = adjustment.upper() > adjustment.page_size() + 0.5;
     inline_button.set_visible(!overflow);
     pinned_button.set_visible(overflow);
+    drag_space.set_visible(overflow);
 }
 
 fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {

@@ -31,11 +31,13 @@ shell exit still removes its tab immediately without showing the modal.
 
 Each tab has the same height as the titlebar. Tab titles are ellipsized at the
 available width. The new-tab button follows the last tab while the tabs fit.
+The expanding drag area after that button retains a minimum width of `40px`.
 When the tabs exceed the available titlebar space, the strip scrolls
 horizontally with a mouse wheel or trackpad and automatically reveals the
-selected tab, while the new-tab button and system window controls remain fixed.
-The titlebar content is `36px` high. Its blank area moves the window and
-double-clicking that area toggles maximization through GTK's window handle.
+selected tab, while the new-tab button, a following minimum `40px` drag area,
+and system window controls remain fixed. The titlebar content is `36px` high.
+Its blank area moves the window and double-clicking that area toggles
+maximization through GTK's window handle.
 
 A tab initially uses a title such as `bash in zter`, derived from the configured
 shell executable. VTE window-title updates from the running shell or terminal
@@ -95,7 +97,8 @@ white outline drawn inside its edge until the pointer leaves, the drag is
 canceled, or the drop completes. The outline does not alter the tab allocation,
 and the source tab does not highlight itself. Native window controls use compact
 spacing and do not receive an additional app-owned hover fill. The new-tab
-button and the first native window control retain a minimum `32px` gap.
+button and the first native window control retain a minimum `40px` draggable
+gap while tabs overflow.
 
 ## Theme Palette
 
