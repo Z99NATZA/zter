@@ -67,7 +67,8 @@ change the active tab's font scale in one-point steps from `6` through `72`
 points. Runtime zoom does not resize the active tab's PTY grid. The zoom lasts
 until that tab closes, does not change other tabs or the settings file, and new
 tabs start at the configured font size. Ordinary scrolling retains its terminal
-history behavior. The terminal scrolls to input on a keystroke, hides the pointer
+history behavior. Prompt redraws produced by the running shell remain outside
+zter's control. The terminal scrolls to input on a keystroke, hides the pointer
 while typing, and recognizes hyperlinks.
 `Ctrl+C` copies selected text; without a selection, it retains the terminal
 interrupt behavior. `Ctrl+V` pastes clipboard text; when the clipboard offers no
