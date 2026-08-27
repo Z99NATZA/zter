@@ -2,9 +2,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
+use std::fs;
 use std::io::Cursor;
 use std::os::fd::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -577,6 +578,7 @@ fn add_terminal_tab(
     wallpaper: &WallpaperAsset,
     close_protection: &CloseProtection,
 ) {
+    let working_directory = new_tab_working_directory(notebook, config, close_protection);
     let terminal = create_terminal(config);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
@@ -592,6 +594,7 @@ fn add_terminal_tab(
         spawn_shell(
             &terminal_for_spawn,
             &config_for_spawn,
+            &working_directory,
             &tab_id_for_spawn,
             &close_protection_for_spawn,
         );
@@ -711,6 +714,53 @@ fn add_terminal_tab(
     set_window_title(window, &fallback_title);
     sync_header_tabs(notebook, tab_strip, tab_scroller);
     terminal.grab_focus();
+}
+
+fn new_tab_working_directory(
+    notebook: &gtk::Notebook,
+    config: &AppConfig,
+    close_protection: &CloseProtection,
+) -> String {
+    let active_page = notebook
+        .current_page()
+        .and_then(|page_number| notebook.nth_page(Some(page_number)));
+    let active_directory = active_page.and_then(|page| {
+        let terminal_directory = find_terminal(&page)
+            .and_then(|terminal| terminal.current_directory_uri())
+            .and_then(|uri| local_path_from_uri(&uri));
+        terminal_directory.or_else(|| shell_working_directory(&page, close_protection))
+    });
+
+    working_directory_or_fallback(active_directory, config.working_directory())
+}
+
+fn local_path_from_uri(uri: &str) -> Option<PathBuf> {
+    gtk::gio::File::for_uri(uri).path()
+}
+
+fn shell_working_directory(
+    content: &impl IsA<gtk::Widget>,
+    close_protection: &CloseProtection,
+) -> Option<PathBuf> {
+    let shell_pid = close_protection
+        .shell_pids
+        .borrow()
+        .get(content.widget_name().as_str())
+        .copied()
+        .flatten()?;
+
+    process_working_directory(shell_pid)
+}
+
+fn process_working_directory(pid: libc::pid_t) -> Option<PathBuf> {
+    fs::read_link(Path::new("/proc").join(pid.to_string()).join("cwd")).ok()
+}
+
+fn working_directory_or_fallback(directory: Option<PathBuf>, fallback: &str) -> String {
+    directory
+        .filter(|directory| directory.is_dir())
+        .and_then(|directory| directory.into_os_string().into_string().ok())
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 fn create_header_tab(title: &str, tab_id: &str) -> TabHeader {
@@ -2053,6 +2103,7 @@ fn load_bundled_wallpaper() -> Result<gtk::gdk_pixbuf::Pixbuf, gtk::glib::Error>
 fn spawn_shell(
     terminal: &vte4::Terminal,
     config: &AppConfig,
+    working_directory: &str,
     tab_id: &str,
     close_protection: &CloseProtection,
 ) {
@@ -2071,7 +2122,7 @@ fn spawn_shell(
 
     terminal.spawn_async(
         vte4::PtyFlags::DEFAULT,
-        Some(config.working_directory()),
+        Some(working_directory),
         &argv,
         &environment,
         gtk::glib::SpawnFlags::DEFAULT,
@@ -2240,6 +2291,43 @@ mod tests {
     fn default_tab_title_uses_the_shell_executable_name() {
         assert_eq!(default_tab_title("/bin/bash"), "bash in zter");
         assert_eq!(default_tab_title("fish"), "fish in zter");
+    }
+
+    #[test]
+    fn local_directory_uri_is_decoded_for_a_new_tab() {
+        assert_eq!(
+            local_path_from_uri("file:///tmp/zter%20working%20directory"),
+            Some(PathBuf::from("/tmp/zter working directory"))
+        );
+        assert_eq!(local_path_from_uri("sftp://example.com/tmp"), None);
+    }
+
+    #[test]
+    fn shell_working_directory_can_be_read_from_proc() {
+        assert_eq!(
+            process_working_directory(std::process::id() as libc::pid_t),
+            env::current_dir().ok()
+        );
+    }
+
+    #[test]
+    fn new_tab_directory_falls_back_to_the_window_startup_directory() {
+        assert_eq!(
+            working_directory_or_fallback(None, "/window/startup"),
+            "/window/startup"
+        );
+        assert_eq!(
+            working_directory_or_fallback(
+                Some(PathBuf::from("/directory/that/does/not/exist")),
+                "/window/startup"
+            ),
+            "/window/startup"
+        );
+        let current_directory = env::current_dir().unwrap();
+        assert_eq!(
+            working_directory_or_fallback(Some(current_directory.clone()), "/window/startup"),
+            current_directory.to_str().unwrap()
+        );
     }
 
     #[test]

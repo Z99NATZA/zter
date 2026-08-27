@@ -18,7 +18,10 @@ Tabs share one titlebar row with the window controls. The pinned symbolic `+`
 button beside the tab strip and `Ctrl+T` open a new tab, and the close button
 closes the current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or
 next tab, and tabs can be reordered by dragging them. New tabs use the working
-directory captured when the zter window started.
+directory reported by the active tab's shell. If that directory is unavailable
+or cannot be represented as UTF-8, they use the working directory captured when
+the zter window started. This behavior is the same in normal and standalone
+windows.
 
 Closing an idle tab removes it immediately, including when it is the last tab.
 If that tab has a foreground process other than its shell, zter instead shows a
