@@ -70,12 +70,13 @@ tabs start at the configured font size. Ordinary scrolling retains its terminal
 history behavior. Prompt redraws produced by the running shell remain outside
 zter's control. The terminal scrolls to input on a keystroke, hides the pointer
 while typing, and recognizes hyperlinks.
-`Ctrl+C` copies selected text; without a selection, it retains the terminal
-interrupt behavior. `Ctrl+V` pastes clipboard text; when the clipboard offers no
-text, zter passes the key to the terminal child so its application can handle
-non-text content such as images. Secondary-click opens a compact One Half Dark
-menu with Copy and Paste actions and right-aligned shortcut hints; Copy is
-disabled when there is no selection.
+`Ctrl+C` copies selected text from the physical `C` key across keyboard
+layouts; without a selection, it retains the terminal interrupt behavior.
+`Ctrl+V` pastes clipboard text from the physical `V` key across keyboard
+layouts; when the clipboard offers no text, zter passes the key to the terminal
+child so its application can handle non-text content such as images.
+Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
+and right-aligned shortcut hints; Copy is disabled when there is no selection.
 `Ctrl+D` retains its normal shell behavior when no other foreground process is
 running. While a foreground process owns the terminal, zter suppresses `Ctrl+D`
 to prevent accidentally closing that program. Modified forms such as

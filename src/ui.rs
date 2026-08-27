@@ -51,6 +51,12 @@ enum ClipboardShortcut {
     Paste,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClipboardShortcutKeycodes {
+    copy: Vec<u32>,
+    paste: Vec<u32>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClipboardPasteRoute {
     PasteText,
@@ -1726,14 +1732,15 @@ fn terminal_font_scale(font_size: f64) -> f64 {
 fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let keycodes = ClipboardShortcutKeycodes::from_display(&terminal.display());
 
     let terminal_weak = terminal.downgrade();
-    controller.connect_key_pressed(move |_, key, _, modifiers| {
+    controller.connect_key_pressed(move |_, key, keycode, modifiers| {
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
 
-        match clipboard_shortcut(key, modifiers) {
+        match clipboard_shortcut(key, keycode, modifiers, &keycodes) {
             Some(ClipboardShortcut::Copy) if terminal.has_selection() => {
                 terminal.copy_clipboard_format(vte4::Format::Text)
             }
@@ -1759,9 +1766,40 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
     terminal.add_controller(controller);
 }
 
+impl ClipboardShortcutKeycodes {
+    fn from_display(display: &gtk::gdk::Display) -> Self {
+        Self {
+            copy: keycodes_for_keyval(display, gtk::gdk::Key::c),
+            paste: keycodes_for_keyval(display, gtk::gdk::Key::v),
+        }
+    }
+
+    fn shortcut_for_keycode(&self, keycode: u32) -> Option<ClipboardShortcut> {
+        if self.copy.contains(&keycode) {
+            Some(ClipboardShortcut::Copy)
+        } else if self.paste.contains(&keycode) {
+            Some(ClipboardShortcut::Paste)
+        } else {
+            None
+        }
+    }
+}
+
+fn keycodes_for_keyval(display: &gtk::gdk::Display, key: gtk::gdk::Key) -> Vec<u32> {
+    let Some(keys) = display.map_keyval(key) else {
+        return Vec::new();
+    };
+    let mut keycodes: Vec<u32> = keys.into_iter().map(|key| key.keycode()).collect();
+    keycodes.sort_unstable();
+    keycodes.dedup();
+    keycodes
+}
+
 fn clipboard_shortcut(
     key: gtk::gdk::Key,
+    keycode: u32,
     modifiers: gtk::gdk::ModifierType,
+    keycodes: &ClipboardShortcutKeycodes,
 ) -> Option<ClipboardShortcut> {
     let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
     let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
@@ -1772,7 +1810,7 @@ fn clipboard_shortcut(
     match key.to_lower() {
         gtk::gdk::Key::c => Some(ClipboardShortcut::Copy),
         gtk::gdk::Key::v => Some(ClipboardShortcut::Paste),
-        _ => None,
+        _ => keycodes.shortcut_for_keycode(keycode),
     }
 }
 
@@ -2620,19 +2658,60 @@ mod tests {
     fn clipboard_shortcuts_use_control_without_shift() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+        let keycodes = ClipboardShortcutKeycodes {
+            copy: vec![54],
+            paste: vec![55],
+        };
 
         assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::c, control),
+            clipboard_shortcut(gtk::gdk::Key::c, 0, control, &keycodes),
             Some(ClipboardShortcut::Copy)
         );
         assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::v, control),
+            clipboard_shortcut(gtk::gdk::Key::v, 0, control, &keycodes),
             Some(ClipboardShortcut::Paste)
         );
-        assert_eq!(clipboard_shortcut(gtk::gdk::Key::c, control_shift), None);
-        assert_eq!(clipboard_shortcut(gtk::gdk::Key::v, control_shift), None);
         assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::c, gtk::gdk::ModifierType::empty()),
+            clipboard_shortcut(gtk::gdk::Key::c, 54, control_shift, &keycodes),
+            None
+        );
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::v, 55, control_shift, &keycodes),
+            None
+        );
+        assert_eq!(
+            clipboard_shortcut(
+                gtk::gdk::Key::c,
+                54,
+                gtk::gdk::ModifierType::empty(),
+                &keycodes
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn clipboard_shortcuts_match_physical_keys_across_layouts() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let keycodes = ClipboardShortcutKeycodes {
+            copy: vec![54],
+            paste: vec![55],
+        };
+
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::Thai_saraae, 54, control, &keycodes),
+            Some(ClipboardShortcut::Copy)
+        );
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::Thai_oang, 55, control, &keycodes),
+            Some(ClipboardShortcut::Paste)
+        );
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::Thai_saraae, 55, control, &keycodes),
+            Some(ClipboardShortcut::Paste)
+        );
+        assert_eq!(
+            clipboard_shortcut(gtk::gdk::Key::Thai_oang, 56, control, &keycodes),
             None
         );
     }

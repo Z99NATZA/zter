@@ -2,8 +2,8 @@
 
 | Key                     | Action                                                     |
 | ----------------------- | ---------------------------------------------------------- |
-| `Ctrl+C`                | Copy                                                       |
-| `Ctrl+V`                | Paste                                                      |
+| `Ctrl+C`                | Copy from the physical `C` key across keyboard layouts     |
+| `Ctrl+V`                | Paste from the physical `V` key across keyboard layouts    |
 | `Ctrl+D`                | Send to an idle shell; suppress for a foreground process   |
 | `Ctrl+PageUp`           | Prev tab                                                   |
 | `Ctrl+PageDown`         | Next tab                                                   |
