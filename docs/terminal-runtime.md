@@ -62,13 +62,19 @@ terminal surface.
 ## Terminal Surface
 
 The terminal uses the configured font family, font size, scrollback line count,
-and theme. It scrolls to input on a keystroke, hides the pointer while typing,
-and recognizes hyperlinks. `Ctrl+C` copies selected text; without a selection,
-it retains the terminal interrupt behavior. `Ctrl+V` pastes clipboard text; when
-the clipboard offers no text, zter passes the key to the terminal child so its
-application can handle non-text content such as images. Secondary-click opens a
-compact One Half Dark menu with Copy and Paste actions and right-aligned shortcut
-hints; Copy is disabled when there is no selection.
+and theme. `Ctrl+=`, `Ctrl+-`, and Control-modified mouse or touchpad scrolling
+change the active tab's font scale in one-point steps from `6` through `72`
+points. Runtime zoom does not resize the active tab's PTY grid. The zoom lasts
+until that tab closes, does not change other tabs or the settings file, and new
+tabs start at the configured font size. Ordinary scrolling retains its terminal
+history behavior. The terminal scrolls to input on a keystroke, hides the pointer
+while typing, and recognizes hyperlinks.
+`Ctrl+C` copies selected text; without a selection, it retains the terminal
+interrupt behavior. `Ctrl+V` pastes clipboard text; when the clipboard offers no
+text, zter passes the key to the terminal child so its application can handle
+non-text content such as images. Secondary-click opens a compact One Half Dark
+menu with Copy and Paste actions and right-aligned shortcut hints; Copy is
+disabled when there is no selection.
 `Ctrl+D` retains its normal shell behavior when no other foreground process is
 running. While a foreground process owns the terminal, zter suppresses `Ctrl+D`
 to prevent accidentally closing that program. Modified forms such as
@@ -85,9 +91,9 @@ remains transparent.
 Each tab waits for its first positive viewport allocation, applies that terminal
 grid, and only then starts its shell. During continuous window resizing, the
 wallpaper follows the window while the terminal grid remains at its last applied
-size. After the window allocation is stable for `120ms`, zter applies the latest
-grid size and VTE reflows once. This prevents interactive line editors from
-committing intermediate prompt redraws to terminal history.
+size. After the window allocation is stable for `120ms`, zter applies its latest
+grid. Font zoom instead applies immediately through VTE's native font scale and
+does not enter the deferred window-resize path.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 `#3E4451` border and `12px` rounded corners. The lower composition layer is

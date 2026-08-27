@@ -14,6 +14,8 @@ const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 const DEFAULT_PADDING: u16 = 0;
 const MAX_PADDING: u16 = 128;
+pub(crate) const MIN_FONT_SIZE: f64 = 6.0;
+pub(crate) const MAX_FONT_SIZE: f64 = 72.0;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -438,7 +440,7 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
             .map(|_| value.clone()),
         "font_size" => value
             .as_f64()
-            .filter(|value| value.is_finite() && (6.0..=72.0).contains(value))
+            .filter(|value| value.is_finite() && (MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(value))
             .map(|_| value.clone()),
         "padding_top" | "padding_right" | "padding_bottom" | "padding_left" => value
             .as_u64()
@@ -494,7 +496,8 @@ impl Settings {
         if self.font_family.trim().is_empty() {
             return Err(invalid(path, "font_family must not be empty"));
         }
-        if !self.font_size.is_finite() || !(6.0..=72.0).contains(&self.font_size) {
+        if !self.font_size.is_finite() || !(MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&self.font_size)
+        {
             return Err(invalid(path, "font_size must be between 6 and 72"));
         }
         if !(0..=1_000_000).contains(&self.scrollback_lines) {

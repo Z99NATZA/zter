@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "shell": null,
-  "wallpaper": "builtin",
+  "wallpaper": "/home/znnn/Pictures/wallpaper/_08.png",
   "theme": "one-half-dark",
   "font_family": "Monospace",
   "font_size": 12.0,
@@ -10,5 +10,5 @@
   "padding_bottom": 16,
   "padding_left": 16,
   "scrollback_lines": 10000,
-  "wallpaper_opacity": 0.15
+  "wallpaper_opacity": 0.1
 }

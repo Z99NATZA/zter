@@ -17,7 +17,7 @@ use vte4::prelude::*;
 use crate::{
     config::{AppConfig, WallpaperSource},
     identity::{APPLICATION_NAME, ICON_NAME, SETTINGS_RELOAD_ACTION},
-    settings::TerminalPadding,
+    settings::{MAX_FONT_SIZE, MIN_FONT_SIZE, TerminalPadding},
     theme,
 };
 
@@ -32,6 +32,9 @@ const TAB_SCROLL_STEP: f64 = 48.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
+const TERMINAL_ZOOM_STEP: f64 = 1.0;
+// Places the supported point range inside VTE's native 0.25-4.0 scale.
+const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -52,6 +55,12 @@ enum ClipboardShortcut {
 enum ClipboardPasteRoute {
     PasteText,
     PassThrough,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerminalZoom {
+    In,
+    Out,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -244,6 +253,52 @@ impl DeferredTerminalResize {
 
         self.applied = self.observed;
         self.applied
+    }
+}
+
+struct TerminalZoomState {
+    font_size: f64,
+}
+
+impl TerminalZoomState {
+    fn new(font_size: f64) -> Self {
+        Self { font_size }
+    }
+
+    fn request(&mut self, zoom: TerminalZoom) -> Option<f64> {
+        let next = zoomed_font_size(self.font_size, zoom);
+        if next == self.font_size {
+            return None;
+        }
+
+        self.font_size = next;
+        Some(next)
+    }
+}
+
+#[derive(Clone)]
+struct TerminalZoomControl {
+    terminal: gtk::glib::WeakRef<vte4::Terminal>,
+    state: Rc<RefCell<TerminalZoomState>>,
+}
+
+impl TerminalZoomControl {
+    fn new(terminal: &vte4::Terminal, initial_font_size: f64) -> Self {
+        Self {
+            terminal: terminal.downgrade(),
+            state: Rc::new(RefCell::new(TerminalZoomState::new(initial_font_size))),
+        }
+    }
+
+    fn request(&self, zoom: TerminalZoom) {
+        let Some(font_size) = self.state.borrow_mut().request(zoom) else {
+            return;
+        };
+        let Some(terminal) = self.terminal.upgrade() else {
+            return;
+        };
+
+        terminal.set_font_scale(terminal_font_scale(font_size));
     }
 }
 
@@ -1596,7 +1651,11 @@ fn create_terminal(config: &AppConfig) -> vte4::Terminal {
     terminal.set_scroll_on_keystroke(true);
     terminal.set_mouse_autohide(true);
     terminal.set_allow_hyperlink(true);
-    terminal.set_font(Some(&terminal_font(config)));
+    terminal.set_font(Some(&terminal_font(
+        config.font_family(),
+        TERMINAL_FONT_SCALE_BASE_SIZE,
+    )));
+    terminal.set_font_scale(terminal_font_scale(config.font_size()));
     install_clipboard_shortcuts(&terminal);
     install_clipboard_context_menu(&terminal);
     theme::apply_to(&terminal, config.theme());
@@ -1653,11 +1712,15 @@ fn is_plain_control_d(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType) -> 
     control && !modifiers.intersects(other_modifiers) && key.to_lower() == gtk::gdk::Key::d
 }
 
-fn terminal_font(config: &AppConfig) -> gtk::pango::FontDescription {
+fn terminal_font(family: &str, size: f64) -> gtk::pango::FontDescription {
     let mut font = gtk::pango::FontDescription::new();
-    font.set_family(config.font_family());
-    font.set_size((config.font_size() * f64::from(gtk::pango::SCALE)).round() as i32);
+    font.set_family(family);
+    font.set_size((size * f64::from(gtk::pango::SCALE)).round() as i32);
     font
+}
+
+fn terminal_font_scale(font_size: f64) -> f64 {
+    font_size / TERMINAL_FONT_SCALE_BASE_SIZE
 }
 
 fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
@@ -1814,8 +1877,7 @@ where
     overlay.set_overflow(gtk::Overflow::Hidden);
 
     let background = create_background(wallpaper);
-    let terminal_viewport =
-        create_terminal_viewport(terminal, config.terminal_padding(), on_initial_size);
+    let terminal_viewport = create_terminal_viewport(terminal, config, on_initial_size);
     let terminal_scrollbar = create_terminal_scrollbar(terminal);
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
@@ -1867,12 +1929,13 @@ fn terminal_has_scrollback(lower: f64, upper: f64, page_size: f64) -> bool {
 
 fn create_terminal_viewport<F>(
     terminal: &vte4::Terminal,
-    padding: TerminalPadding,
+    config: &AppConfig,
     on_initial_size: F,
 ) -> gtk::ScrolledWindow
 where
     F: FnOnce() + 'static,
 {
+    let padding = config.terminal_padding();
     let terminal_surface = gtk::Fixed::new();
     terminal_surface.put(terminal, 0.0, 0.0);
     let scroll_content = gtk::Viewport::builder()
@@ -1890,7 +1953,86 @@ where
         .child(&scroll_content)
         .build();
     install_deferred_terminal_resize(&viewport, terminal, padding, on_initial_size);
+    install_terminal_zoom(terminal, config.font_size());
     viewport
+}
+
+fn install_terminal_zoom(terminal: &vte4::Terminal, initial_font_size: f64) {
+    let control = TerminalZoomControl::new(terminal, initial_font_size);
+
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let control_for_key = control.clone();
+    key_controller.connect_key_pressed(move |_, key, _, modifiers| {
+        let Some(zoom) = terminal_zoom_shortcut(key, modifiers) else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        control_for_key.request(zoom);
+        gtk::glib::Propagation::Stop
+    });
+    terminal.add_controller(key_controller);
+
+    let scroll_controller = gtk::EventControllerScroll::new(
+        gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
+    );
+    scroll_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    scroll_controller.connect_scroll(move |controller, _, dy| {
+        let Some(zoom) = terminal_zoom_scroll(controller.current_event_state(), dy) else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        control.request(zoom);
+        gtk::glib::Propagation::Stop
+    });
+    terminal.add_controller(scroll_controller);
+}
+
+fn terminal_zoom_shortcut(
+    key: gtk::gdk::Key,
+    modifiers: gtk::gdk::ModifierType,
+) -> Option<TerminalZoom> {
+    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+    let system_modifiers = gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK
+        | gtk::gdk::ModifierType::META_MASK;
+    if !control || modifiers.intersects(system_modifiers) {
+        return None;
+    }
+
+    match key {
+        gtk::gdk::Key::equal => Some(TerminalZoom::In),
+        gtk::gdk::Key::minus => Some(TerminalZoom::Out),
+        _ => None,
+    }
+}
+
+fn terminal_zoom_scroll(modifiers: gtk::gdk::ModifierType, dy: f64) -> Option<TerminalZoom> {
+    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+    let other_modifiers = gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK
+        | gtk::gdk::ModifierType::META_MASK;
+    if !control || modifiers.intersects(other_modifiers) {
+        return None;
+    }
+
+    if dy < 0.0 {
+        Some(TerminalZoom::In)
+    } else if dy > 0.0 {
+        Some(TerminalZoom::Out)
+    } else {
+        None
+    }
+}
+
+fn zoomed_font_size(current: f64, zoom: TerminalZoom) -> f64 {
+    let delta = match zoom {
+        TerminalZoom::In => TERMINAL_ZOOM_STEP,
+        TerminalZoom::Out => -TERMINAL_ZOOM_STEP,
+    };
+    (current + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
 }
 
 fn install_deferred_terminal_resize<F>(
@@ -1946,16 +2088,21 @@ fn install_deferred_terminal_resize<F>(
 
 fn apply_terminal_viewport_size(
     terminal: &vte4::Terminal,
-    (width, height): (i32, i32),
+    size: (i32, i32),
     padding: TerminalPadding,
 ) {
-    let (columns, rows) = terminal_grid_size(
-        (width, height),
+    let (width, height) = size;
+    apply_terminal_grid_size(terminal, size, padding);
+    terminal.set_size_request(width, height);
+}
+
+fn apply_terminal_grid_size(terminal: &vte4::Terminal, size: (i32, i32), padding: TerminalPadding) {
+    let grid_size = terminal_grid_size(
+        size,
         padding,
         (terminal.char_width(), terminal.char_height()),
     );
-    terminal.set_size(columns, rows);
-    terminal.set_size_request(width, height);
+    terminal.set_size(grid_size.0, grid_size.1);
 }
 
 fn terminal_grid_size(
@@ -2257,29 +2404,45 @@ mod tests {
     #[test]
     fn terminal_resize_applies_initial_size_and_defers_until_latest_size_settles() {
         let mut resize = DeferredTerminalResize::default();
+        let initial = (960, 600);
+        let latest = (840, 560);
 
         assert_eq!(
-            resize.observe((960, 600)),
-            TerminalResizeAction::ApplyInitial((960, 600))
+            resize.observe(initial),
+            TerminalResizeAction::ApplyInitial(initial)
         );
-        assert_eq!(resize.observe((960, 600)), TerminalResizeAction::Ignore);
+        assert_eq!(resize.observe(initial), TerminalResizeAction::Ignore);
         assert_eq!(resize.observe((900, 580)), TerminalResizeAction::Defer);
-        assert_eq!(resize.observe((840, 560)), TerminalResizeAction::Defer);
-        assert_eq!(resize.settle(), Some((840, 560)));
+        assert_eq!(resize.observe(latest), TerminalResizeAction::Defer);
+        assert_eq!(resize.settle(), Some(latest));
         assert_eq!(resize.observe((1_020, 640)), TerminalResizeAction::Defer);
         assert_eq!(resize.settle(), Some((1_020, 640)));
         assert_eq!(resize.settle(), None);
     }
 
     #[test]
+    fn terminal_resize_ignores_an_unchanged_viewport_after_font_zoom() {
+        let mut resize = DeferredTerminalResize::default();
+        let viewport_size = (960, 600);
+
+        assert_eq!(
+            resize.observe(viewport_size),
+            TerminalResizeAction::ApplyInitial(viewport_size)
+        );
+        assert_eq!(resize.observe(viewport_size), TerminalResizeAction::Ignore);
+        assert_eq!(resize.settle(), None);
+    }
+
+    #[test]
     fn terminal_resize_waits_for_a_positive_initial_allocation() {
         let mut resize = DeferredTerminalResize::default();
+        let initial = (960, 600);
 
         assert_eq!(resize.observe((0, 0)), TerminalResizeAction::Ignore);
         assert_eq!(resize.observe((960, 0)), TerminalResizeAction::Ignore);
         assert_eq!(
-            resize.observe((960, 600)),
-            TerminalResizeAction::ApplyInitial((960, 600))
+            resize.observe(initial),
+            TerminalResizeAction::ApplyInitial(initial)
         );
     }
 
@@ -2288,6 +2451,14 @@ mod tests {
         let padding = TerminalPadding::new(10, 20, 30, 40);
 
         assert_eq!(terminal_grid_size((860, 541), padding, (10, 20)), (80, 25));
+    }
+
+    #[test]
+    fn terminal_grid_uses_zoomed_cell_metrics_for_the_same_viewport() {
+        let padding = TerminalPadding::new(16, 16, 16, 16);
+
+        assert_eq!(terminal_grid_size((960, 600), padding, (8, 16)), (116, 35));
+        assert_eq!(terminal_grid_size((960, 600), padding, (10, 20)), (92, 28));
     }
 
     #[test]
@@ -2324,6 +2495,100 @@ mod tests {
             Some(TabShortcut::Next)
         );
         assert_eq!(tab_shortcut(gtk::gdk::Key::Page_Up, control_shift), None);
+    }
+
+    #[test]
+    fn terminal_zoom_shortcuts_cover_plain_equal_and_minus() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
+
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::equal, control),
+            Some(TerminalZoom::In)
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::minus, control),
+            Some(TerminalZoom::Out)
+        );
+        assert_eq!(terminal_zoom_shortcut(gtk::gdk::Key::KP_Add, control), None);
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::KP_Subtract, control),
+            None
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::equal, control_alt),
+            None
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::equal, gtk::gdk::ModifierType::empty()),
+            None
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::equal, control_shift),
+            None
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::minus, control_shift),
+            None
+        );
+    }
+
+    #[test]
+    fn terminal_zoom_scroll_requires_plain_control_and_vertical_motion() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+
+        assert_eq!(terminal_zoom_scroll(control, -1.0), Some(TerminalZoom::In));
+        assert_eq!(terminal_zoom_scroll(control, 1.0), Some(TerminalZoom::Out));
+        assert_eq!(terminal_zoom_scroll(control, 0.0), None);
+        assert_eq!(
+            terminal_zoom_scroll(gtk::gdk::ModifierType::empty(), -1.0),
+            None
+        );
+        assert_eq!(terminal_zoom_scroll(control_shift, -1.0), None);
+    }
+
+    #[test]
+    fn terminal_zoom_steps_and_clamps_to_the_supported_font_range() {
+        assert_eq!(zoomed_font_size(12.0, TerminalZoom::In), 13.0);
+        assert_eq!(zoomed_font_size(12.0, TerminalZoom::Out), 11.0);
+        assert_eq!(
+            zoomed_font_size(MAX_FONT_SIZE, TerminalZoom::In),
+            MAX_FONT_SIZE
+        );
+        assert_eq!(
+            zoomed_font_size(MIN_FONT_SIZE, TerminalZoom::Out),
+            MIN_FONT_SIZE
+        );
+    }
+
+    #[test]
+    fn terminal_zoom_applies_each_request_without_a_settle_delay() {
+        let mut zoom = TerminalZoomState::new(12.0);
+
+        assert_eq!(zoom.request(TerminalZoom::In), Some(13.0));
+        assert_eq!(zoom.request(TerminalZoom::In), Some(14.0));
+        assert_eq!(zoom.request(TerminalZoom::Out), Some(13.0));
+        assert_eq!(zoom.font_size, 13.0);
+    }
+
+    #[test]
+    fn terminal_zoom_state_honors_the_supported_bounds() {
+        let mut maximum = TerminalZoomState::new(MAX_FONT_SIZE);
+        let mut minimum = TerminalZoomState::new(MIN_FONT_SIZE);
+
+        assert_eq!(maximum.request(TerminalZoom::In), None);
+        assert_eq!(minimum.request(TerminalZoom::Out), None);
+    }
+
+    #[test]
+    fn terminal_font_scale_covers_the_supported_point_range() {
+        assert_eq!(terminal_font_scale(TERMINAL_FONT_SCALE_BASE_SIZE), 1.0);
+        assert_eq!(terminal_font_scale(MIN_FONT_SIZE), 0.3);
+        assert_eq!(terminal_font_scale(MAX_FONT_SIZE), 3.6);
+        assert!(terminal_font_scale(MIN_FONT_SIZE) >= 0.25);
+        assert!(terminal_font_scale(MAX_FONT_SIZE) <= 4.0);
     }
 
     #[test]
