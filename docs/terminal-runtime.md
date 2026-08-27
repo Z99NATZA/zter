@@ -71,7 +71,11 @@ history behavior. Prompt redraws produced by the running shell remain outside
 zter's control. The terminal scrolls to input on a keystroke, hides the pointer
 while typing, and recognizes hyperlinks.
 `Ctrl+C` copies selected text from the physical `C` key across keyboard
-layouts; without a selection, it retains the terminal interrupt behavior.
+layouts. Without a selection, it retains the terminal interrupt behavior when
+only the shell owns the terminal. When a foreground process owns the terminal,
+zter instead shows a modal with `A process is still running. Close?` and the
+actions Cancel and Close. Cancel is the default action, Escape cancels, and only
+Close sends the interrupt to the terminal child.
 `Ctrl+V` pastes clipboard text from the physical `V` key across keyboard
 layouts; when the clipboard offers no text, zter passes the key to the terminal
 child so its application can handle non-text content such as images.

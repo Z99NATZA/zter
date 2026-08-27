@@ -35,6 +35,7 @@ const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
 const TERMINAL_ZOOM_STEP: f64 = 1.0;
 // Places the supported point range inside VTE's native 0.25-4.0 scale.
 const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
+const TERMINAL_INTERRUPT: &[u8] = b"\x03";
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -60,6 +61,13 @@ struct ClipboardShortcutKeycodes {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClipboardPasteRoute {
     PasteText,
+    PassThrough,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClipboardCopyRoute {
+    CopySelection,
+    ConfirmInterrupt,
     PassThrough,
 }
 
@@ -641,13 +649,13 @@ fn add_terminal_tab(
     close_protection: &CloseProtection,
 ) {
     let working_directory = new_tab_working_directory(notebook, config, close_protection);
-    let terminal = create_terminal(config);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
     close_protection
         .shell_pids
         .borrow_mut()
         .insert(tab_id.clone(), None);
+    let terminal = create_terminal(config, window, &tab_id, close_protection);
     install_control_d_protection(&terminal, &tab_id, close_protection);
     let terminal_for_spawn = terminal.clone();
     let config_for_spawn = config.clone();
@@ -1648,7 +1656,12 @@ fn set_window_title(window: &gtk::ApplicationWindow, title: &str) {
     window.set_title(Some(&format!("{title} — {APPLICATION_NAME}")));
 }
 
-fn create_terminal(config: &AppConfig) -> vte4::Terminal {
+fn create_terminal(
+    config: &AppConfig,
+    window: &gtk::ApplicationWindow,
+    tab_id: &str,
+    close_protection: &CloseProtection,
+) -> vte4::Terminal {
     let terminal = vte4::Terminal::new();
     terminal.add_css_class("zter-terminal");
     terminal.set_hexpand(true);
@@ -1662,7 +1675,7 @@ fn create_terminal(config: &AppConfig) -> vte4::Terminal {
         TERMINAL_FONT_SCALE_BASE_SIZE,
     )));
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
-    install_clipboard_shortcuts(&terminal);
+    install_clipboard_shortcuts(&terminal, window, tab_id, close_protection);
     install_clipboard_context_menu(&terminal);
     theme::apply_to(&terminal, config.theme());
 
@@ -1729,24 +1742,67 @@ fn terminal_font_scale(font_size: f64) -> f64 {
     font_size / TERMINAL_FONT_SCALE_BASE_SIZE
 }
 
-fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
+fn install_clipboard_shortcuts(
+    terminal: &vte4::Terminal,
+    window: &gtk::ApplicationWindow,
+    tab_id: &str,
+    close_protection: &CloseProtection,
+) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     let keycodes = ClipboardShortcutKeycodes::from_display(&terminal.display());
 
+    let window_weak = window.downgrade();
     let terminal_weak = terminal.downgrade();
+    let tab_id = tab_id.to_owned();
+    let close_protection = close_protection.clone();
     controller.connect_key_pressed(move |_, key, keycode, modifiers| {
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
 
         match clipboard_shortcut(key, keycode, modifiers, &keycodes) {
-            Some(ClipboardShortcut::Copy) if terminal.has_selection() => {
-                terminal.copy_clipboard_format(vte4::Format::Text)
-            }
-            Some(ClipboardShortcut::Copy) | None => {
-                return gtk::glib::Propagation::Proceed;
-            }
+            Some(ClipboardShortcut::Copy) => match clipboard_copy_route(
+                terminal.has_selection(),
+                tab_terminal_has_running_foreground_process(
+                    &terminal,
+                    tab_id.as_str(),
+                    &close_protection,
+                ),
+            ) {
+                ClipboardCopyRoute::CopySelection => {
+                    terminal.copy_clipboard_format(vte4::Format::Text)
+                }
+                ClipboardCopyRoute::ConfirmInterrupt => {
+                    let Some(window) = window_weak.upgrade() else {
+                        return gtk::glib::Propagation::Stop;
+                    };
+                    let terminal_weak = terminal.downgrade();
+                    let tab_id = tab_id.clone();
+                    let close_protection_for_confirm = close_protection.clone();
+                    show_close_confirmation(
+                        &window,
+                        &close_protection,
+                        "A process is still running. Close?",
+                        move || {
+                            let Some(terminal) = terminal_weak.upgrade() else {
+                                return;
+                            };
+                            if tab_terminal_has_running_foreground_process(
+                                &terminal,
+                                tab_id.as_str(),
+                                &close_protection_for_confirm,
+                            ) {
+                                terminal.feed_child(TERMINAL_INTERRUPT);
+                            }
+                        },
+                    );
+                }
+                ClipboardCopyRoute::PassThrough => {
+                    return gtk::glib::Propagation::Proceed;
+                }
+            },
+            None => return gtk::glib::Propagation::Proceed,
             Some(ClipboardShortcut::Paste) => {
                 let clipboard = terminal.clipboard();
                 match clipboard_paste_route(
@@ -1764,6 +1820,24 @@ fn install_clipboard_shortcuts(terminal: &vte4::Terminal) {
     });
 
     terminal.add_controller(controller);
+}
+
+fn tab_terminal_has_running_foreground_process(
+    terminal: &vte4::Terminal,
+    tab_id: &str,
+    close_protection: &CloseProtection,
+) -> bool {
+    let shell_pid = close_protection
+        .shell_pids
+        .borrow()
+        .get(tab_id)
+        .copied()
+        .flatten();
+    let Some(shell_pid) = shell_pid else {
+        return false;
+    };
+
+    terminal_has_running_foreground_process(terminal, shell_pid)
 }
 
 impl ClipboardShortcutKeycodes {
@@ -1811,6 +1885,16 @@ fn clipboard_shortcut(
         gtk::gdk::Key::c => Some(ClipboardShortcut::Copy),
         gtk::gdk::Key::v => Some(ClipboardShortcut::Paste),
         _ => keycodes.shortcut_for_keycode(keycode),
+    }
+}
+
+fn clipboard_copy_route(has_selection: bool, has_foreground_process: bool) -> ClipboardCopyRoute {
+    if has_selection {
+        ClipboardCopyRoute::CopySelection
+    } else if has_foreground_process {
+        ClipboardCopyRoute::ConfirmInterrupt
+    } else {
+        ClipboardCopyRoute::PassThrough
     }
 }
 
@@ -2713,6 +2797,26 @@ mod tests {
         assert_eq!(
             clipboard_shortcut(gtk::gdk::Key::Thai_oang, 56, control, &keycodes),
             None
+        );
+    }
+
+    #[test]
+    fn clipboard_copy_route_confirms_only_foreground_interrupts_without_selection() {
+        assert_eq!(
+            clipboard_copy_route(true, true),
+            ClipboardCopyRoute::CopySelection
+        );
+        assert_eq!(
+            clipboard_copy_route(true, false),
+            ClipboardCopyRoute::CopySelection
+        );
+        assert_eq!(
+            clipboard_copy_route(false, true),
+            ClipboardCopyRoute::ConfirmInterrupt
+        );
+        assert_eq!(
+            clipboard_copy_route(false, false),
+            ClipboardCopyRoute::PassThrough
         );
     }
 

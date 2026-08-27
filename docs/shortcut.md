@@ -2,7 +2,7 @@
 
 | Key                     | Action                                                     |
 | ----------------------- | ---------------------------------------------------------- |
-| `Ctrl+C`                | Copy from the physical `C` key across keyboard layouts     |
+| `Ctrl+C`                | Copy, or confirm before closing a foreground process       |
 | `Ctrl+V`                | Paste from the physical `V` key across keyboard layouts    |
 | `Ctrl+D`                | Send to an idle shell; suppress for a foreground process   |
 | `Ctrl+PageUp`           | Prev tab                                                   |
