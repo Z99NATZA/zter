@@ -69,6 +69,10 @@ the clipboard offers no text, zter passes the key to the terminal child so its
 application can handle non-text content such as images. Secondary-click opens a
 compact One Half Dark menu with Copy and Paste actions and right-aligned shortcut
 hints; Copy is disabled when there is no selection.
+Each tab shows a vertical overlay scrollbar when its retained history exceeds
+the visible page. The scrollbar uses that tab's VTE scroll adjustment and does
+not participate in viewport measurement, so appearing or disappearing does not
+change the terminal grid or reflow text.
 Selected cells swap their existing foreground and background colors, so the
 highlight adapts to colored terminal output instead of using one fixed color.
 The composition layer paints the opaque One Half Dark background while VTE

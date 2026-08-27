@@ -288,6 +288,38 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-color: transparent;
             background-image: none;
         }}
+        scrollbar.zter-terminal-scrollbar {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+            margin: 6px 4px 6px 0;
+            min-width: 8px;
+            opacity: 0.72;
+            transition: opacity 140ms ease-out;
+        }}
+        scrollbar.zter-terminal-scrollbar:hover {{
+            opacity: 1;
+        }}
+        scrollbar.zter-terminal-scrollbar.zter-terminal-scrollbar-hidden {{
+            opacity: 0;
+        }}
+        scrollbar.zter-terminal-scrollbar trough {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+            min-width: 8px;
+        }}
+        scrollbar.zter-terminal-scrollbar slider {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            border-radius: 4px;
+            box-shadow: none;
+            min-height: 24px;
+            min-width: 8px;
+        }}
         .zter-content {{
             background-color: transparent;
             border-radius: 0 0 12px 12px;
@@ -327,6 +359,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         terminal_padding.right(),
         terminal_padding.bottom(),
         terminal_padding.left(),
+        Rgb(0x5c, 0x63, 0x70).css(),
         BACKGROUND.css()
     )
 }
@@ -471,6 +504,24 @@ mod tests {
         let css = application_css(TerminalPadding::new(1, 2, 3, 4));
 
         assert!(css.contains("padding: 1px 2px 3px 4px"));
+    }
+
+    #[test]
+    fn terminal_scrollbar_is_overlay_styled_without_a_shadow() {
+        let css = application_css(TerminalPadding::default());
+        let (_, scrollbar_rule) = css
+            .split_once("scrollbar.zter-terminal-scrollbar {")
+            .unwrap();
+        let (scrollbar_rule, _) = scrollbar_rule.split_once('}').unwrap();
+        let (_, hidden_rule) = css
+            .split_once("scrollbar.zter-terminal-scrollbar.zter-terminal-scrollbar-hidden {")
+            .unwrap();
+        let (hidden_rule, _) = hidden_rule.split_once('}').unwrap();
+
+        assert!(scrollbar_rule.contains("background-color: transparent"));
+        assert!(scrollbar_rule.contains("box-shadow: none"));
+        assert!(scrollbar_rule.contains("min-width: 8px"));
+        assert!(hidden_rule.contains("opacity: 0"));
     }
 
     #[test]

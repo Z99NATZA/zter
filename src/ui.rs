@@ -31,6 +31,7 @@ const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
 const TERMINAL_TOP_BORDER: i32 = 1;
+const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1757,10 +1758,53 @@ where
     let background = create_background(wallpaper);
     let terminal_viewport =
         create_terminal_viewport(terminal, config.terminal_padding(), on_initial_size);
+    let terminal_scrollbar = create_terminal_scrollbar(terminal);
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
+    overlay.add_overlay(&terminal_scrollbar);
+    overlay.set_measure_overlay(&terminal_scrollbar, false);
 
     overlay
+}
+
+fn create_terminal_scrollbar(terminal: &vte4::Terminal) -> gtk::Scrollbar {
+    let adjustment = terminal.vadjustment().unwrap_or_else(|| {
+        let adjustment = gtk::Adjustment::new(0.0, 0.0, 0.0, 1.0, 10.0, 10.0);
+        terminal.set_vadjustment(Some(&adjustment));
+        adjustment
+    });
+    let scrollbar = gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(&adjustment));
+    scrollbar.add_css_class("zter-terminal-scrollbar");
+    scrollbar.set_halign(gtk::Align::End);
+    scrollbar.set_valign(gtk::Align::Fill);
+    sync_terminal_scrollbar(&scrollbar, &adjustment);
+
+    let scrollbar_weak = scrollbar.downgrade();
+    adjustment.connect_changed(move |adjustment| {
+        if let Some(scrollbar) = scrollbar_weak.upgrade() {
+            sync_terminal_scrollbar(&scrollbar, adjustment);
+        }
+    });
+
+    scrollbar
+}
+
+fn sync_terminal_scrollbar(scrollbar: &gtk::Scrollbar, adjustment: &gtk::Adjustment) {
+    let has_scrollback = terminal_has_scrollback(
+        adjustment.lower(),
+        adjustment.upper(),
+        adjustment.page_size(),
+    );
+    scrollbar.set_can_target(has_scrollback);
+    if has_scrollback {
+        scrollbar.remove_css_class(TERMINAL_SCROLLBAR_HIDDEN_CLASS);
+    } else {
+        scrollbar.add_css_class(TERMINAL_SCROLLBAR_HIDDEN_CLASS);
+    }
+}
+
+fn terminal_has_scrollback(lower: f64, upper: f64, page_size: f64) -> bool {
+    upper - lower > page_size + f64::EPSILON
 }
 
 fn create_terminal_viewport<F>(
@@ -2186,6 +2230,14 @@ mod tests {
         let padding = TerminalPadding::new(10, 20, 30, 40);
 
         assert_eq!(terminal_grid_size((860, 541), padding, (10, 20)), (80, 25));
+    }
+
+    #[test]
+    fn terminal_scrollbar_appears_only_when_history_exceeds_the_page() {
+        assert!(!terminal_has_scrollback(0.0, 24.0, 24.0));
+        assert!(!terminal_has_scrollback(10.0, 34.0, 24.0));
+        assert!(terminal_has_scrollback(0.0, 25.0, 24.0));
+        assert!(terminal_has_scrollback(10.0, 35.0, 24.0));
     }
 
     #[test]
