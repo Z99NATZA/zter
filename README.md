@@ -21,7 +21,7 @@ sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
 
 ```
 
-## Run [more...](docs/run.md)
+## Run | [More...](docs/run.md)
 
 ```bash
 # Clone
@@ -43,7 +43,7 @@ cargo run -- settings reload
 cargo run -- -s
 
 # Version
-cargo run -- --version
+cargo run -- -v
 ```
 
 ## Documentation
