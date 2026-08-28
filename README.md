@@ -2,9 +2,11 @@
 
 ```text
 - Project created at 2026-08-24
-- README.md updated at 2026-08-27
+- README.md updated at 2026-08-28
 - Developed on Ubuntu
 ```
+
+![Terminal interface](docs/images/terminal-interface.png)
 
 ## Installation
 
