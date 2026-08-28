@@ -11,6 +11,9 @@ that application is already running, the new window belongs to its existing
 process. `zter -s` and `zter --standalone` start a separate application instance
 and window in the new process, ignoring any existing instance. A settings reload
 targets the normal profile-matched application rather than standalone instances.
+`zter -v` and `zter --version` print `zter` followed by the version compiled
+from the Cargo package metadata, then exit without loading settings or starting
+GTK.
 
 ## Tabs
 

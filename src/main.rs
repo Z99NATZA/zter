@@ -13,7 +13,8 @@ use crate::config::AppConfig;
 use crate::identity::{APPLICATION_ID, SETTINGS_RELOAD_ACTION};
 use crate::settings::Settings;
 
-const USAGE: &str = "usage: zter [-s|--standalone]\n       zter settings <apply|reload>";
+const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>";
+const VERSION_OUTPUT: &str = concat!("zter ", env!("CARGO_PKG_VERSION"));
 
 fn main() -> gtk::glib::ExitCode {
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
@@ -21,6 +22,10 @@ fn main() -> gtk::glib::ExitCode {
         Ok(Command::Run { standalone }) => run_terminal(standalone),
         Ok(Command::SettingsApply) => apply_project_settings(),
         Ok(Command::SettingsReload) => reload_running_settings(),
+        Ok(Command::Version) => {
+            println!("{VERSION_OUTPUT}");
+            gtk::glib::ExitCode::SUCCESS
+        }
         Ok(Command::Help) => {
             println!("{USAGE}");
             gtk::glib::ExitCode::SUCCESS
@@ -37,6 +42,7 @@ enum Command {
     Run { standalone: bool },
     SettingsApply,
     SettingsReload,
+    Version,
     Help,
 }
 
@@ -46,6 +52,7 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         [argument] if argument == "--standalone" || argument == "-s" => {
             Ok(Command::Run { standalone: true })
         }
+        [argument] if argument == "--version" || argument == "-v" => Ok(Command::Version),
         [argument] if argument == "--help" || argument == "-h" => Ok(Command::Help),
         [settings, apply] if settings == "settings" && apply == "apply" => {
             Ok(Command::SettingsApply)
@@ -152,6 +159,28 @@ mod tests {
         assert_eq!(
             command_from_arguments(&arguments),
             Ok(Command::Run { standalone: true })
+        );
+    }
+
+    #[test]
+    fn long_version_option_selects_the_version_command() {
+        let arguments = [OsString::from("--version")];
+
+        assert_eq!(command_from_arguments(&arguments), Ok(Command::Version));
+    }
+
+    #[test]
+    fn short_version_option_selects_the_version_command() {
+        let arguments = [OsString::from("-v")];
+
+        assert_eq!(command_from_arguments(&arguments), Ok(Command::Version));
+    }
+
+    #[test]
+    fn version_output_uses_cargo_package_metadata() {
+        assert_eq!(
+            VERSION_OUTPUT,
+            format!("zter {}", env!("CARGO_PKG_VERSION"))
         );
     }
 

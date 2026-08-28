@@ -39,6 +39,9 @@ cargo run -- settings reload
 
 # Standalone
 cargo run -- -s
+
+# Version
+cargo run -- --version
 ```
 
 ## Documentation
