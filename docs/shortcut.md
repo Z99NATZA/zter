@@ -4,7 +4,9 @@
 | ----------------------- | ---------------------------------------------------------- |
 | `Ctrl+C`                | Copy, or confirm before closing a foreground process       |
 | `Ctrl+V`                | Paste from the physical `V` key across keyboard layouts    |
-| `Ctrl+D`                | Send to an idle shell; suppress for a foreground process   |
+| `Ctrl+D`                | Send to an idle shell; confirm for a foreground process    |
+| `Ctrl+Z`                | Send to an idle shell; confirm for a foreground process    |
+| `Ctrl+Shift+Z`          | Send to an idle shell; suppress for a foreground process   |
 | `Ctrl+PageUp`           | Prev tab                                                   |
 | `Ctrl+PageDown`         | Next tab                                                   |
 | `Ctrl+T`                | New tab                                                    |

@@ -36,6 +36,8 @@ const TERMINAL_ZOOM_STEP: f64 = 1.0;
 // Places the supported point range inside VTE's native 0.25-4.0 scale.
 const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
+const TERMINAL_END_OF_INPUT: &[u8] = b"\x04";
+const TERMINAL_SUSPEND: &[u8] = b"\x1a";
 const CODEX_ACTION_REQUIRED_STATUS: &str = "[ ! ] Action Required";
 const TERMINAL_STATUS_GLYPHS: [char; 16] = [
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◑', '✦', '✋', '✳', '◇',
@@ -73,6 +75,13 @@ enum ClipboardCopyRoute {
     CopySelection,
     ConfirmInterrupt,
     PassThrough,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ForegroundProcessShortcut {
+    ConfirmEndOfInput,
+    ConfirmSuspend,
+    Suppress,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -684,7 +693,7 @@ fn add_terminal_tab(
         .borrow_mut()
         .insert(tab_id.clone(), None);
     let terminal = create_terminal(config, window, &tab_id, close_protection);
-    install_control_d_protection(&terminal, &tab_id, close_protection);
+    install_foreground_process_key_protection(&terminal, window, &tab_id, close_protection);
     let terminal_for_spawn = terminal.clone();
     let config_for_spawn = config.clone();
     let tab_id_for_spawn = tab_id.clone();
@@ -1732,53 +1741,90 @@ fn create_terminal(
     terminal
 }
 
-fn install_control_d_protection(
+fn install_foreground_process_key_protection(
     terminal: &vte4::Terminal,
+    window: &gtk::ApplicationWindow,
     tab_id: &str,
     close_protection: &CloseProtection,
 ) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
 
+    let window_weak = window.downgrade();
     let terminal_weak = terminal.downgrade();
     let tab_id = tab_id.to_owned();
     let close_protection = close_protection.clone();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
-        if !is_plain_control_d(key, modifiers) {
+        let Some(shortcut) = foreground_process_shortcut(key, modifiers) else {
             return gtk::glib::Propagation::Proceed;
-        }
+        };
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
-        let shell_pid = close_protection
-            .shell_pids
-            .borrow()
-            .get(tab_id.as_str())
-            .copied()
-            .flatten();
-        let Some(shell_pid) = shell_pid else {
+        if !tab_terminal_has_running_foreground_process(
+            &terminal,
+            tab_id.as_str(),
+            &close_protection,
+        ) {
             return gtk::glib::Propagation::Proceed;
-        };
-
-        if terminal_has_running_foreground_process(&terminal, shell_pid) {
-            gtk::glib::Propagation::Stop
-        } else {
-            gtk::glib::Propagation::Proceed
         }
+
+        let control_sequence = match shortcut {
+            ForegroundProcessShortcut::ConfirmEndOfInput => TERMINAL_END_OF_INPUT,
+            ForegroundProcessShortcut::ConfirmSuspend => TERMINAL_SUSPEND,
+            ForegroundProcessShortcut::Suppress => return gtk::glib::Propagation::Stop,
+        };
+        let Some(window) = window_weak.upgrade() else {
+            return gtk::glib::Propagation::Stop;
+        };
+        let terminal_weak = terminal.downgrade();
+        let tab_id = tab_id.clone();
+        let close_protection_for_confirm = close_protection.clone();
+        show_close_confirmation(
+            &window,
+            &close_protection,
+            "A process is still running. Close?",
+            move || {
+                let Some(terminal) = terminal_weak.upgrade() else {
+                    return;
+                };
+                if tab_terminal_has_running_foreground_process(
+                    &terminal,
+                    tab_id.as_str(),
+                    &close_protection_for_confirm,
+                ) {
+                    terminal.feed_child(control_sequence);
+                }
+            },
+        );
+
+        gtk::glib::Propagation::Stop
     });
 
     terminal.add_controller(controller);
 }
 
-fn is_plain_control_d(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType) -> bool {
+fn foreground_process_shortcut(
+    key: gtk::gdk::Key,
+    modifiers: gtk::gdk::ModifierType,
+) -> Option<ForegroundProcessShortcut> {
     let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-    let other_modifiers = gtk::gdk::ModifierType::SHIFT_MASK
-        | gtk::gdk::ModifierType::ALT_MASK
+    let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+    let system_modifiers = gtk::gdk::ModifierType::ALT_MASK
         | gtk::gdk::ModifierType::SUPER_MASK
         | gtk::gdk::ModifierType::HYPER_MASK
         | gtk::gdk::ModifierType::META_MASK;
 
-    control && !modifiers.intersects(other_modifiers) && key.to_lower() == gtk::gdk::Key::d
+    if !control || modifiers.intersects(system_modifiers) {
+        return None;
+    }
+
+    match key.to_lower() {
+        gtk::gdk::Key::d if !shift => Some(ForegroundProcessShortcut::ConfirmEndOfInput),
+        gtk::gdk::Key::z if shift => Some(ForegroundProcessShortcut::Suppress),
+        gtk::gdk::Key::z => Some(ForegroundProcessShortcut::ConfirmSuspend),
+        _ => None,
+    }
 }
 
 fn terminal_font(family: &str, size: f64) -> gtk::pango::FontDescription {
@@ -2923,20 +2969,40 @@ mod tests {
     }
 
     #[test]
-    fn control_d_protection_matches_only_plain_control_d() {
+    fn foreground_process_shortcuts_route_control_d_and_control_z() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
         let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
 
-        assert!(is_plain_control_d(gtk::gdk::Key::d, control));
-        assert!(is_plain_control_d(gtk::gdk::Key::D, control));
-        assert!(!is_plain_control_d(gtk::gdk::Key::d, control_shift));
-        assert!(!is_plain_control_d(gtk::gdk::Key::d, control_alt));
-        assert!(!is_plain_control_d(
-            gtk::gdk::Key::d,
-            gtk::gdk::ModifierType::empty()
-        ));
-        assert!(!is_plain_control_d(gtk::gdk::Key::c, control));
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::d, control),
+            Some(ForegroundProcessShortcut::ConfirmEndOfInput)
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::D, control),
+            Some(ForegroundProcessShortcut::ConfirmEndOfInput)
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::d, control_shift),
+            None
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::z, control),
+            Some(ForegroundProcessShortcut::ConfirmSuspend)
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::Z, control_shift),
+            Some(ForegroundProcessShortcut::Suppress)
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::z, control_alt),
+            None
+        );
+        assert_eq!(
+            foreground_process_shortcut(gtk::gdk::Key::d, gtk::gdk::ModifierType::empty()),
+            None
+        );
+        assert_eq!(foreground_process_shortcut(gtk::gdk::Key::c, control), None);
     }
 
     #[test]

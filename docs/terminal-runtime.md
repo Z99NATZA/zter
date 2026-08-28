@@ -96,9 +96,15 @@ child so its application can handle non-text content such as images.
 Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
 and right-aligned shortcut hints; Copy is disabled when there is no selection.
 `Ctrl+D` retains its normal shell behavior when no other foreground process is
-running. While a foreground process owns the terminal, zter suppresses `Ctrl+D`
-to prevent accidentally closing that program. Modified forms such as
-`Ctrl+Shift+D` continue to reach the terminal child.
+running. While a foreground process owns the terminal, zter instead shows the
+same confirmation modal as `Ctrl+C`. Only Close sends end-of-input to the
+terminal child. Modified forms such as `Ctrl+Shift+D` continue to reach it.
+`Ctrl+Z` and `Ctrl+Shift+Z` retain their normal terminal behavior when only the
+shell owns the terminal. While a foreground process owns the terminal, plain
+`Ctrl+Z` shows the same confirmation modal and only Close sends the suspend
+character. `Ctrl+Shift+Z` remains suppressed without a modal. Forms with other
+modifiers continue to reach the terminal child. Confirmation rechecks that the
+foreground process is still active before sending either character.
 Each tab shows a vertical overlay scrollbar when its retained history exceeds
 the visible page. The scrollbar uses that tab's VTE scroll adjustment and does
 not participate in viewport measurement, so appearing or disappearing does not
