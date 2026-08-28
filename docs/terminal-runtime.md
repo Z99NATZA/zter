@@ -78,7 +78,9 @@ until that tab closes, does not change other tabs or the settings file, and new
 tabs start at the configured font size. Ordinary scrolling retains its terminal
 history behavior. Prompt redraws produced by the running shell remain outside
 zter's control. The terminal scrolls to input on a keystroke, hides the pointer
-while typing, and recognizes hyperlinks.
+while typing, and recognizes OSC 8 hyperlinks. Control-primary-clicking a
+recognized hyperlink opens its URI with the system-default handler. Other
+primary clicks retain their terminal behavior.
 `Ctrl+C` copies selected text from the physical `C` key across keyboard
 layouts. Without a selection, it retains the terminal interrupt behavior when
 only the shell owns the terminal. When a foreground process owns the terminal,

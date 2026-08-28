@@ -1724,6 +1724,7 @@ fn create_terminal(
         TERMINAL_FONT_SCALE_BASE_SIZE,
     )));
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
+    install_hyperlink_activation(&terminal, window);
     install_clipboard_shortcuts(&terminal, window, tab_id, close_protection);
     install_clipboard_context_menu(&terminal);
     theme::apply_to(&terminal, config.theme());
@@ -1953,6 +1954,46 @@ fn clipboard_paste_route(clipboard_contains_text: bool) -> ClipboardPasteRoute {
     } else {
         ClipboardPasteRoute::PassThrough
     }
+}
+
+fn install_hyperlink_activation(terminal: &vte4::Terminal, window: &gtk::ApplicationWindow) {
+    let click = gtk::GestureClick::new();
+    click.set_button(gtk::gdk::BUTTON_PRIMARY);
+    click.set_propagation_phase(gtk::PropagationPhase::Capture);
+
+    let terminal_weak = terminal.downgrade();
+    let window_weak = window.downgrade();
+    click.connect_pressed(move |gesture, _, _, _| {
+        if !is_control_hyperlink_click(gesture.current_event_state()) {
+            return;
+        }
+        let Some(terminal) = terminal_weak.upgrade() else {
+            return;
+        };
+        let Some(uri) = terminal.hyperlink_hover_uri() else {
+            return;
+        };
+
+        let launcher = gtk::UriLauncher::new(&uri);
+        let window = window_weak.upgrade();
+        launcher.launch(window.as_ref(), None::<&gtk::gio::Cancellable>, |result| {
+            if let Err(error) = result {
+                eprintln!("zter: could not open hyperlink: {error}");
+            }
+        });
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+    });
+    terminal.add_controller(click);
+}
+
+fn is_control_hyperlink_click(modifiers: gtk::gdk::ModifierType) -> bool {
+    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+    let other_modifiers = gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK
+        | gtk::gdk::ModifierType::META_MASK;
+    control && !modifiers.intersects(other_modifiers)
 }
 
 fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
@@ -2847,6 +2888,18 @@ mod tests {
             clipboard_shortcut(gtk::gdk::Key::Thai_oang, 56, control, &keycodes),
             None
         );
+    }
+
+    #[test]
+    fn hyperlink_activation_requires_plain_control() {
+        let control = gtk::gdk::ModifierType::CONTROL_MASK;
+        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
+        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
+
+        assert!(is_control_hyperlink_click(control));
+        assert!(!is_control_hyperlink_click(control_shift));
+        assert!(!is_control_hyperlink_click(control_alt));
+        assert!(!is_control_hyperlink_click(gtk::gdk::ModifierType::empty()));
     }
 
     #[test]
