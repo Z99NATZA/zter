@@ -36,6 +36,10 @@ const TERMINAL_ZOOM_STEP: f64 = 1.0;
 // Places the supported point range inside VTE's native 0.25-4.0 scale.
 const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
+const CODEX_ACTION_REQUIRED_STATUS: &str = "[ ! ] Action Required";
+const TERMINAL_STATUS_GLYPHS: [char; 16] = [
+    '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◑', '✦', '✋', '✳', '◇',
+];
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -77,6 +81,12 @@ enum TerminalZoom {
     Out,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TerminalTitleStatus {
+    Glyph(char),
+    ActionRequired,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct TabTitleState {
     automatic: String,
@@ -91,8 +101,26 @@ impl TabTitleState {
         }
     }
 
-    fn displayed(&self) -> &str {
-        self.manual.as_deref().unwrap_or(&self.automatic)
+    fn displayed(&self) -> String {
+        let Some(manual) = &self.manual else {
+            return self.automatic.clone();
+        };
+        match recognized_terminal_status(&self.automatic) {
+            Some((TerminalTitleStatus::Glyph(glyph), _)) => format!("{glyph} {manual}"),
+            Some((TerminalTitleStatus::ActionRequired, _)) => {
+                format!("{CODEX_ACTION_REQUIRED_STATUS} | {manual}")
+            }
+            None => manual.clone(),
+        }
+    }
+
+    fn editable(&self) -> &str {
+        if let Some(manual) = &self.manual {
+            return manual;
+        }
+        recognized_terminal_status(&self.automatic)
+            .map(|(_, title)| title)
+            .unwrap_or(&self.automatic)
     }
 
     fn update_automatic(&mut self, title: String) {
@@ -762,10 +790,7 @@ fn add_terminal_tab(
         let title = {
             let mut state = title_state.borrow_mut();
             state.update_automatic(automatic);
-            state.manual.is_none().then(|| state.displayed().to_owned())
-        };
-        let Some(title) = title else {
-            return;
+            state.displayed()
         };
         title_label.set_text(&title);
 
@@ -916,7 +941,7 @@ fn install_tab_title_editing(
         }
         // Keep the title edit gesture separate from tab activation and drag-and-drop.
         gesture.set_state(gtk::EventSequenceState::Claimed);
-        entry.set_text(state.borrow().displayed());
+        entry.set_text(state.borrow().editable());
         focus_state.set(false);
         stack.set_visible_child_name("editor");
 
@@ -963,7 +988,7 @@ fn install_tab_title_editing(
         let title = {
             let mut state = state.borrow_mut();
             state.save_manual(&entry.text());
-            state.displayed().to_owned()
+            state.displayed()
         };
         label.set_text(&title);
         stack.set_visible_child_name("display");
@@ -1015,8 +1040,9 @@ fn install_tab_title_editing(
         ) else {
             return gtk::glib::Propagation::Stop;
         };
-        let title = state.borrow().displayed().to_owned();
-        entry.set_text(&title);
+        let state = state.borrow();
+        let title = state.displayed();
+        entry.set_text(state.editable());
         label.set_text(&title);
         stack.set_visible_child_name("display");
         focus_current_terminal(&notebook);
@@ -1650,6 +1676,29 @@ fn sanitize_title(title: &str) -> String {
         .collect::<String>()
         .trim()
         .to_owned()
+}
+
+fn recognized_terminal_status(title: &str) -> Option<(TerminalTitleStatus, &str)> {
+    if let Some(remainder) = title.strip_prefix(CODEX_ACTION_REQUIRED_STATUS) {
+        if remainder.is_empty() {
+            return Some((TerminalTitleStatus::ActionRequired, remainder));
+        }
+        let title = remainder.trim_start().strip_prefix('|')?.trim_start();
+        return Some((TerminalTitleStatus::ActionRequired, title));
+    }
+
+    let glyph = title.chars().next()?;
+    if !TERMINAL_STATUS_GLYPHS.contains(&glyph) {
+        return None;
+    }
+    let remainder = title.strip_prefix(glyph)?;
+    if remainder.is_empty() {
+        return Some((TerminalTitleStatus::Glyph(glyph), remainder));
+    }
+    if !remainder.chars().next()?.is_whitespace() {
+        return None;
+    }
+    Some((TerminalTitleStatus::Glyph(glyph), remainder.trim_start()))
 }
 
 fn set_window_title(window: &gtk::ApplicationWindow, title: &str) {
@@ -2923,6 +2972,96 @@ mod tests {
         state.update_automatic("vim main.rs".to_owned());
 
         assert_eq!(state.displayed(), "project server");
+    }
+
+    #[test]
+    fn recognized_status_glyphs_are_kept_before_a_manual_title() {
+        for glyph in TERMINAL_STATUS_GLYPHS {
+            let automatic = format!("{glyph} agent is working");
+            assert_eq!(
+                recognized_terminal_status(&automatic),
+                Some((TerminalTitleStatus::Glyph(glyph), "agent is working"))
+            );
+
+            let mut state = TabTitleState::new(automatic);
+            state.save_manual("งานหลัก");
+            assert_eq!(state.displayed(), format!("{glyph} งานหลัก"));
+            assert_eq!(state.editable(), "งานหลัก");
+        }
+    }
+
+    #[test]
+    fn status_glyph_requires_a_leading_position_and_whitespace_boundary() {
+        assert_eq!(
+            recognized_terminal_status("◐"),
+            Some((TerminalTitleStatus::Glyph('◐'), ""))
+        );
+        assert_eq!(recognized_terminal_status("◐working"), None);
+        assert_eq!(recognized_terminal_status("agent ◐ working"), None);
+        assert_eq!(recognized_terminal_status("⠁ working"), None);
+        assert_eq!(recognized_terminal_status("🦀 working"), None);
+    }
+
+    #[test]
+    fn exact_action_required_status_is_kept_before_a_manual_title() {
+        assert_eq!(
+            recognized_terminal_status("[ ! ] Action Required"),
+            Some((TerminalTitleStatus::ActionRequired, ""))
+        );
+        assert_eq!(
+            recognized_terminal_status("[ ! ] Action Required | Review changes"),
+            Some((TerminalTitleStatus::ActionRequired, "Review changes"))
+        );
+
+        let mut state = TabTitleState::new("[ ! ] Action Required | Review changes".to_owned());
+        state.save_manual("project");
+        assert_eq!(state.displayed(), "[ ! ] Action Required | project");
+        assert_eq!(state.editable(), "project");
+    }
+
+    #[test]
+    fn malformed_action_required_status_is_not_recognized() {
+        assert_eq!(
+            recognized_terminal_status("[!] Action Required | Review changes"),
+            None
+        );
+        assert_eq!(
+            recognized_terminal_status("[ ! ] Action Required Review changes"),
+            None
+        );
+        assert_eq!(
+            recognized_terminal_status("[ ! ] Action Required later | Review changes"),
+            None
+        );
+    }
+
+    #[test]
+    fn manual_title_tracks_status_changes_and_removal() {
+        let mut state = TabTitleState::new("⠋ working".to_owned());
+        state.save_manual("project");
+        assert_eq!(state.displayed(), "⠋ project");
+
+        state.update_automatic("⠙ working".to_owned());
+        assert_eq!(state.displayed(), "⠙ project");
+
+        state.update_automatic("unknown automatic title".to_owned());
+        assert_eq!(state.displayed(), "project");
+
+        state.update_automatic("bash in zter".to_owned());
+        assert_eq!(state.displayed(), "project");
+    }
+
+    #[test]
+    fn editor_omits_status_when_no_manual_title_exists() {
+        let glyph = TabTitleState::new("✦ กำลังทำงาน".to_owned());
+        assert_eq!(glyph.displayed(), "✦ กำลังทำงาน");
+        assert_eq!(glyph.editable(), "กำลังทำงาน");
+
+        let action = TabTitleState::new("[ ! ] Action Required | ตรวจสอบการเปลี่ยนแปลง".to_owned());
+        assert_eq!(action.editable(), "ตรวจสอบการเปลี่ยนแปลง");
+
+        let ordinary = TabTitleState::new("日本語の端末".to_owned());
+        assert_eq!(ordinary.editable(), "日本語の端末");
     }
 
     #[test]

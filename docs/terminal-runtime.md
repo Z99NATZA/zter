@@ -49,7 +49,16 @@ a title is shown, and the application window follows the active tab's title.
 Double-clicking a tab title opens an inline editor. Enter or moving focus
 elsewhere saves the title, Escape cancels the edit, and saving an empty title
 returns the tab to automatic VTE title updates. A manual title lasts only until
-that tab closes and is not overwritten by later VTE title changes.
+that tab closes and is not overwritten by later VTE title changes. While a
+manual title is set, zter still preserves a recognized status at the start of
+the latest automatic title: the Codex Braille frames `⠋`, `⠙`, `⠹`, `⠸`, `⠼`,
+`⠴`, `⠦`, `⠧`, `⠇`, and `⠏`; the single-glyph statuses `◐`, `◑`, `✦`, `✋`,
+`✳`, and `◇`; or the exact segment `[ ! ] Action Required`. A glyph is
+recognized only at the start and before whitespace or the end of the title.
+The action-required segment must end the title or be followed by its `|`
+separator. Unknown, malformed, empty, or removed statuses leave the manual
+title unchanged. The editor excludes a recognized status, and the combined
+display keeps the existing tab width and end ellipsis.
 
 ## Shell Selection
 
