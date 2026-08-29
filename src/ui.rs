@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use gtk::gdk::prelude::*;
+use gtk::glib;
 use gtk::prelude::*;
 use vte4::prelude::*;
 
@@ -57,6 +58,10 @@ enum TabShortcut {
     Previous,
     Next,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, glib::Boxed)]
+#[boxed_type(name = "ZterTabDragPayload")]
+struct TabDragPayload(String);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClipboardShortcut {
@@ -1081,7 +1086,7 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
         cancel_reason_for_prepare.set(None);
         runtime_for_prepare.drag_transfer_completed.set(false);
         Some(gtk::gdk::ContentProvider::for_value(
-            &runtime_for_prepare.id.to_value(),
+            &TabDragPayload(runtime_for_prepare.id.clone()).to_value(),
         ))
     });
     let cancel_reason_for_cancel = cancel_reason.clone();
@@ -1106,7 +1111,8 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
     });
     drag_handle.add_controller(drag_source);
 
-    let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    let drop_target =
+        gtk::DropTarget::new(TabDragPayload::static_type(), gtk::gdk::DragAction::MOVE);
     drop_target.set_preload(true);
     let hovering = Rc::new(Cell::new(false));
 
@@ -1147,7 +1153,7 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
         if let Some(tab) = tab_weak.upgrade() {
             tab.remove_css_class(TAB_DROP_TARGET_CLASS);
         }
-        let Ok(source_id) = value.get::<String>() else {
+        let Some(source_id) = tab_drag_source_id(&value) else {
             return false;
         };
         if source_id == target_runtime.id {
@@ -1172,7 +1178,8 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
 }
 
 fn install_header_drop_target(drop_area: &gtk::WindowHandle, context: &Rc<WindowContext>) {
-    let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    let drop_target =
+        gtk::DropTarget::new(TabDragPayload::static_type(), gtk::gdk::DragAction::MOVE);
     drop_target.set_preload(true);
     let hovering = Rc::new(Cell::new(false));
 
@@ -1209,7 +1216,7 @@ fn install_header_drop_target(drop_area: &gtk::WindowHandle, context: &Rc<Window
         if let Some(area) = area_weak.upgrade() {
             area.remove_css_class(HEADER_DROP_TARGET_CLASS);
         }
-        let Ok(source_id) = value.get::<String>() else {
+        let Some(source_id) = tab_drag_source_id(&value) else {
             return false;
         };
         let (Some(source_runtime), Some(target_context)) =
@@ -1232,7 +1239,7 @@ fn sync_tab_drop_highlight(
 ) {
     let source_id = drop_target
         .value()
-        .and_then(|value| value.get::<String>().ok());
+        .and_then(|value| tab_drag_source_id(&value));
     if should_highlight_tab_drop_target(source_id.as_deref(), target_id, hovering)
         && source_id
             .as_deref()
@@ -1251,7 +1258,7 @@ fn sync_header_drop_highlight(
 ) {
     let source_id = drop_target
         .value()
-        .and_then(|value| value.get::<String>().ok());
+        .and_then(|value| tab_drag_source_id(&value));
     if should_highlight_header_drop_target(source_id.as_deref(), hovering)
         && source_id
             .as_deref()
@@ -1275,6 +1282,10 @@ fn should_highlight_tab_drop_target(
 
 fn should_highlight_header_drop_target(source_id: Option<&str>, hovering: bool) -> bool {
     hovering && source_id.is_some_and(|source_id| source_id.starts_with(TAB_ID_PREFIX))
+}
+
+fn tab_drag_source_id(value: &glib::Value) -> Option<String> {
+    value.get::<TabDragPayload>().ok().map(|payload| payload.0)
 }
 
 fn tab_drop_side(x: f64, width: f64) -> TabDropSide {
@@ -3109,6 +3120,16 @@ mod tests {
         assert_eq!(tab_drop_side(109.0, TAB_WIDTH), TabDropSide::Before);
         assert_eq!(tab_drop_side(110.0, TAB_WIDTH), TabDropSide::After);
         assert_eq!(tab_drop_side(TAB_WIDTH, TAB_WIDTH), TabDropSide::After);
+    }
+
+    #[test]
+    fn tab_drag_payload_is_internal_instead_of_generic_text() {
+        let source_id = "zter-tab-123-1";
+        let value = TabDragPayload(source_id.to_owned()).to_value();
+
+        assert_eq!(value.type_(), TabDragPayload::static_type());
+        assert_ne!(value.type_(), String::static_type());
+        assert_eq!(tab_drag_source_id(&value).as_deref(), Some(source_id));
     }
 
     #[test]

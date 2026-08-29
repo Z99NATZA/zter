@@ -26,6 +26,9 @@ zter settings reload
 
 # Standalone shortcut
 zter -s
+
+# Version
+zter -v
 ```
 
 ## (Optional) Development

@@ -28,8 +28,10 @@ only while the dragged tab is over them. Releasing outside every same-process
 zter window creates a new window containing the moved tab without additional
 app-owned drag UI. A zter window in another process is not a valid destination;
 releasing over it instead creates the new window in the source process. Escape
-cancels the drag. A move preserves the existing VTE, shell process, title, and
-runtime zoom; an emptied source window closes only after the transfer succeeds.
+cancels the drag. The internal tab payload is not exposed as text or file data
+to other applications. A move preserves the existing VTE, shell process, title,
+and runtime zoom; an emptied source window closes only after the transfer
+succeeds.
 New tabs use the working directory reported by the active tab's shell.
 If that directory is unavailable or cannot be represented as UTF-8, they use
 the working directory captured when the zter window started. This behavior is
