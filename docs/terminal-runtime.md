@@ -20,11 +20,20 @@ GTK.
 Tabs share one titlebar row with the window controls. The pinned symbolic `+`
 button beside the tab strip and `Ctrl+T` open a new tab, and the close button
 closes the current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or
-next tab, and tabs can be reordered by dragging them. New tabs use the working
-directory reported by the active tab's shell. If that directory is unavailable
-or cannot be represented as UTF-8, they use the working directory captured when
-the zter window started. This behavior is the same in normal and standalone
-windows.
+next tab. Tabs can be reordered within a window or moved between zter windows in
+the same process by dragging them. Dropping on the left or right half of an
+existing tab inserts before or after it. Dropping on the blank titlebar drag
+area appends the tab. Both valid destinations show a `1px` inset white outline
+only while the dragged tab is over them. Releasing outside every same-process
+zter window creates a new window containing the moved tab without additional
+app-owned drag UI. A zter window in another process is not a valid destination;
+releasing over it instead creates the new window in the source process. Escape
+cancels the drag. A move preserves the existing VTE, shell process, title, and
+runtime zoom; an emptied source window closes only after the transfer succeeds.
+New tabs use the working directory reported by the active tab's shell.
+If that directory is unavailable or cannot be represented as UTF-8, they use
+the working directory captured when the zter window started. This behavior is
+the same in normal and standalone windows.
 
 Closing an idle tab removes it immediately, including when it is the last tab.
 If that tab has a foreground process other than its shell, zter instead shows a
@@ -135,13 +144,11 @@ The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
 and the active tab uses `#3E4451`. Active state is communicated by this neutral
 fill change only. Outside valid drag-destination feedback, tabs have no
 app-owned border, outline, or shadow. Header hover transitions last `180ms`.
-While a tab is dragged over another tab, the valid destination shows a `1px`
-white outline drawn inside its edge until the pointer leaves, the drag is
-canceled, or the drop completes. The outline does not alter the tab allocation,
-and the source tab does not highlight itself. Native window controls use compact
-spacing and do not receive an additional app-owned hover fill. The new-tab
-button and the first native window control retain a minimum `40px` draggable
-gap while tabs overflow.
+The destination outline does not alter tab or titlebar allocation, and the
+source tab does not highlight itself. Native window controls use compact spacing
+and do not receive an additional app-owned hover fill. The new-tab button and
+the first native window control retain a minimum `40px` draggable gap while tabs
+overflow.
 
 ## Theme Palette
 

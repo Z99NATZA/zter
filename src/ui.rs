@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Cursor;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -27,6 +27,7 @@ const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Scr
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
 const TAB_DROP_TARGET_CLASS: &str = "zter-tab-drop-target";
+const HEADER_DROP_TARGET_CLASS: &str = "zter-header-drop-target";
 const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
@@ -44,6 +45,11 @@ const TERMINAL_STATUS_GLYPHS: [char; 16] = [
 ];
 
 static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
+
+thread_local! {
+    static TAB_RUNTIMES: RefCell<HashMap<String, Weak<TabRuntime>>> = RefCell::new(HashMap::new());
+    static WINDOW_CONTEXTS: RefCell<Vec<Weak<WindowContext>>> = const { RefCell::new(Vec::new()) };
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TabShortcut {
@@ -153,9 +159,105 @@ struct TabHeader {
 
 #[derive(Clone, Default)]
 struct CloseProtection {
-    shell_pids: Rc<RefCell<HashMap<String, Option<libc::pid_t>>>>,
     prompt_open: Rc<Cell<bool>>,
     window_close_confirmed: Rc<Cell<bool>>,
+}
+
+struct HeaderWidgets {
+    header: gtk::Box,
+    tab_strip: gtk::Box,
+    tab_scroller: gtk::ScrolledWindow,
+    inline_new_tab: gtk::Button,
+    pinned_new_tab: gtk::Button,
+    drag_space: gtk::WindowHandle,
+    overflow_drag_space: gtk::WindowHandle,
+}
+
+struct WindowContext {
+    window: gtk::glib::WeakRef<gtk::ApplicationWindow>,
+    notebook: gtk::glib::WeakRef<gtk::Notebook>,
+    tab_strip: gtk::glib::WeakRef<gtk::Box>,
+    tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
+    drop_motion: gtk::glib::WeakRef<gtk::DropControllerMotion>,
+    config: AppConfig,
+    wallpaper: WallpaperAsset,
+    close_protection: CloseProtection,
+}
+
+struct TabRuntime {
+    id: String,
+    location: RefCell<Rc<WindowContext>>,
+    shell_pid: Cell<Option<libc::pid_t>>,
+    drag_transfer_completed: Cell<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TabDropSide {
+    Before,
+    After,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FailedTabDragAction {
+    Cancel,
+    Detach,
+}
+
+impl WindowContext {
+    fn widgets(
+        &self,
+    ) -> Option<(
+        gtk::ApplicationWindow,
+        gtk::Notebook,
+        gtk::Box,
+        gtk::ScrolledWindow,
+    )> {
+        Some((
+            self.window.upgrade()?,
+            self.notebook.upgrade()?,
+            self.tab_strip.upgrade()?,
+            self.tab_scroller.upgrade()?,
+        ))
+    }
+}
+
+impl TabRuntime {
+    fn new(id: String, location: Rc<WindowContext>) -> Rc<Self> {
+        let runtime = Rc::new(Self {
+            id: id.clone(),
+            location: RefCell::new(location),
+            shell_pid: Cell::new(None),
+            drag_transfer_completed: Cell::new(false),
+        });
+        TAB_RUNTIMES.with(|runtimes| {
+            runtimes.borrow_mut().insert(id, Rc::downgrade(&runtime));
+        });
+        runtime
+    }
+
+    fn location(&self) -> Rc<WindowContext> {
+        self.location.borrow().clone()
+    }
+
+    fn move_to(&self, location: Rc<WindowContext>) {
+        *self.location.borrow_mut() = location;
+    }
+}
+
+fn tab_runtime(tab_id: &str) -> Option<Rc<TabRuntime>> {
+    TAB_RUNTIMES.with(|runtimes| {
+        let runtime = runtimes.borrow().get(tab_id).and_then(Weak::upgrade);
+        if runtime.is_none() {
+            runtimes.borrow_mut().remove(tab_id);
+        }
+        runtime
+    })
+}
+
+fn unregister_tab_runtime(tab_id: &str) {
+    TAB_RUNTIMES.with(|runtimes| {
+        runtimes.borrow_mut().remove(tab_id);
+    });
 }
 
 #[derive(Clone)]
@@ -354,6 +456,14 @@ impl TerminalZoomControl {
 }
 
 pub fn build(application: &gtk::Application, config: &AppConfig) {
+    create_window(application, config, true);
+}
+
+fn create_window(
+    application: &gtk::Application,
+    config: &AppConfig,
+    initial_tab: bool,
+) -> Rc<WindowContext> {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .title(APPLICATION_NAME)
@@ -375,33 +485,43 @@ pub fn build(application: &gtk::Application, config: &AppConfig) {
 
     let notebook = create_notebook();
     let close_protection = CloseProtection::default();
-    let (header, tab_strip, tab_scroller) =
-        create_header(&window, &notebook, config, &wallpaper, &close_protection);
-    install_tab_shortcuts(
+    let header = create_header();
+    let drop_motion = gtk::DropControllerMotion::new();
+    drop_motion.set_propagation_phase(gtk::PropagationPhase::Capture);
+    window.add_controller(drop_motion.clone());
+    let context = Rc::new(WindowContext {
+        window: window.downgrade(),
+        notebook: notebook.downgrade(),
+        tab_strip: header.tab_strip.downgrade(),
+        tab_scroller: header.tab_scroller.downgrade(),
+        drop_motion: drop_motion.downgrade(),
+        config: config.clone(),
+        wallpaper,
+        close_protection: close_protection.clone(),
+    });
+    WINDOW_CONTEXTS.with(|contexts| contexts.borrow_mut().push(Rc::downgrade(&context)));
+    install_new_tab_button(&header.inline_new_tab, &context);
+    install_new_tab_button(&header.pinned_new_tab, &context);
+    install_tab_shortcuts(&context);
+    install_tab_switch_handler(
         &window,
         &notebook,
-        &tab_strip,
-        &tab_scroller,
+        &header.tab_strip,
+        &header.tab_scroller,
         config,
-        &wallpaper,
-        &close_protection,
     );
-    install_tab_switch_handler(&window, &notebook, &tab_strip, &tab_scroller, config);
     install_window_close_protection(&window, &notebook, &close_protection);
+    install_header_drop_target(&header.drag_space, &context);
+    install_header_drop_target(&header.overflow_drag_space, &context);
 
-    window.set_titlebar(Some(&header));
+    window.set_titlebar(Some(&header.header));
     window.set_child(Some(&notebook));
-    add_terminal_tab(
-        &window,
-        &notebook,
-        &tab_strip,
-        &tab_scroller,
-        config,
-        &wallpaper,
-        &close_protection,
-    );
-    window.present();
-    focus_current_terminal(&notebook);
+    if initial_tab {
+        add_terminal_tab(&context);
+        window.present();
+        focus_current_terminal(&notebook);
+    }
+    context
 }
 
 fn create_notebook() -> gtk::Notebook {
@@ -414,13 +534,7 @@ fn create_notebook() -> gtk::Notebook {
     notebook
 }
 
-fn create_header(
-    window: &gtk::ApplicationWindow,
-    notebook: &gtk::Notebook,
-    config: &AppConfig,
-    wallpaper: &WallpaperAsset,
-    close_protection: &CloseProtection,
-) -> (gtk::Box, gtk::Box, gtk::ScrolledWindow) {
+fn create_header() -> HeaderWidgets {
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     header.add_css_class("zter-header");
 
@@ -441,24 +555,8 @@ fn create_header(
     tab_scroller.add_css_class("zter-tab-scroller");
     install_tab_strip_scrolling(&tab_scroller);
 
-    let inline_new_tab = create_new_tab_button(
-        window,
-        notebook,
-        &tab_strip,
-        &tab_scroller,
-        config,
-        wallpaper,
-        close_protection,
-    );
-    let pinned_new_tab = create_new_tab_button(
-        window,
-        notebook,
-        &tab_strip,
-        &tab_scroller,
-        config,
-        wallpaper,
-        close_protection,
-    );
+    let inline_new_tab = create_new_tab_button();
+    let pinned_new_tab = create_new_tab_button();
     pinned_new_tab.set_visible(false);
 
     let drag_space = gtk::WindowHandle::new();
@@ -484,18 +582,18 @@ fn create_header(
     header.append(&overflow_drag_space);
     header.append(&window_controls);
 
-    (header, tab_strip, tab_scroller)
+    HeaderWidgets {
+        header,
+        tab_strip,
+        tab_scroller,
+        inline_new_tab,
+        pinned_new_tab,
+        drag_space,
+        overflow_drag_space,
+    }
 }
 
-fn create_new_tab_button(
-    window: &gtk::ApplicationWindow,
-    notebook: &gtk::Notebook,
-    tab_strip: &gtk::Box,
-    tab_scroller: &gtk::ScrolledWindow,
-    config: &AppConfig,
-    wallpaper: &WallpaperAsset,
-    close_protection: &CloseProtection,
-) -> gtk::Button {
+fn create_new_tab_button() -> gtk::Button {
     let button = gtk::Button::builder()
         .icon_name("list-add-symbolic")
         .has_frame(false)
@@ -504,34 +602,17 @@ fn create_new_tab_button(
     button.add_css_class("zter-new-tab");
     button.set_valign(gtk::Align::Center);
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
-    let tab_strip_weak = tab_strip.downgrade();
-    let tab_scroller_weak = tab_scroller.downgrade();
-    let config = config.clone();
-    let wallpaper = wallpaper.clone();
-    let close_protection = close_protection.clone();
+    button
+}
+
+fn install_new_tab_button(button: &gtk::Button, context: &Rc<WindowContext>) {
+    let context = Rc::downgrade(context);
     button.connect_clicked(move |_| {
-        let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller)) = (
-            window_weak.upgrade(),
-            notebook_weak.upgrade(),
-            tab_strip_weak.upgrade(),
-            tab_scroller_weak.upgrade(),
-        ) else {
+        let Some(context) = context.upgrade() else {
             return;
         };
-        add_terminal_tab(
-            &window,
-            &notebook,
-            &tab_strip,
-            &tab_scroller,
-            &config,
-            &wallpaper,
-            &close_protection,
-        );
+        add_terminal_tab(&context);
     });
-
-    button
 }
 
 fn install_tab_overflow(
@@ -589,52 +670,24 @@ fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {
     scroller.add_controller(controller);
 }
 
-fn install_tab_shortcuts(
-    window: &gtk::ApplicationWindow,
-    notebook: &gtk::Notebook,
-    tab_strip: &gtk::Box,
-    tab_scroller: &gtk::ScrolledWindow,
-    config: &AppConfig,
-    wallpaper: &WallpaperAsset,
-    close_protection: &CloseProtection,
-) {
+fn install_tab_shortcuts(context: &Rc<WindowContext>) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
-    let tab_strip_weak = tab_strip.downgrade();
-    let tab_scroller_weak = tab_scroller.downgrade();
-    let config = config.clone();
-    let wallpaper = wallpaper.clone();
-    let close_protection = close_protection.clone();
+    let context_weak = Rc::downgrade(context);
     controller.connect_key_pressed(move |_, key, _, modifiers| {
         let Some(shortcut) = tab_shortcut(key, modifiers) else {
             return gtk::glib::Propagation::Proceed;
         };
-        let Some(notebook) = notebook_weak.upgrade() else {
+        let Some(context) = context_weak.upgrade() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        let Some(notebook) = context.notebook.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
 
         match shortcut {
-            TabShortcut::New => {
-                let (Some(window), Some(tab_strip), Some(tab_scroller)) = (
-                    window_weak.upgrade(),
-                    tab_strip_weak.upgrade(),
-                    tab_scroller_weak.upgrade(),
-                ) else {
-                    return gtk::glib::Propagation::Proceed;
-                };
-                add_terminal_tab(
-                    &window,
-                    &notebook,
-                    &tab_strip,
-                    &tab_scroller,
-                    &config,
-                    &wallpaper,
-                    &close_protection,
-                );
-            }
+            TabShortcut::New => add_terminal_tab(&context),
             TabShortcut::Previous => notebook.prev_page(),
             TabShortcut::Next => notebook.next_page(),
         }
@@ -642,7 +695,9 @@ fn install_tab_shortcuts(
         gtk::glib::Propagation::Stop
     });
 
-    window.add_controller(controller);
+    if let Some(window) = context.window.upgrade() {
+        window.add_controller(controller);
+    }
 }
 
 fn install_tab_switch_handler(
@@ -676,35 +731,25 @@ fn install_tab_switch_handler(
     });
 }
 
-fn add_terminal_tab(
-    window: &gtk::ApplicationWindow,
-    notebook: &gtk::Notebook,
-    tab_strip: &gtk::Box,
-    tab_scroller: &gtk::ScrolledWindow,
-    config: &AppConfig,
-    wallpaper: &WallpaperAsset,
-    close_protection: &CloseProtection,
-) {
-    let working_directory = new_tab_working_directory(notebook, config, close_protection);
-    let fallback_title = default_tab_title(config.shell());
+fn add_terminal_tab(context: &Rc<WindowContext>) {
+    let Some((window, notebook, tab_strip, tab_scroller)) = context.widgets() else {
+        return;
+    };
+    let working_directory = new_tab_working_directory(&notebook, &context.config);
+    let fallback_title = default_tab_title(context.config.shell());
     let tab_id = next_tab_id();
-    close_protection
-        .shell_pids
-        .borrow_mut()
-        .insert(tab_id.clone(), None);
-    let terminal = create_terminal(config, window, &tab_id, close_protection);
-    install_foreground_process_key_protection(&terminal, window, &tab_id, close_protection);
+    let runtime = TabRuntime::new(tab_id.clone(), context.clone());
+    let terminal = create_terminal(&context.config, &runtime);
+    install_foreground_process_key_protection(&terminal, &runtime);
     let terminal_for_spawn = terminal.clone();
-    let config_for_spawn = config.clone();
-    let tab_id_for_spawn = tab_id.clone();
-    let close_protection_for_spawn = close_protection.clone();
-    let content = create_content(&terminal, config, wallpaper, move || {
+    let config_for_spawn = context.config.clone();
+    let runtime_for_spawn = runtime.clone();
+    let content = create_content(&terminal, &context.config, &context.wallpaper, move || {
         spawn_shell(
             &terminal_for_spawn,
             &config_for_spawn,
             &working_directory,
-            &tab_id_for_spawn,
-            &close_protection_for_spawn,
+            &runtime_for_spawn,
         );
     });
     content.set_widget_name(&tab_id);
@@ -714,13 +759,16 @@ fn add_terminal_tab(
     let page_number = notebook.append_page(&content, None::<&gtk::Widget>);
     tab_strip.append(&header.tab);
 
-    install_tab_title_editing(window, notebook, &content, &header, title_state.clone());
+    install_tab_title_editing(&runtime, &content, &header, title_state.clone());
 
-    let notebook_weak = notebook.downgrade();
     let content_weak = content.downgrade();
+    let runtime_for_select = runtime.clone();
     header.select_button.connect_clicked(move |_| {
-        let (Some(notebook), Some(content)) = (notebook_weak.upgrade(), content_weak.upgrade())
-        else {
+        let Some(content) = content_weak.upgrade() else {
+            return;
+        };
+        let location = runtime_for_select.location();
+        let Some(notebook) = location.notebook.upgrade() else {
             return;
         };
         if let Some(page_number) = notebook.page_num(&content) {
@@ -728,72 +776,30 @@ fn add_terminal_tab(
         }
     });
 
-    install_tab_drag_and_drop(
-        notebook,
-        tab_strip,
-        tab_scroller,
-        &header.tab,
-        &header.select_button,
-        &tab_id,
-    );
+    install_tab_drag_and_drop(&runtime, &header.tab, &header.select_button);
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
-    let tab_strip_weak = tab_strip.downgrade();
-    let tab_scroller_weak = tab_scroller.downgrade();
     let content_weak = content.downgrade();
-    let close_protection_for_button = close_protection.clone();
+    let runtime_for_close = runtime.clone();
     header.close_button.connect_clicked(move |_| {
-        let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
-            window_weak.upgrade(),
-            notebook_weak.upgrade(),
-            tab_strip_weak.upgrade(),
-            tab_scroller_weak.upgrade(),
-            content_weak.upgrade(),
-        ) else {
+        let Some(content) = content_weak.upgrade() else {
             return;
         };
-        request_close_tab(
-            &window,
-            &notebook,
-            &tab_strip,
-            &tab_scroller,
-            &content,
-            &close_protection_for_button,
-        );
+        request_close_runtime_tab(&runtime_for_close, &content);
     });
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
-    let tab_strip_weak = tab_strip.downgrade();
-    let tab_scroller_weak = tab_scroller.downgrade();
     let content_weak = content.downgrade();
-    let close_protection_for_exit = close_protection.clone();
+    let runtime_for_exit = runtime.clone();
     terminal.connect_child_exited(move |_, _| {
-        let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller), Some(content)) = (
-            window_weak.upgrade(),
-            notebook_weak.upgrade(),
-            tab_strip_weak.upgrade(),
-            tab_scroller_weak.upgrade(),
-            content_weak.upgrade(),
-        ) else {
+        let Some(content) = content_weak.upgrade() else {
             return;
         };
-        close_tab(
-            &window,
-            &notebook,
-            &tab_strip,
-            &tab_scroller,
-            &content,
-            &close_protection_for_exit,
-        );
+        close_runtime_tab(&runtime_for_exit, &content);
     });
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
     let content_weak = content.downgrade();
     let fallback_for_title = fallback_title.clone();
     let title_label = header.title_label.clone();
+    let runtime_for_title = runtime.clone();
     terminal.connect_window_title_changed(move |terminal| {
         let automatic = terminal_display_title(terminal, &fallback_for_title);
         let title = {
@@ -803,11 +809,13 @@ fn add_terminal_tab(
         };
         title_label.set_text(&title);
 
-        let (Some(window), Some(notebook), Some(content)) = (
-            window_weak.upgrade(),
-            notebook_weak.upgrade(),
-            content_weak.upgrade(),
-        ) else {
+        let Some(content) = content_weak.upgrade() else {
+            return;
+        };
+        let location = runtime_for_title.location();
+        let (Some(window), Some(notebook)) =
+            (location.window.upgrade(), location.notebook.upgrade())
+        else {
             return;
         };
         if notebook.page_num(&content) == notebook.current_page() {
@@ -816,16 +824,12 @@ fn add_terminal_tab(
     });
 
     notebook.set_current_page(Some(page_number));
-    set_window_title(window, &fallback_title);
-    sync_header_tabs(notebook, tab_strip, tab_scroller);
+    set_window_title(&window, &fallback_title);
+    sync_header_tabs(&notebook, &tab_strip, &tab_scroller);
     terminal.grab_focus();
 }
 
-fn new_tab_working_directory(
-    notebook: &gtk::Notebook,
-    config: &AppConfig,
-    close_protection: &CloseProtection,
-) -> String {
+fn new_tab_working_directory(notebook: &gtk::Notebook, config: &AppConfig) -> String {
     let active_page = notebook
         .current_page()
         .and_then(|page_number| notebook.nth_page(Some(page_number)));
@@ -833,7 +837,7 @@ fn new_tab_working_directory(
         let terminal_directory = find_terminal(&page)
             .and_then(|terminal| terminal.current_directory_uri())
             .and_then(|uri| local_path_from_uri(&uri));
-        terminal_directory.or_else(|| shell_working_directory(&page, close_protection))
+        terminal_directory.or_else(|| shell_working_directory(&page))
     });
 
     working_directory_or_fallback(active_directory, config.working_directory())
@@ -843,16 +847,10 @@ fn local_path_from_uri(uri: &str) -> Option<PathBuf> {
     gtk::gio::File::for_uri(uri).path()
 }
 
-fn shell_working_directory(
-    content: &impl IsA<gtk::Widget>,
-    close_protection: &CloseProtection,
-) -> Option<PathBuf> {
-    let shell_pid = close_protection
-        .shell_pids
-        .borrow()
-        .get(content.widget_name().as_str())
-        .copied()
-        .flatten()?;
+fn shell_working_directory(content: &impl IsA<gtk::Widget>) -> Option<PathBuf> {
+    let shell_pid = tab_runtime(content.widget_name().as_str())?
+        .shell_pid
+        .get()?;
 
     process_working_directory(shell_pid)
 }
@@ -924,8 +922,7 @@ fn create_header_tab(title: &str, tab_id: &str) -> TabHeader {
 }
 
 fn install_tab_title_editing(
-    window: &gtk::ApplicationWindow,
-    notebook: &gtk::Notebook,
+    runtime: &Rc<TabRuntime>,
     content: &gtk::Overlay,
     header: &TabHeader,
     title_state: Rc<RefCell<TabTitleState>>,
@@ -975,22 +972,25 @@ fn install_tab_title_editing(
     });
     header.title_stack.add_controller(double_click);
 
-    let window_weak = window.downgrade();
-    let notebook_weak = notebook.downgrade();
     let content_weak = content.downgrade();
     let stack_weak = header.title_stack.downgrade();
     let entry_weak = header.title_entry.downgrade();
     let label_weak = header.title_label.downgrade();
     let state = title_state.clone();
+    let runtime_for_save = runtime.clone();
     let save = Rc::new(move |focus_terminal: bool| {
-        let (Some(window), Some(notebook), Some(content), Some(stack), Some(entry), Some(label)) = (
-            window_weak.upgrade(),
-            notebook_weak.upgrade(),
+        let (Some(content), Some(stack), Some(entry), Some(label)) = (
             content_weak.upgrade(),
             stack_weak.upgrade(),
             entry_weak.upgrade(),
             label_weak.upgrade(),
         ) else {
+            return;
+        };
+        let location = runtime_for_save.location();
+        let (Some(window), Some(notebook)) =
+            (location.window.upgrade(), location.notebook.upgrade())
+        else {
             return;
         };
 
@@ -1032,21 +1032,24 @@ fn install_tab_title_editing(
 
     let key_controller = gtk::EventControllerKey::new();
     key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-    let notebook_weak = notebook.downgrade();
     let stack_weak = header.title_stack.downgrade();
     let entry_weak = header.title_entry.downgrade();
     let label_weak = header.title_label.downgrade();
     let state = title_state;
+    let runtime_for_cancel = runtime.clone();
     key_controller.connect_key_pressed(move |_, key, _, _| {
         if key != gtk::gdk::Key::Escape {
             return gtk::glib::Propagation::Proceed;
         }
-        let (Some(notebook), Some(stack), Some(entry), Some(label)) = (
-            notebook_weak.upgrade(),
+        let (Some(stack), Some(entry), Some(label)) = (
             stack_weak.upgrade(),
             entry_weak.upgrade(),
             label_weak.upgrade(),
         ) else {
+            return gtk::glib::Propagation::Stop;
+        };
+        let location = runtime_for_cancel.location();
+        let Some(notebook) = location.notebook.upgrade() else {
             return gtk::glib::Propagation::Stop;
         };
         let state = state.borrow();
@@ -1062,24 +1065,44 @@ fn install_tab_title_editing(
 
 fn next_tab_id() -> String {
     format!(
-        "{TAB_ID_PREFIX}{}",
+        "{TAB_ID_PREFIX}{}-{}",
+        std::process::id(),
         NEXT_TAB_ID.fetch_add(1, Ordering::Relaxed)
     )
 }
 
-fn install_tab_drag_and_drop(
-    notebook: &gtk::Notebook,
-    tab_strip: &gtk::Box,
-    tab_scroller: &gtk::ScrolledWindow,
-    tab: &gtk::Box,
-    drag_handle: &gtk::Button,
-    tab_id: &str,
-) {
+fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_handle: &gtk::Button) {
     let drag_source = gtk::DragSource::new();
     drag_source.set_actions(gtk::gdk::DragAction::MOVE);
-    let source_id = tab_id.to_owned();
+    let cancel_reason = Rc::new(Cell::new(None));
+    let runtime_for_prepare = runtime.clone();
+    let cancel_reason_for_prepare = cancel_reason.clone();
     drag_source.connect_prepare(move |_, _, _| {
-        Some(gtk::gdk::ContentProvider::for_value(&source_id.to_value()))
+        cancel_reason_for_prepare.set(None);
+        runtime_for_prepare.drag_transfer_completed.set(false);
+        Some(gtk::gdk::ContentProvider::for_value(
+            &runtime_for_prepare.id.to_value(),
+        ))
+    });
+    let cancel_reason_for_cancel = cancel_reason.clone();
+    drag_source.connect_drag_cancel(move |_, _, reason| {
+        cancel_reason_for_cancel.set(Some(reason));
+        tab_drag_end_action(false, Some(reason), drag_is_over_zter_window())
+            == FailedTabDragAction::Detach
+    });
+    let runtime_for_end = runtime.clone();
+    drag_source.connect_drag_end(move |_, _, _| {
+        if tab_drag_end_action(
+            runtime_for_end.drag_transfer_completed.replace(false),
+            cancel_reason.take(),
+            drag_is_over_zter_window(),
+        ) == FailedTabDragAction::Detach
+        {
+            let runtime = runtime_for_end.clone();
+            gtk::glib::idle_add_local_once(move || {
+                detach_tab_to_new_window(&runtime);
+            });
+        }
     });
     drag_handle.add_controller(drag_source);
 
@@ -1088,7 +1111,7 @@ fn install_tab_drag_and_drop(
     let hovering = Rc::new(Cell::new(false));
 
     let tab_weak = tab.downgrade();
-    let target_id = tab_id.to_owned();
+    let target_id = runtime.id.clone();
     let hovering_on_enter = hovering.clone();
     drop_target.connect_enter(move |drop_target, _, _| {
         hovering_on_enter.set(true);
@@ -1099,7 +1122,7 @@ fn install_tab_drag_and_drop(
     });
 
     let tab_weak = tab.downgrade();
-    let target_id = tab_id.to_owned();
+    let target_id = runtime.id.clone();
     let hovering_on_value = hovering.clone();
     drop_target.connect_value_notify(move |drop_target| {
         if let Some(tab) = tab_weak.upgrade() {
@@ -1116,13 +1139,10 @@ fn install_tab_drag_and_drop(
         }
     });
 
-    let notebook_weak = notebook.downgrade();
-    let tab_strip_weak = tab_strip.downgrade();
-    let tab_scroller_weak = tab_scroller.downgrade();
     let tab_weak = tab.downgrade();
     let hovering_on_drop = hovering;
-    let target_id = tab_id.to_owned();
-    drop_target.connect_drop(move |_, value, _, _| {
+    let target_runtime = runtime.clone();
+    drop_target.connect_drop(move |_, value, x, _| {
         hovering_on_drop.set(false);
         if let Some(tab) = tab_weak.upgrade() {
             tab.remove_css_class(TAB_DROP_TARGET_CLASS);
@@ -1130,17 +1150,78 @@ fn install_tab_drag_and_drop(
         let Ok(source_id) = value.get::<String>() else {
             return false;
         };
-        let (Some(notebook), Some(tab_strip), Some(tab_scroller)) = (
-            notebook_weak.upgrade(),
-            tab_strip_weak.upgrade(),
-            tab_scroller_weak.upgrade(),
-        ) else {
+        if source_id == target_runtime.id {
+            return true;
+        }
+        let Some(source_runtime) = tab_runtime(&source_id) else {
             return false;
         };
-
-        reorder_tab(&notebook, &tab_strip, &tab_scroller, &source_id, &target_id)
+        let width = tab_weak
+            .upgrade()
+            .map_or(TAB_WIDTH, |tab| f64::from(tab.width()));
+        let side = tab_drop_side(x, width);
+        let transferred = transfer_tab(
+            &source_runtime,
+            &target_runtime.location(),
+            Some((&target_runtime.id, side)),
+        );
+        source_runtime.drag_transfer_completed.set(transferred);
+        transferred
     });
     tab.add_controller(drop_target);
+}
+
+fn install_header_drop_target(drop_area: &gtk::WindowHandle, context: &Rc<WindowContext>) {
+    let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    drop_target.set_preload(true);
+    let hovering = Rc::new(Cell::new(false));
+
+    let area_weak = drop_area.downgrade();
+    let hovering_on_enter = hovering.clone();
+    drop_target.connect_enter(move |drop_target, _, _| {
+        hovering_on_enter.set(true);
+        if let Some(area) = area_weak.upgrade() {
+            sync_header_drop_highlight(drop_target, &area, true);
+        }
+        gtk::gdk::DragAction::MOVE
+    });
+
+    let area_weak = drop_area.downgrade();
+    let hovering_on_value = hovering.clone();
+    drop_target.connect_value_notify(move |drop_target| {
+        if let Some(area) = area_weak.upgrade() {
+            sync_header_drop_highlight(drop_target, &area, hovering_on_value.get());
+        }
+    });
+
+    let area_weak = drop_area.downgrade();
+    let hovering_on_leave = hovering.clone();
+    drop_target.connect_leave(move |_| {
+        hovering_on_leave.set(false);
+        if let Some(area) = area_weak.upgrade() {
+            area.remove_css_class(HEADER_DROP_TARGET_CLASS);
+        }
+    });
+
+    let area_weak = drop_area.downgrade();
+    let target_context = Rc::downgrade(context);
+    drop_target.connect_drop(move |_, value, _, _| {
+        if let Some(area) = area_weak.upgrade() {
+            area.remove_css_class(HEADER_DROP_TARGET_CLASS);
+        }
+        let Ok(source_id) = value.get::<String>() else {
+            return false;
+        };
+        let (Some(source_runtime), Some(target_context)) =
+            (tab_runtime(&source_id), target_context.upgrade())
+        else {
+            return false;
+        };
+        let transferred = transfer_tab(&source_runtime, &target_context, None);
+        source_runtime.drag_transfer_completed.set(transferred);
+        transferred
+    });
+    drop_area.add_controller(drop_target);
 }
 
 fn sync_tab_drop_highlight(
@@ -1152,10 +1233,33 @@ fn sync_tab_drop_highlight(
     let source_id = drop_target
         .value()
         .and_then(|value| value.get::<String>().ok());
-    if should_highlight_tab_drop_target(source_id.as_deref(), target_id, hovering) {
+    if should_highlight_tab_drop_target(source_id.as_deref(), target_id, hovering)
+        && source_id
+            .as_deref()
+            .is_some_and(|source_id| tab_runtime(source_id).is_some())
+    {
         tab.add_css_class(TAB_DROP_TARGET_CLASS);
     } else {
         tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+    }
+}
+
+fn sync_header_drop_highlight(
+    drop_target: &gtk::DropTarget,
+    drop_area: &gtk::WindowHandle,
+    hovering: bool,
+) {
+    let source_id = drop_target
+        .value()
+        .and_then(|value| value.get::<String>().ok());
+    if should_highlight_header_drop_target(source_id.as_deref(), hovering)
+        && source_id
+            .as_deref()
+            .is_some_and(|source_id| tab_runtime(source_id).is_some())
+    {
+        drop_area.add_css_class(HEADER_DROP_TARGET_CLASS);
+    } else {
+        drop_area.remove_css_class(HEADER_DROP_TARGET_CLASS);
     }
 }
 
@@ -1169,47 +1273,181 @@ fn should_highlight_tab_drop_target(
             .is_some_and(|source_id| source_id.starts_with(TAB_ID_PREFIX) && source_id != target_id)
 }
 
-fn reorder_tab(
-    notebook: &gtk::Notebook,
-    tab_strip: &gtk::Box,
-    tab_scroller: &gtk::ScrolledWindow,
-    source_id: &str,
-    target_id: &str,
-) -> bool {
-    if source_id == target_id {
-        return false;
-    }
+fn should_highlight_header_drop_target(source_id: Option<&str>, hovering: bool) -> bool {
+    hovering && source_id.is_some_and(|source_id| source_id.starts_with(TAB_ID_PREFIX))
+}
 
-    let Some(source_content) = notebook_page_by_id(notebook, source_id) else {
-        return false;
-    };
-    let Some(target_content) = notebook_page_by_id(notebook, target_id) else {
-        return false;
-    };
-    let Some(source_position) = notebook.page_num(&source_content) else {
-        return false;
-    };
-    let Some(target_position) = notebook.page_num(&target_content) else {
-        return false;
-    };
-    let Some(source_tab) = tab_by_id(tab_strip, source_id) else {
-        return false;
-    };
-    let Some(target_tab) = tab_by_id(tab_strip, target_id) else {
-        return false;
-    };
-
-    notebook
-        .page(&source_content)
-        .set_position(target_position as i32);
-    if source_position < target_position {
-        tab_strip.reorder_child_after(&source_tab, Some(&target_tab));
+fn tab_drop_side(x: f64, width: f64) -> TabDropSide {
+    if x < width / 2.0 {
+        TabDropSide::Before
     } else {
-        let previous = target_tab.prev_sibling();
-        tab_strip.reorder_child_after(&source_tab, previous.as_ref());
+        TabDropSide::After
     }
-    sync_header_tabs(notebook, tab_strip, tab_scroller);
+}
+
+fn tab_insertion_position(
+    source_position: u32,
+    target_position: Option<(u32, TabDropSide)>,
+    target_page_count: u32,
+    same_window: bool,
+) -> u32 {
+    let mut position = match target_position {
+        Some((target_position, TabDropSide::Before)) => target_position,
+        Some((target_position, TabDropSide::After)) => target_position + 1,
+        None => target_page_count,
+    };
+    if same_window && source_position < position {
+        position -= 1;
+    }
+    position.min(target_page_count.saturating_sub(u32::from(same_window)))
+}
+
+fn transfer_tab(
+    runtime: &Rc<TabRuntime>,
+    target: &Rc<WindowContext>,
+    target_tab: Option<(&str, TabDropSide)>,
+) -> bool {
+    let source = runtime.location();
+    let Some((source_window, source_notebook, source_strip, source_scroller)) = source.widgets()
+    else {
+        return false;
+    };
+    let Some((target_window, target_notebook, target_strip, target_scroller)) = target.widgets()
+    else {
+        return false;
+    };
+    let Some(content) = notebook_page_by_id(&source_notebook, &runtime.id) else {
+        return false;
+    };
+    let Some(source_tab) = tab_by_id(&source_strip, &runtime.id) else {
+        return false;
+    };
+    let Some(source_position) = source_notebook.page_num(&content) else {
+        return false;
+    };
+    let target_position = match target_tab {
+        Some((target_id, side)) => {
+            let Some(target_content) = notebook_page_by_id(&target_notebook, target_id) else {
+                return false;
+            };
+            let Some(position) = target_notebook.page_num(&target_content) else {
+                return false;
+            };
+            Some((position, side))
+        }
+        None => None,
+    };
+    let same_window = Rc::ptr_eq(&source, target);
+    let insertion_position = tab_insertion_position(
+        source_position,
+        target_position,
+        target_notebook.n_pages(),
+        same_window,
+    );
+
+    if same_window {
+        source_notebook
+            .page(&content)
+            .set_position(insertion_position as i32);
+        place_box_child(&source_strip, &source_tab, insertion_position, true);
+        source_notebook.set_current_page(Some(insertion_position));
+        sync_header_tabs(&source_notebook, &source_strip, &source_scroller);
+        focus_current_terminal(&source_notebook);
+        return true;
+    }
+
+    source_notebook.remove_page(Some(source_position));
+    source_strip.remove(&source_tab);
+    let inserted =
+        target_notebook.insert_page(&content, None::<&gtk::Widget>, Some(insertion_position));
+    place_box_child(&target_strip, &source_tab, inserted, false);
+    runtime.move_to(target.clone());
+    target_notebook.set_current_page(Some(inserted));
+    sync_header_tabs(&target_notebook, &target_strip, &target_scroller);
+    focus_current_terminal(&target_notebook);
+
+    if source_notebook.n_pages() == 0 {
+        source_window.close();
+    } else {
+        sync_header_tabs(&source_notebook, &source_strip, &source_scroller);
+        focus_current_terminal(&source_notebook);
+    }
+    if let Some(title) = displayed_tab_title(&target_strip, &runtime.id) {
+        set_window_title(&target_window, &title);
+    }
     true
+}
+
+fn place_box_child(tab_strip: &gtk::Box, tab: &gtk::Widget, position: u32, reorder: bool) {
+    let mut siblings = Vec::new();
+    let mut child = tab_strip.first_child();
+    while let Some(current) = child {
+        if current != *tab {
+            siblings.push(current.clone());
+        }
+        child = current.next_sibling();
+    }
+    let previous = position
+        .checked_sub(1)
+        .and_then(|position| siblings.get(position as usize));
+    if reorder {
+        tab_strip.reorder_child_after(tab, previous);
+    } else {
+        tab_strip.insert_child_after(tab, previous);
+    }
+}
+
+fn detach_tab_to_new_window(runtime: &Rc<TabRuntime>) -> bool {
+    let source = runtime.location();
+    let Some((source_window, _, _, _)) = source.widgets() else {
+        return false;
+    };
+    let Some(application) = source_window.application() else {
+        return false;
+    };
+    let target = create_window(&application, &source.config, false);
+    let Some(window) = target.window.upgrade() else {
+        return false;
+    };
+    window.set_default_size(source_window.width().max(1), source_window.height().max(1));
+    if !transfer_tab(runtime, &target, None) {
+        window.close();
+        return false;
+    }
+    window.present();
+    true
+}
+
+fn drag_is_over_zter_window() -> bool {
+    WINDOW_CONTEXTS.with(|contexts| {
+        let mut pointer_inside = false;
+        contexts.borrow_mut().retain(|context| {
+            let Some(context) = context.upgrade() else {
+                return false;
+            };
+            pointer_inside |= context
+                .drop_motion
+                .upgrade()
+                .is_some_and(|motion| motion.contains_pointer());
+            true
+        });
+        pointer_inside
+    })
+}
+
+fn tab_drag_end_action(
+    internal_transfer_completed: bool,
+    cancel_reason: Option<gtk::gdk::DragCancelReason>,
+    pointer_inside_zter: bool,
+) -> FailedTabDragAction {
+    if internal_transfer_completed
+        || pointer_inside_zter
+        || cancel_reason == Some(gtk::gdk::DragCancelReason::UserCancelled)
+    {
+        FailedTabDragAction::Cancel
+    } else {
+        FailedTabDragAction::Detach
+    }
 }
 
 fn notebook_page_by_id(notebook: &gtk::Notebook, tab_id: &str) -> Option<gtk::Widget> {
@@ -1366,6 +1604,36 @@ fn install_window_close_protection(
         );
         gtk::glib::Propagation::Stop
     });
+}
+
+fn request_close_runtime_tab(runtime: &Rc<TabRuntime>, content: &impl IsA<gtk::Widget>) {
+    let location = runtime.location();
+    let Some((window, notebook, tab_strip, tab_scroller)) = location.widgets() else {
+        return;
+    };
+    request_close_tab(
+        &window,
+        &notebook,
+        &tab_strip,
+        &tab_scroller,
+        content,
+        &location.close_protection,
+    );
+}
+
+fn close_runtime_tab(runtime: &Rc<TabRuntime>, content: &impl IsA<gtk::Widget>) {
+    let location = runtime.location();
+    let Some((window, notebook, tab_strip, tab_scroller)) = location.widgets() else {
+        return;
+    };
+    close_tab(
+        &window,
+        &notebook,
+        &tab_strip,
+        &tab_scroller,
+        content,
+        &location.close_protection,
+    );
 }
 
 fn request_close_tab(
@@ -1532,14 +1800,10 @@ fn notebook_has_running_foreground_process(
 
 fn tab_has_running_foreground_process(
     content: &impl IsA<gtk::Widget>,
-    close_protection: &CloseProtection,
+    _close_protection: &CloseProtection,
 ) -> bool {
-    let shell_pid = close_protection
-        .shell_pids
-        .borrow()
-        .get(content.widget_name().as_str())
-        .copied()
-        .flatten();
+    let shell_pid =
+        tab_runtime(content.widget_name().as_str()).and_then(|runtime| runtime.shell_pid.get());
     let Some((terminal, shell_pid)) = find_terminal(content.as_ref()).zip(shell_pid) else {
         return false;
     };
@@ -1579,7 +1843,7 @@ fn close_tab(
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
     content: &impl IsA<gtk::Widget>,
-    close_protection: &CloseProtection,
+    _close_protection: &CloseProtection,
 ) {
     let Some(page_number) = notebook.page_num(content) else {
         return;
@@ -1587,10 +1851,7 @@ fn close_tab(
     if let Some(tab) = tab_by_id(tab_strip, &content.widget_name()) {
         tab_strip.remove(&tab);
     }
-    close_protection
-        .shell_pids
-        .borrow_mut()
-        .remove(content.widget_name().as_str());
+    unregister_tab_runtime(content.widget_name().as_str());
     notebook.remove_page(Some(page_number));
 
     if notebook.n_pages() == 0 {
@@ -1714,12 +1975,7 @@ fn set_window_title(window: &gtk::ApplicationWindow, title: &str) {
     window.set_title(Some(&format!("{title} — {APPLICATION_NAME}")));
 }
 
-fn create_terminal(
-    config: &AppConfig,
-    window: &gtk::ApplicationWindow,
-    tab_id: &str,
-    close_protection: &CloseProtection,
-) -> vte4::Terminal {
+fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Terminal {
     let terminal = vte4::Terminal::new();
     terminal.add_css_class("zter-terminal");
     terminal.set_hexpand(true);
@@ -1733,27 +1989,20 @@ fn create_terminal(
         TERMINAL_FONT_SCALE_BASE_SIZE,
     )));
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
-    install_hyperlink_activation(&terminal, window);
-    install_clipboard_shortcuts(&terminal, window, tab_id, close_protection);
+    install_hyperlink_activation(&terminal, runtime);
+    install_clipboard_shortcuts(&terminal, runtime);
     install_clipboard_context_menu(&terminal);
     theme::apply_to(&terminal, config.theme());
 
     terminal
 }
 
-fn install_foreground_process_key_protection(
-    terminal: &vte4::Terminal,
-    window: &gtk::ApplicationWindow,
-    tab_id: &str,
-    close_protection: &CloseProtection,
-) {
+fn install_foreground_process_key_protection(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
 
-    let window_weak = window.downgrade();
     let terminal_weak = terminal.downgrade();
-    let tab_id = tab_id.to_owned();
-    let close_protection = close_protection.clone();
+    let runtime = runtime.clone();
     controller.connect_key_pressed(move |_, key, _, modifiers| {
         let Some(shortcut) = foreground_process_shortcut(key, modifiers) else {
             return gtk::glib::Propagation::Proceed;
@@ -1761,11 +2010,7 @@ fn install_foreground_process_key_protection(
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
-        if !tab_terminal_has_running_foreground_process(
-            &terminal,
-            tab_id.as_str(),
-            &close_protection,
-        ) {
+        if !tab_terminal_has_running_foreground_process(&terminal, &runtime) {
             return gtk::glib::Propagation::Proceed;
         }
 
@@ -1774,25 +2019,21 @@ fn install_foreground_process_key_protection(
             ForegroundProcessShortcut::ConfirmSuspend => TERMINAL_SUSPEND,
             ForegroundProcessShortcut::Suppress => return gtk::glib::Propagation::Stop,
         };
-        let Some(window) = window_weak.upgrade() else {
+        let location = runtime.location();
+        let Some(window) = location.window.upgrade() else {
             return gtk::glib::Propagation::Stop;
         };
         let terminal_weak = terminal.downgrade();
-        let tab_id = tab_id.clone();
-        let close_protection_for_confirm = close_protection.clone();
+        let runtime_for_confirm = runtime.clone();
         show_close_confirmation(
             &window,
-            &close_protection,
+            &location.close_protection,
             "A process is still running. Close?",
             move || {
                 let Some(terminal) = terminal_weak.upgrade() else {
                     return;
                 };
-                if tab_terminal_has_running_foreground_process(
-                    &terminal,
-                    tab_id.as_str(),
-                    &close_protection_for_confirm,
-                ) {
+                if tab_terminal_has_running_foreground_process(&terminal, &runtime_for_confirm) {
                     terminal.feed_child(control_sequence);
                 }
             },
@@ -1838,20 +2079,13 @@ fn terminal_font_scale(font_size: f64) -> f64 {
     font_size / TERMINAL_FONT_SCALE_BASE_SIZE
 }
 
-fn install_clipboard_shortcuts(
-    terminal: &vte4::Terminal,
-    window: &gtk::ApplicationWindow,
-    tab_id: &str,
-    close_protection: &CloseProtection,
-) {
+fn install_clipboard_shortcuts(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     let keycodes = ClipboardShortcutKeycodes::from_display(&terminal.display());
 
-    let window_weak = window.downgrade();
     let terminal_weak = terminal.downgrade();
-    let tab_id = tab_id.to_owned();
-    let close_protection = close_protection.clone();
+    let runtime = runtime.clone();
     controller.connect_key_pressed(move |_, key, keycode, modifiers| {
         let Some(terminal) = terminal_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
@@ -1860,25 +2094,21 @@ fn install_clipboard_shortcuts(
         match clipboard_shortcut(key, keycode, modifiers, &keycodes) {
             Some(ClipboardShortcut::Copy) => match clipboard_copy_route(
                 terminal.has_selection(),
-                tab_terminal_has_running_foreground_process(
-                    &terminal,
-                    tab_id.as_str(),
-                    &close_protection,
-                ),
+                tab_terminal_has_running_foreground_process(&terminal, &runtime),
             ) {
                 ClipboardCopyRoute::CopySelection => {
                     terminal.copy_clipboard_format(vte4::Format::Text)
                 }
                 ClipboardCopyRoute::ConfirmInterrupt => {
-                    let Some(window) = window_weak.upgrade() else {
+                    let location = runtime.location();
+                    let Some(window) = location.window.upgrade() else {
                         return gtk::glib::Propagation::Stop;
                     };
                     let terminal_weak = terminal.downgrade();
-                    let tab_id = tab_id.clone();
-                    let close_protection_for_confirm = close_protection.clone();
+                    let runtime_for_confirm = runtime.clone();
                     show_close_confirmation(
                         &window,
-                        &close_protection,
+                        &location.close_protection,
                         "A process is still running. Close?",
                         move || {
                             let Some(terminal) = terminal_weak.upgrade() else {
@@ -1886,8 +2116,7 @@ fn install_clipboard_shortcuts(
                             };
                             if tab_terminal_has_running_foreground_process(
                                 &terminal,
-                                tab_id.as_str(),
-                                &close_protection_for_confirm,
+                                &runtime_for_confirm,
                             ) {
                                 terminal.feed_child(TERMINAL_INTERRUPT);
                             }
@@ -1920,16 +2149,9 @@ fn install_clipboard_shortcuts(
 
 fn tab_terminal_has_running_foreground_process(
     terminal: &vte4::Terminal,
-    tab_id: &str,
-    close_protection: &CloseProtection,
+    runtime: &TabRuntime,
 ) -> bool {
-    let shell_pid = close_protection
-        .shell_pids
-        .borrow()
-        .get(tab_id)
-        .copied()
-        .flatten();
-    let Some(shell_pid) = shell_pid else {
+    let Some(shell_pid) = runtime.shell_pid.get() else {
         return false;
     };
 
@@ -2002,13 +2224,13 @@ fn clipboard_paste_route(clipboard_contains_text: bool) -> ClipboardPasteRoute {
     }
 }
 
-fn install_hyperlink_activation(terminal: &vte4::Terminal, window: &gtk::ApplicationWindow) {
+fn install_hyperlink_activation(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
     let click = gtk::GestureClick::new();
     click.set_button(gtk::gdk::BUTTON_PRIMARY);
     click.set_propagation_phase(gtk::PropagationPhase::Capture);
 
     let terminal_weak = terminal.downgrade();
-    let window_weak = window.downgrade();
+    let runtime = runtime.clone();
     click.connect_pressed(move |gesture, _, _, _| {
         if !is_control_hyperlink_click(gesture.current_event_state()) {
             return;
@@ -2021,7 +2243,7 @@ fn install_hyperlink_activation(terminal: &vte4::Terminal, window: &gtk::Applica
         };
 
         let launcher = gtk::UriLauncher::new(&uri);
-        let window = window_weak.upgrade();
+        let window = runtime.location().window.upgrade();
         launcher.launch(window.as_ref(), None::<&gtk::gio::Cancellable>, |result| {
             if let Err(error) = result {
                 eprintln!("zter: could not open hyperlink: {error}");
@@ -2611,8 +2833,7 @@ fn spawn_shell(
     terminal: &vte4::Terminal,
     config: &AppConfig,
     working_directory: &str,
-    tab_id: &str,
-    close_protection: &CloseProtection,
+    runtime: &Rc<TabRuntime>,
 ) {
     let argv = [config.shell()];
     let environment: Vec<String> = env::vars_os()
@@ -2624,8 +2845,7 @@ fn spawn_shell(
         .collect();
     let environment: Vec<&str> = environment.iter().map(String::as_str).collect();
     let terminal_for_error = terminal.clone();
-    let tab_id = tab_id.to_owned();
-    let close_protection = close_protection.clone();
+    let runtime = runtime.clone();
 
     terminal.spawn_async(
         vte4::PtyFlags::DEFAULT,
@@ -2637,15 +2857,7 @@ fn spawn_shell(
         -1,
         None::<&gtk::gio::Cancellable>,
         move |result| match result {
-            Ok(pid) => {
-                if let Some(shell_pid) = close_protection
-                    .shell_pids
-                    .borrow_mut()
-                    .get_mut(tab_id.as_str())
-                {
-                    *shell_pid = Some(pid.0);
-                }
-            }
+            Ok(pid) => runtime.shell_pid.set(Some(pid.0)),
             Err(error) => {
                 eprintln!("zter: could not start the shell: {error}");
                 terminal_for_error
@@ -2872,6 +3084,110 @@ mod tests {
             false
         ));
         assert!(!should_highlight_tab_drop_target(None, "zter-tab-2", true));
+    }
+
+    #[test]
+    fn header_drop_highlight_requires_a_dragged_zter_tab() {
+        assert!(should_highlight_header_drop_target(
+            Some("zter-tab-1"),
+            true
+        ));
+        assert!(!should_highlight_header_drop_target(
+            Some("external-item"),
+            true
+        ));
+        assert!(!should_highlight_header_drop_target(
+            Some("zter-tab-1"),
+            false
+        ));
+        assert!(!should_highlight_header_drop_target(None, true));
+    }
+
+    #[test]
+    fn tab_drop_uses_the_pointer_half_for_insertion_side() {
+        assert_eq!(tab_drop_side(0.0, TAB_WIDTH), TabDropSide::Before);
+        assert_eq!(tab_drop_side(109.0, TAB_WIDTH), TabDropSide::Before);
+        assert_eq!(tab_drop_side(110.0, TAB_WIDTH), TabDropSide::After);
+        assert_eq!(tab_drop_side(TAB_WIDTH, TAB_WIDTH), TabDropSide::After);
+    }
+
+    #[test]
+    fn same_window_tab_insertion_accounts_for_the_removed_source() {
+        assert_eq!(
+            tab_insertion_position(0, Some((1, TabDropSide::After)), 3, true),
+            1
+        );
+        assert_eq!(
+            tab_insertion_position(2, Some((1, TabDropSide::Before)), 3, true),
+            1
+        );
+        assert_eq!(tab_insertion_position(0, None, 3, true), 2);
+        assert_eq!(tab_insertion_position(0, None, 1, true), 0);
+    }
+
+    #[test]
+    fn cross_window_tab_insertion_uses_the_target_positions_directly() {
+        assert_eq!(
+            tab_insertion_position(4, Some((0, TabDropSide::Before)), 2, false),
+            0
+        );
+        assert_eq!(
+            tab_insertion_position(4, Some((0, TabDropSide::After)), 2, false),
+            1
+        );
+        assert_eq!(tab_insertion_position(4, None, 2, false), 2);
+    }
+
+    #[test]
+    fn unfinished_drag_detaches_only_when_no_zter_window_contains_the_pointer() {
+        assert_eq!(
+            tab_drag_end_action(false, Some(gtk::gdk::DragCancelReason::NoTarget), false),
+            FailedTabDragAction::Detach
+        );
+        assert_eq!(
+            tab_drag_end_action(false, Some(gtk::gdk::DragCancelReason::NoTarget), true),
+            FailedTabDragAction::Cancel
+        );
+        assert_eq!(
+            tab_drag_end_action(false, None, false),
+            FailedTabDragAction::Detach
+        );
+        assert_eq!(
+            tab_drag_end_action(false, None, true),
+            FailedTabDragAction::Cancel
+        );
+    }
+
+    #[test]
+    fn explicit_user_drag_cancellation_never_detaches_the_tab() {
+        assert_eq!(
+            tab_drag_end_action(
+                false,
+                Some(gtk::gdk::DragCancelReason::UserCancelled),
+                false
+            ),
+            FailedTabDragAction::Cancel
+        );
+    }
+
+    #[test]
+    fn rejected_cross_process_drop_detaches_outside_source_process_windows() {
+        assert_eq!(
+            tab_drag_end_action(false, Some(gtk::gdk::DragCancelReason::Error), false),
+            FailedTabDragAction::Detach
+        );
+    }
+
+    #[test]
+    fn completed_internal_transfer_never_detaches_the_tab_again() {
+        assert_eq!(
+            tab_drag_end_action(true, None, false),
+            FailedTabDragAction::Cancel
+        );
+        assert_eq!(
+            tab_drag_end_action(true, Some(gtk::gdk::DragCancelReason::NoTarget), false),
+            FailedTabDragAction::Cancel
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ binary_directory=${ZTER_BIN_DIR:-"$HOME/.local/bin"}
 application_id=io.github.z99natza.zter
 legacy_application_id=io.github.znnn.zter
 icon_theme_directory="$data_directory/icons/hicolor"
+installed_binary="$binary_directory/zter"
 
 case "$data_directory:$binary_directory" in
     /*:/*) ;;
@@ -38,7 +39,7 @@ if [ ! -f "$binary_source" ]; then
     exit 1
 fi
 
-install -Dm755 "$binary_source" "$binary_directory/zter"
+install -Dm755 "$binary_source" "$installed_binary"
 install -Dm644 \
     "$project_directory/data/$application_id.desktop" \
     "$data_directory/applications/$application_id.desktop"
@@ -60,6 +61,22 @@ elif command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 printf 'zter: installed for the current user\n'
-printf '  binary: %s\n' "$binary_directory/zter"
+printf '  binary: %s\n' "$installed_binary"
 printf '  launcher: %s\n' "$data_directory/applications/$application_id.desktop"
 printf '  icon: %s\n' "$data_directory/icons/hicolor/scalable/apps/$application_id.svg"
+
+stale_processes=
+for process_executable in /proc/[0-9]*/exe; do
+    [ -L "$process_executable" ] || continue
+    executable=$(readlink "$process_executable" 2>/dev/null || true)
+    [ "$executable" = "$installed_binary (deleted)" ] || continue
+    process_id=${process_executable#/proc/}
+    process_id=${process_id%/exe}
+    stale_processes="${stale_processes}${stale_processes:+ }$process_id"
+done
+
+if [ -n "$stale_processes" ]; then
+    printf 'zter: warning: running installed process(es) %s still use the previous binary\n' \
+        "$stale_processes" >&2
+    printf '  close all installed zter windows, then reopen the launcher to use this build\n' >&2
+fi

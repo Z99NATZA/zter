@@ -45,6 +45,12 @@ refresh the user-local hicolor icon cache with `gtk4-update-icon-cache`, or
 observe icon changes. Both commands also remove launcher and icon files that
 used the previous `io.github.znnn.zter` identity.
 
+Installation does not close running terminals. If an installed zter process is
+still using the replaced binary, the installer prints its process ID and asks
+the user to close all installed zter windows before reopening the launcher.
+Until then, the unique GTK application activates that previous process and its
+in-memory code.
+
 The binary directory must be present in the graphical session's `PATH`. On a
 new Ubuntu user session, `~/.local/bin` is normally added after signing out and
 back in.

@@ -124,6 +124,11 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         }}
         .zter-drag-space {{
             min-width: 40px;
+            outline-width: 0;
+        }}
+        .zter-drag-space.zter-header-drop-target {{
+            outline: 1px solid {};
+            outline-offset: -1px;
         }}
         .zter-header-tab,
         button.zter-tab-close,
@@ -334,6 +339,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         SELECTION.css(),
         HEADER_BACKGROUND.css(),
         FOREGROUND.css(),
+        TAB_DROP_TARGET.css(),
         HEADER_BACKGROUND.css(),
         TAB_HOVER.css(),
         SELECTION.css(),
@@ -548,6 +554,18 @@ mod tests {
         assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
         assert!(target_rule.contains("outline-offset: -1px"));
         assert!(target_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn blank_header_drop_target_uses_an_inset_white_outline() {
+        let css = application_css(TerminalPadding::default());
+        let (_, target_rule) = css
+            .split_once(".zter-drag-space.zter-header-drop-target")
+            .unwrap();
+        let (target_rule, _) = target_rule.split_once('}').unwrap();
+
+        assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
+        assert!(target_rule.contains("outline-offset: -1px"));
     }
 
     #[test]
