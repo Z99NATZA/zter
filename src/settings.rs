@@ -13,9 +13,11 @@ use crate::identity::SETTINGS_DIRECTORY;
 const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 2;
 const DEFAULT_PADDING: u16 = 0;
-const MAX_PADDING: u16 = 128;
+pub(crate) const MAX_PADDING: u16 = 128;
 pub(crate) const MIN_FONT_SIZE: f64 = 6.0;
 pub(crate) const MAX_FONT_SIZE: f64 = 72.0;
+pub(crate) const MAX_SCROLLBACK_LINES: i64 = 1_000_000;
+pub(crate) const MAX_WALLPAPER_OPACITY: f64 = 0.6;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -80,6 +82,17 @@ pub struct Settings {
     wallpaper_opacity: f64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SettingsUpdate {
+    pub shell: Option<String>,
+    pub wallpaper: Option<PathBuf>,
+    pub font_family: String,
+    pub font_size: f64,
+    pub terminal_padding: TerminalPadding,
+    pub scrollback_lines: i64,
+    pub wallpaper_opacity: f64,
+}
+
 impl Settings {
     pub fn load_or_create() -> Result<Self, SettingsError> {
         match settings_path() {
@@ -94,6 +107,48 @@ impl Settings {
     pub fn apply_project() -> Result<ApplyOutcome, SettingsError> {
         let path = settings_path()?;
         Self::apply_project_at(&path)
+    }
+
+    pub(crate) fn save_user(&self) -> Result<PathBuf, SettingsError> {
+        let path = settings_path()?;
+        write_settings(&path, self)?;
+        Ok(path)
+    }
+
+    pub(crate) fn apply_update(&mut self, update: SettingsUpdate) {
+        let defaults = Self::defaults();
+        self.shell = update
+            .shell
+            .map(|shell| shell.trim().to_owned())
+            .filter(|shell| !shell.is_empty());
+        self.wallpaper = update
+            .wallpaper
+            .filter(|wallpaper| !wallpaper.as_os_str().is_empty());
+        self.font_family = nonempty_or(update.font_family, defaults.font_family);
+        self.font_size = ranged_or(
+            update.font_size,
+            MIN_FONT_SIZE,
+            MAX_FONT_SIZE,
+            defaults.font_size,
+        );
+        self.padding_top = padding_or_default(update.terminal_padding.top(), defaults.padding_top);
+        self.padding_right =
+            padding_or_default(update.terminal_padding.right(), defaults.padding_right);
+        self.padding_bottom =
+            padding_or_default(update.terminal_padding.bottom(), defaults.padding_bottom);
+        self.padding_left =
+            padding_or_default(update.terminal_padding.left(), defaults.padding_left);
+        self.scrollback_lines = if (0..=MAX_SCROLLBACK_LINES).contains(&update.scrollback_lines) {
+            update.scrollback_lines
+        } else {
+            defaults.scrollback_lines
+        };
+        self.wallpaper_opacity = ranged_or(
+            update.wallpaper_opacity,
+            0.0,
+            MAX_WALLPAPER_OPACITY,
+            defaults.wallpaper_opacity,
+        );
     }
 
     fn load_or_create_at(path: &Path) -> Result<Self, SettingsError> {
@@ -192,10 +247,34 @@ impl Settings {
         self.wallpaper_opacity
     }
 
-    #[cfg(test)]
     pub(crate) fn defaults() -> Self {
-        settings_from_value(project_settings_value().unwrap(), project_settings_path()).unwrap()
+        settings_from_value(
+            project_settings_value().expect("embedded settings must be valid JSON"),
+            project_settings_path(),
+        )
+        .expect("embedded settings must satisfy the settings schema")
     }
+}
+
+fn nonempty_or(value: String, default: String) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        default
+    } else {
+        value.to_owned()
+    }
+}
+
+fn ranged_or(value: f64, minimum: f64, maximum: f64, default: f64) -> f64 {
+    if value.is_finite() && (minimum..=maximum).contains(&value) {
+        value
+    } else {
+        default
+    }
+}
+
+fn padding_or_default(value: u16, default: u16) -> u16 {
+    if value <= MAX_PADDING { value } else { default }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -448,11 +527,11 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
             .map(Value::from),
         "scrollback_lines" => value
             .as_i64()
-            .filter(|value| (0..=1_000_000).contains(value))
+            .filter(|value| (0..=MAX_SCROLLBACK_LINES).contains(value))
             .map(Value::from),
         "wallpaper_opacity" => value
             .as_f64()
-            .filter(|value| value.is_finite() && (0.0..=0.6).contains(value))
+            .filter(|value| value.is_finite() && (0.0..=MAX_WALLPAPER_OPACITY).contains(value))
             .map(|_| value.clone()),
         _ => None,
     }
@@ -500,13 +579,15 @@ impl Settings {
         {
             return Err(invalid(path, "font_size must be between 6 and 72"));
         }
-        if !(0..=1_000_000).contains(&self.scrollback_lines) {
+        if !(0..=MAX_SCROLLBACK_LINES).contains(&self.scrollback_lines) {
             return Err(invalid(
                 path,
                 "scrollback_lines must be between 0 and 1000000",
             ));
         }
-        if !self.wallpaper_opacity.is_finite() || !(0.0..=0.6).contains(&self.wallpaper_opacity) {
+        if !self.wallpaper_opacity.is_finite()
+            || !(0.0..=MAX_WALLPAPER_OPACITY).contains(&self.wallpaper_opacity)
+        {
             return Err(invalid(path, "wallpaper_opacity must be between 0 and 0.6"));
         }
 
@@ -889,6 +970,64 @@ mod tests {
         assert_eq!(settings.font_size(), 18.0);
         assert_eq!(fs::read_to_string(&path).unwrap(), source);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn settings_update_saves_and_reloads_every_editable_value() {
+        let directory = test_directory("save-update");
+        let path = directory.join("settings.json");
+        let mut settings = Settings::defaults();
+        settings.apply_update(SettingsUpdate {
+            shell: Some(" /bin/fish ".to_owned()),
+            wallpaper: Some(PathBuf::from("/tmp/wallpaper.png")),
+            font_family: "JetBrains Mono".to_owned(),
+            font_size: 16.0,
+            terminal_padding: TerminalPadding::new(1, 2, 3, 4),
+            scrollback_lines: 25_000,
+            wallpaper_opacity: 0.25,
+        });
+
+        write_settings(&path, &settings).unwrap();
+        let reloaded = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(reloaded.shell(), Some("/bin/fish"));
+        assert_eq!(reloaded.wallpaper(), Some(Path::new("/tmp/wallpaper.png")));
+        assert_eq!(reloaded.font_family(), "JetBrains Mono");
+        assert_eq!(reloaded.font_size(), 16.0);
+        assert_eq!(
+            reloaded.terminal_padding(),
+            TerminalPadding::new(1, 2, 3, 4)
+        );
+        assert_eq!(reloaded.scrollback_lines(), 25_000);
+        assert_eq!(reloaded.wallpaper_opacity(), 0.25);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_settings_update_values_use_embedded_defaults() {
+        let defaults = Settings::defaults();
+        let mut settings = defaults.clone();
+        settings.apply_update(SettingsUpdate {
+            shell: Some("  ".to_owned()),
+            wallpaper: Some(PathBuf::new()),
+            font_family: "  ".to_owned(),
+            font_size: f64::NAN,
+            terminal_padding: TerminalPadding::new(MAX_PADDING + 1, 2, 3, 4),
+            scrollback_lines: MAX_SCROLLBACK_LINES + 1,
+            wallpaper_opacity: MAX_WALLPAPER_OPACITY + 0.01,
+        });
+
+        assert_eq!(settings.shell(), None);
+        assert_eq!(settings.wallpaper(), None);
+        assert_eq!(settings.font_family(), defaults.font_family());
+        assert_eq!(settings.font_size(), defaults.font_size());
+        assert_eq!(
+            settings.terminal_padding().top(),
+            defaults.terminal_padding().top()
+        );
+        assert_eq!(settings.terminal_padding().right(), 2);
+        assert_eq!(settings.scrollback_lines(), defaults.scrollback_lines());
+        assert_eq!(settings.wallpaper_opacity(), defaults.wallpaper_opacity());
     }
 
     #[test]

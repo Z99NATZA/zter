@@ -95,6 +95,11 @@ zter's control. The terminal scrolls to input on a keystroke, hides the pointer
 while typing, and recognizes OSC 8 hyperlinks. Control-primary-clicking a
 recognized hyperlink opens its URI with the system-default handler. Other
 primary clicks retain their terminal behavior.
+
+Saving the settings window applies font, theme, padding, and scrollback changes
+to every current tab. Each tab retains its zoom offset relative to the previous
+configured font size. Wallpaper changes apply across current windows, while a
+shell change affects only subsequently opened tabs.
 `Ctrl+C` copies selected text from the physical `C` key across keyboard
 layouts. Without a selection, it retains the terminal interrupt behavior when
 only the shell owns the terminal. When a foreground process owns the terminal,

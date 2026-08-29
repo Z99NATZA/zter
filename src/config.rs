@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::settings::{Settings, SettingsError, TerminalPadding, Theme};
 
 const FALLBACK_SHELL: &str = "/bin/sh";
-const BUNDLED_WALLPAPER_SETTING: &str = "builtin";
+pub(crate) const BUNDLED_WALLPAPER_SETTING: &str = "builtin";
 pub const WALLPAPER_ENV: &str = "ZTER_WALLPAPER";
 
 #[derive(Clone, Debug, PartialEq)]

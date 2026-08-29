@@ -449,6 +449,27 @@ fn settings_window_css() -> String {
             min-height: 18px;
             padding-left: 2px;
         }}
+        window.zter-settings-window button.zter-settings-inline-action {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 4px;
+            box-shadow: none;
+            color: {};
+            font-size: 11px;
+            min-height: 16px;
+            min-width: 0;
+            outline-width: 0;
+            padding: 0 5px;
+        }}
+        window.zter-settings-window button.zter-settings-inline-action:hover {{
+            background-color: {};
+            color: {};
+        }}
+        window.zter-settings-window button.zter-settings-inline-action:focus {{
+            box-shadow: none;
+            outline-width: 0;
+        }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
         window.zter-settings-window .zter-settings-field > .zter-settings-value {{
@@ -497,6 +518,10 @@ fn settings_window_css() -> String {
         window.zter-settings-window .zter-settings-actions {{
             border-top: 1px solid {};
             padding: 12px 16px;
+        }}
+        window.zter-settings-window .zter-settings-status {{
+            color: {};
+            margin-right: 8px;
         }}
         window.zter-settings-window .zter-settings-actions button {{
             background-color: {};
@@ -547,6 +572,11 @@ fn settings_window_css() -> String {
         BACKGROUND.css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
+        SELECTION.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        TAB_HOVER.css(),
+        FOREGROUND.css(),
         HEADER_BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -555,6 +585,7 @@ fn settings_window_css() -> String {
         FOREGROUND.css(),
         TAB_HOVER.css(),
         SELECTION.css(),
+        Rgb(0xe0, 0x6c, 0x75).css(),
         HEADER_BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -863,6 +894,21 @@ mod tests {
         assert!(form_rule.contains("padding: 16px"));
         assert!(label_rule.contains("font-size: 12px"));
         assert!(label_rule.contains("min-height: 18px"));
+    }
+
+    #[test]
+    fn settings_inline_action_is_a_compact_shadow_free_tag() {
+        let css = application_css(TerminalPadding::default());
+        let (_, action_rule) = css
+            .split_once("window.zter-settings-window button.zter-settings-inline-action {")
+            .unwrap();
+        let (action_rule, _) = action_rule.split_once('}').unwrap();
+
+        assert!(action_rule.contains("border-radius: 4px"));
+        assert!(action_rule.contains("box-shadow: none"));
+        assert!(action_rule.contains("font-size: 11px"));
+        assert!(action_rule.contains("min-height: 16px"));
+        assert!(action_rule.contains("min-width: 0"));
     }
 
     #[test]

@@ -16,9 +16,12 @@ use gtk::prelude::*;
 use vte4::prelude::*;
 
 use crate::{
-    config::{AppConfig, WallpaperSource},
+    config::{AppConfig, BUNDLED_WALLPAPER_SETTING, WallpaperSource},
     identity::{APPLICATION_NAME, ICON_NAME, SETTINGS_RELOAD_ACTION},
-    settings::{MAX_FONT_SIZE, MIN_FONT_SIZE, TerminalPadding},
+    settings::{
+        MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES, MAX_WALLPAPER_OPACITY, MIN_FONT_SIZE,
+        Settings, SettingsUpdate, TerminalPadding,
+    },
     theme,
 };
 
@@ -180,13 +183,49 @@ struct HeaderWidgets {
     overflow_drag_space: gtk::WindowHandle,
 }
 
+#[derive(Clone)]
+struct SettingsControls {
+    shell: gtk::Entry,
+    font_family: gtk::Entry,
+    font_size: gtk::SpinButton,
+    padding: [gtk::SpinButton; 4],
+    scrollback: gtk::SpinButton,
+    wallpaper: gtk::Entry,
+    wallpaper_opacity: gtk::SpinButton,
+}
+
+impl SettingsControls {
+    fn update(&self) -> SettingsUpdate {
+        let optional_text = |entry: &gtk::Entry| {
+            let value = entry.text();
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.to_owned())
+        };
+
+        SettingsUpdate {
+            shell: optional_text(&self.shell),
+            wallpaper: optional_text(&self.wallpaper).map(PathBuf::from),
+            font_family: self.font_family.text().to_string(),
+            font_size: self.font_size.value(),
+            terminal_padding: TerminalPadding::new(
+                self.padding[0].value_as_int() as u16,
+                self.padding[1].value_as_int() as u16,
+                self.padding[2].value_as_int() as u16,
+                self.padding[3].value_as_int() as u16,
+            ),
+            scrollback_lines: i64::from(self.scrollback.value_as_int()),
+            wallpaper_opacity: self.wallpaper_opacity.value(),
+        }
+    }
+}
+
 struct WindowContext {
     window: gtk::glib::WeakRef<gtk::ApplicationWindow>,
     notebook: gtk::glib::WeakRef<gtk::Notebook>,
     tab_strip: gtk::glib::WeakRef<gtk::Box>,
     tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
     drop_motion: gtk::glib::WeakRef<gtk::DropControllerMotion>,
-    config: AppConfig,
+    config: RefCell<AppConfig>,
     wallpaper: WallpaperAsset,
     close_protection: CloseProtection,
 }
@@ -194,6 +233,7 @@ struct WindowContext {
 struct TabRuntime {
     id: String,
     location: RefCell<Rc<WindowContext>>,
+    padding: Cell<TerminalPadding>,
     shell_pid: Cell<Option<libc::pid_t>>,
     drag_transfer_completed: Cell<bool>,
 }
@@ -229,10 +269,11 @@ impl WindowContext {
 }
 
 impl TabRuntime {
-    fn new(id: String, location: Rc<WindowContext>) -> Rc<Self> {
+    fn new(id: String, location: Rc<WindowContext>, padding: TerminalPadding) -> Rc<Self> {
         let runtime = Rc::new(Self {
             id: id.clone(),
             location: RefCell::new(location),
+            padding: Cell::new(padding),
             shell_pid: Cell::new(None),
             drag_transfer_completed: Cell::new(false),
         });
@@ -451,10 +492,11 @@ impl TerminalZoomControl {
     }
 
     fn request(&self, zoom: TerminalZoom) {
-        let Some(font_size) = self.state.borrow_mut().request(zoom) else {
+        let Some(terminal) = self.terminal.upgrade() else {
             return;
         };
-        let Some(terminal) = self.terminal.upgrade() else {
+        self.state.borrow_mut().font_size = terminal.font_scale() * TERMINAL_FONT_SCALE_BASE_SIZE;
+        let Some(font_size) = self.state.borrow_mut().request(zoom) else {
             return;
         };
 
@@ -484,11 +526,7 @@ fn create_window(
         config.terminal_padding(),
     );
     let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
-    install_settings_reload_action(
-        application,
-        &gtk::prelude::WidgetExt::display(&window),
-        &wallpaper,
-    );
+    install_settings_reload_action(application);
 
     let notebook = create_notebook();
     let close_protection = CloseProtection::default();
@@ -502,21 +540,21 @@ fn create_window(
         tab_strip: header.tab_strip.downgrade(),
         tab_scroller: header.tab_scroller.downgrade(),
         drop_motion: drop_motion.downgrade(),
-        config: config.clone(),
+        config: RefCell::new(config.clone()),
         wallpaper,
         close_protection: close_protection.clone(),
     });
     WINDOW_CONTEXTS.with(|contexts| contexts.borrow_mut().push(Rc::downgrade(&context)));
     install_new_tab_button(&header.inline_new_tab, &context);
     install_new_tab_button(&header.pinned_new_tab, &context);
-    install_settings_button(&header.settings, &window, config);
+    install_settings_button(&header.settings, &context);
     install_tab_shortcuts(&context);
     install_tab_switch_handler(
         &window,
         &notebook,
         &header.tab_strip,
         &header.tab_scroller,
-        config,
+        &context,
     );
     install_window_close_protection(&window, &notebook, &close_protection);
     install_header_drop_target(&header.drag_space, &context);
@@ -633,13 +671,8 @@ fn install_new_tab_button(button: &gtk::Button, context: &Rc<WindowContext>) {
     });
 }
 
-fn install_settings_button(
-    button: &gtk::Button,
-    parent: &gtk::ApplicationWindow,
-    config: &AppConfig,
-) {
-    let parent = parent.downgrade();
-    let config = config.clone();
+fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
+    let context = Rc::downgrade(context);
     let settings_window = Rc::new(RefCell::new(None::<gtk::glib::WeakRef<gtk::Window>>));
     let settings_window_for_click = settings_window.clone();
 
@@ -652,11 +685,23 @@ fn install_settings_button(
             window.present();
             return;
         }
-        let Some(parent) = parent.upgrade() else {
+        let Some(context) = context.upgrade() else {
             return;
         };
+        let Some(parent) = context.window.upgrade() else {
+            return;
+        };
+        let settings = match Settings::load_or_create() {
+            Ok(settings) => settings,
+            Err(error) => {
+                eprintln!(
+                    "zter: could not load settings for editing: {error}; using embedded defaults"
+                );
+                Settings::defaults()
+            }
+        };
 
-        let window = create_settings_window(&parent, &config);
+        let window = create_settings_window(&parent, settings);
         *settings_window_for_click.borrow_mut() = Some(window.downgrade());
 
         let settings_window_for_destroy = settings_window_for_click.clone();
@@ -667,7 +712,7 @@ fn install_settings_button(
     });
 }
 
-fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -> gtk::Window {
+fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -> gtk::Window {
     let window = gtk::Window::builder()
         .title("Settings")
         .transient_for(parent)
@@ -710,19 +755,19 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     form.add_css_class("zter-settings-form");
 
     let shell = gtk::Entry::builder()
-        .text(config.shell())
+        .text(settings.shell().unwrap_or_default())
         .placeholder_text("Use the environment shell")
         .hexpand(true)
         .build();
     form.attach(&settings_field("Shell", &shell), 0, 0, 2, 1);
 
     let font_family = gtk::Entry::builder()
-        .text(config.font_family())
+        .text(settings.font_family())
         .hexpand(true)
         .build();
     form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
 
-    let font_size = settings_spin(config.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
+    let font_size = settings_spin(settings.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
     form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
 
     let theme = gtk::Label::builder()
@@ -733,9 +778,9 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     form.attach(&settings_field("Theme", &theme), 0, 2, 1, 1);
 
     let scrollback = settings_spin(
-        config.scrollback_lines() as f64,
+        settings.scrollback_lines() as f64,
         0.0,
-        1_000_000.0,
+        MAX_SCROLLBACK_LINES as f64,
         1_000.0,
         0,
     );
@@ -747,19 +792,46 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
         1,
     );
 
-    let padding = config.terminal_padding();
+    let padding = settings.terminal_padding();
     let padding_inputs = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     padding_inputs.add_css_class("zter-settings-padding");
-    for (edge, value) in [
-        ("Top", padding.top()),
-        ("Right", padding.right()),
-        ("Bottom", padding.bottom()),
-        ("Left", padding.left()),
-    ] {
-        let input = settings_spin(f64::from(value), 0.0, 128.0, 1.0, 0);
+    let padding_controls = [
+        settings_spin(
+            f64::from(padding.top()),
+            0.0,
+            f64::from(MAX_PADDING),
+            1.0,
+            0,
+        ),
+        settings_spin(
+            f64::from(padding.right()),
+            0.0,
+            f64::from(MAX_PADDING),
+            1.0,
+            0,
+        ),
+        settings_spin(
+            f64::from(padding.bottom()),
+            0.0,
+            f64::from(MAX_PADDING),
+            1.0,
+            0,
+        ),
+        settings_spin(
+            f64::from(padding.left()),
+            0.0,
+            f64::from(MAX_PADDING),
+            1.0,
+            0,
+        ),
+    ];
+    for (edge, input) in ["Top", "Right", "Bottom", "Left"]
+        .into_iter()
+        .zip(&padding_controls)
+    {
         input.set_tooltip_text(Some(edge));
         input.set_hexpand(true);
-        padding_inputs.append(&settings_field(edge, &input));
+        padding_inputs.append(&settings_field(edge, input));
     }
     let padding_group = gtk::Frame::builder()
         .label("Padding")
@@ -770,7 +842,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     form.attach(&padding_group, 0, 3, 2, 1);
 
     let wallpaper = gtk::Entry::builder()
-        .text(wallpaper_setting_text(config.wallpaper()))
+        .text(wallpaper_setting_text(settings.wallpaper()))
         .placeholder_text("Disabled")
         .secondary_icon_name("folder-open-symbolic")
         .secondary_icon_activatable(true)
@@ -788,9 +860,32 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
         };
         open_wallpaper_dialog(&window, wallpaper);
     });
-    form.attach(&settings_field("Wallpaper", &wallpaper), 0, 4, 2, 1);
+    let wallpaper_default = gtk::Button::builder()
+        .label("Default")
+        .has_frame(false)
+        .tooltip_text("Use the built-in wallpaper")
+        .build();
+    wallpaper_default.add_css_class("zter-settings-inline-action");
+    wallpaper_default.set_valign(gtk::Align::Center);
+    let wallpaper_for_default = wallpaper.clone();
+    wallpaper_default.connect_clicked(move |_| {
+        wallpaper_for_default.set_text(BUNDLED_WALLPAPER_SETTING);
+    });
+    form.attach(
+        &settings_field_with_action("Wallpaper", &wallpaper_default, &wallpaper),
+        0,
+        4,
+        2,
+        1,
+    );
 
-    let opacity = settings_spin(config.wallpaper_opacity(), 0.0, 0.6, 0.01, 2);
+    let opacity = settings_spin(
+        settings.wallpaper_opacity(),
+        0.0,
+        MAX_WALLPAPER_OPACITY,
+        0.01,
+        2,
+    );
     form.attach(
         &settings_field("Wallpaper opacity (0 – 0.60)", &opacity),
         0,
@@ -801,23 +896,32 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
 
     surface.append(&form);
 
+    let controls = SettingsControls {
+        shell,
+        font_family,
+        font_size,
+        padding: padding_controls,
+        scrollback,
+        wallpaper,
+        wallpaper_opacity: opacity,
+    };
+
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     actions.add_css_class("zter-settings-actions");
-    let action_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    action_spacer.set_hexpand(true);
+    let status = gtk::Label::builder()
+        .xalign(0.0)
+        .hexpand(true)
+        .wrap(true)
+        .build();
+    status.add_css_class("zter-settings-status");
     let cancel = gtk::Button::builder()
         .label("Cancel")
         .has_frame(false)
         .build();
     cancel.add_css_class("zter-settings-cancel");
-    let ok = gtk::Button::builder()
-        .label("OK")
-        .has_frame(false)
-        .sensitive(false)
-        .tooltip_text("Saving settings is not available yet")
-        .build();
+    let ok = gtk::Button::builder().label("OK").has_frame(false).build();
     ok.add_css_class("zter-settings-ok");
-    actions.append(&action_spacer);
+    actions.append(&status);
     actions.append(&cancel);
     actions.append(&ok);
     surface.append(&actions);
@@ -832,6 +936,41 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     });
     let window_weak = window.downgrade();
     cancel.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+    let controls_for_save = controls.clone();
+    let settings = Rc::new(RefCell::new(settings));
+    let settings_for_save = settings.clone();
+    let status_for_save = status.clone();
+    let window_weak = window.downgrade();
+    ok.connect_clicked(move |_| {
+        status_for_save.set_label("");
+        let save_result = {
+            let mut settings = settings_for_save.borrow_mut();
+            settings.apply_update(controls_for_save.update());
+            settings.save_user()
+        };
+        if let Err(error) = save_result {
+            show_settings_error(
+                &status_for_save,
+                &format!("Could not save settings: {error}"),
+            );
+            return;
+        }
+
+        let config = match AppConfig::from_environment() {
+            Ok(config) => config,
+            Err(error) => {
+                show_settings_error(
+                    &status_for_save,
+                    &format!("Settings saved but could not be applied: {error}"),
+                );
+                return;
+            }
+        };
+        apply_app_config(&config);
         if let Some(window) = window_weak.upgrade() {
             window.close();
         }
@@ -855,13 +994,41 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
 }
 
 fn settings_field(title: &str, control: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let title = gtk::Label::builder().label(title).xalign(0.0).build();
+    title.add_css_class("zter-settings-field-title");
+    settings_field_with_heading(&title, control)
+}
+
+fn settings_field_with_action(
+    title: &str,
+    action: &impl IsA<gtk::Widget>,
+    control: &impl IsA<gtk::Widget>,
+) -> gtk::Box {
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    heading.add_css_class("zter-settings-field-heading");
+    heading.set_valign(gtk::Align::Center);
+
+    let title = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .valign(gtk::Align::Center)
+        .build();
+    title.add_css_class("zter-settings-field-title");
+    heading.append(&title);
+    heading.append(action);
+
+    settings_field_with_heading(&heading, control)
+}
+
+fn settings_field_with_heading(
+    heading: &impl IsA<gtk::Widget>,
+    control: &impl IsA<gtk::Widget>,
+) -> gtk::Box {
     let field = gtk::Box::new(gtk::Orientation::Vertical, 6);
     field.add_css_class("zter-settings-field");
     field.set_hexpand(true);
 
-    let title = gtk::Label::builder().label(title).xalign(0.0).build();
-    title.add_css_class("zter-settings-field-title");
-    field.append(&title);
+    field.append(heading);
     field.append(control);
     field
 }
@@ -880,12 +1047,14 @@ fn settings_spin(
     input
 }
 
-fn wallpaper_setting_text(wallpaper: Option<&WallpaperSource>) -> String {
-    match wallpaper {
-        None => String::new(),
-        Some(WallpaperSource::Bundled) => "builtin".to_owned(),
-        Some(WallpaperSource::File(path)) => path.to_string_lossy().into_owned(),
-    }
+fn wallpaper_setting_text(wallpaper: Option<&Path>) -> String {
+    wallpaper
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+fn show_settings_error(status: &gtk::Label, message: &str) {
+    status.set_label(message);
 }
 
 fn open_wallpaper_dialog(parent: &gtk::Window, wallpaper: &gtk::Entry) {
@@ -927,6 +1096,90 @@ fn open_wallpaper_dialog(parent: &gtk::Window, wallpaper: &gtk::Entry) {
 
 fn wallpaper_file_text(file: &gtk::gio::File) -> Option<String> {
     file.path().map(|path| path.to_string_lossy().into_owned())
+}
+
+fn active_window_contexts() -> Vec<Rc<WindowContext>> {
+    WINDOW_CONTEXTS.with(|contexts| {
+        let mut active = Vec::new();
+        contexts.borrow_mut().retain(|context| {
+            let Some(context) = context.upgrade() else {
+                return false;
+            };
+            active.push(context);
+            true
+        });
+        active
+    })
+}
+
+fn apply_app_config(config: &AppConfig) {
+    let contexts = active_window_contexts();
+    if let Some(display) = contexts
+        .iter()
+        .find_map(|context| context.window.upgrade())
+        .map(|window| gtk::prelude::WidgetExt::display(&window))
+    {
+        theme::install_display_styles(&display, config.terminal_padding());
+    }
+
+    for context in contexts {
+        let previous = context.config.replace(config.clone());
+        if let Some(notebook) = context.notebook.upgrade() {
+            for page_number in 0..notebook.n_pages() {
+                let Some(page) = notebook.nth_page(Some(page_number)) else {
+                    continue;
+                };
+                if let Some(runtime) = tab_runtime(page.widget_name().as_str()) {
+                    runtime.padding.set(config.terminal_padding());
+                }
+                if let Some(terminal) = find_terminal(&page) {
+                    apply_terminal_config(&terminal, &previous, config);
+                }
+            }
+        }
+
+        let wallpaper_changed = previous.wallpaper() != config.wallpaper()
+            || previous.wallpaper_opacity() != config.wallpaper_opacity()
+            || previous.theme() != config.theme();
+        if wallpaper_changed && let Some(window) = context.window.upgrade() {
+            reload_wallpaper(
+                &context.wallpaper,
+                wallpaper_preparation(config, &gtk::prelude::WidgetExt::display(&window)),
+            );
+        }
+    }
+}
+
+fn apply_terminal_config(terminal: &vte4::Terminal, previous: &AppConfig, config: &AppConfig) {
+    let current_font_size = terminal.font_scale() * TERMINAL_FONT_SCALE_BASE_SIZE;
+    let font_size = font_size_after_settings_change(
+        previous.font_size(),
+        current_font_size,
+        config.font_size(),
+    );
+    terminal.set_font(Some(&terminal_font(
+        config.font_family(),
+        TERMINAL_FONT_SCALE_BASE_SIZE,
+    )));
+    terminal.set_font_scale(terminal_font_scale(font_size));
+    terminal.set_scrollback_lines(config.scrollback_lines());
+    theme::apply_to(terminal, config.theme());
+}
+
+fn font_size_after_settings_change(previous: f64, current: f64, next: f64) -> f64 {
+    (next + current - previous).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+}
+
+fn reload_all_wallpapers(config: &AppConfig) {
+    for context in active_window_contexts() {
+        let Some(window) = context.window.upgrade() else {
+            continue;
+        };
+        reload_wallpaper(
+            &context.wallpaper,
+            wallpaper_preparation(config, &gtk::prelude::WidgetExt::display(&window)),
+        );
+    }
 }
 
 fn install_tab_overflow(
@@ -1019,17 +1272,21 @@ fn install_tab_switch_handler(
     notebook: &gtk::Notebook,
     tab_strip: &gtk::Box,
     tab_scroller: &gtk::ScrolledWindow,
-    config: &AppConfig,
+    context: &Rc<WindowContext>,
 ) {
     let window_weak = window.downgrade();
     let tab_strip_weak = tab_strip.downgrade();
     let tab_scroller_weak = tab_scroller.downgrade();
-    let fallback_title = default_tab_title(config.shell());
+    let context = Rc::downgrade(context);
     notebook.connect_switch_page(move |_, page, _| {
         let Some(terminal) = find_terminal(page) else {
             return;
         };
         if let Some(window) = window_weak.upgrade() {
+            let fallback_title = context
+                .upgrade()
+                .map(|context| default_tab_title(context.config.borrow().shell()))
+                .unwrap_or_else(|| APPLICATION_NAME.to_owned());
             let title = tab_strip_weak
                 .upgrade()
                 .and_then(|tab_strip| displayed_tab_title(&tab_strip, &page.widget_name()))
@@ -1049,23 +1306,30 @@ fn add_terminal_tab(context: &Rc<WindowContext>) {
     let Some((window, notebook, tab_strip, tab_scroller)) = context.widgets() else {
         return;
     };
-    let working_directory = new_tab_working_directory(&notebook, &context.config);
-    let fallback_title = default_tab_title(context.config.shell());
+    let config = context.config.borrow().clone();
+    let working_directory = new_tab_working_directory(&notebook, &config);
+    let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
-    let runtime = TabRuntime::new(tab_id.clone(), context.clone());
-    let terminal = create_terminal(&context.config, &runtime);
+    let runtime = TabRuntime::new(tab_id.clone(), context.clone(), config.terminal_padding());
+    let terminal = create_terminal(&config, &runtime);
     install_foreground_process_key_protection(&terminal, &runtime);
     let terminal_for_spawn = terminal.clone();
-    let config_for_spawn = context.config.clone();
+    let config_for_spawn = config.clone();
     let runtime_for_spawn = runtime.clone();
-    let content = create_content(&terminal, &context.config, &context.wallpaper, move || {
-        spawn_shell(
-            &terminal_for_spawn,
-            &config_for_spawn,
-            &working_directory,
-            &runtime_for_spawn,
-        );
-    });
+    let content = create_content(
+        &terminal,
+        &config,
+        &context.wallpaper,
+        &runtime,
+        move || {
+            spawn_shell(
+                &terminal_for_spawn,
+                &config_for_spawn,
+                &working_directory,
+                &runtime_for_spawn,
+            );
+        },
+    );
     content.set_widget_name(&tab_id);
     let header = create_header_tab(&fallback_title, &tab_id);
     let title_state = Rc::new(RefCell::new(TabTitleState::new(fallback_title.clone())));
@@ -1725,7 +1989,8 @@ fn detach_tab_to_new_window(runtime: &Rc<TabRuntime>) -> bool {
     let Some(application) = source_window.application() else {
         return false;
     };
-    let target = create_window(&application, &source.config, false);
+    let config = source.config.borrow().clone();
+    let target = create_window(&application, &config, false);
     let Some(window) = target.window.upgrade() else {
         return false;
     };
@@ -2667,6 +2932,7 @@ fn create_content<F>(
     terminal: &vte4::Terminal,
     config: &AppConfig,
     wallpaper: &WallpaperAsset,
+    runtime: &Rc<TabRuntime>,
     on_initial_size: F,
 ) -> gtk::Overlay
 where
@@ -2677,7 +2943,7 @@ where
     overlay.set_overflow(gtk::Overflow::Hidden);
 
     let background = create_background(wallpaper);
-    let terminal_viewport = create_terminal_viewport(terminal, config, on_initial_size);
+    let terminal_viewport = create_terminal_viewport(terminal, config, runtime, on_initial_size);
     let terminal_scrollbar = create_terminal_scrollbar(terminal);
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
@@ -2730,12 +2996,12 @@ fn terminal_has_scrollback(lower: f64, upper: f64, page_size: f64) -> bool {
 fn create_terminal_viewport<F>(
     terminal: &vte4::Terminal,
     config: &AppConfig,
+    runtime: &Rc<TabRuntime>,
     on_initial_size: F,
 ) -> gtk::ScrolledWindow
 where
     F: FnOnce() + 'static,
 {
-    let padding = config.terminal_padding();
     let terminal_surface = gtk::Fixed::new();
     terminal_surface.put(terminal, 0.0, 0.0);
     let scroll_content = gtk::Viewport::builder()
@@ -2752,7 +3018,7 @@ where
         .vexpand(true)
         .child(&scroll_content)
         .build();
-    install_deferred_terminal_resize(&viewport, terminal, padding, on_initial_size);
+    install_deferred_terminal_resize(&viewport, terminal, runtime, on_initial_size);
     install_terminal_zoom(terminal, config.font_size());
     viewport
 }
@@ -2838,7 +3104,7 @@ fn zoomed_font_size(current: f64, zoom: TerminalZoom) -> f64 {
 fn install_deferred_terminal_resize<F>(
     viewport: &gtk::ScrolledWindow,
     terminal: &vte4::Terminal,
-    padding: TerminalPadding,
+    runtime: &Rc<TabRuntime>,
     on_initial_size: F,
 ) where
     F: FnOnce() + 'static,
@@ -2847,9 +3113,18 @@ fn install_deferred_terminal_resize<F>(
     let pending = Rc::new(RefCell::new(None::<gtk::glib::SourceId>));
     let on_initial_size = RefCell::new(Some(on_initial_size));
     let terminal_weak = terminal.downgrade();
+    let runtime = runtime.clone();
+    let applied_padding = Cell::new(runtime.padding.get());
 
     viewport.add_tick_callback(move |viewport, _| {
         let size = (viewport.width(), viewport.height());
+        let padding = runtime.padding.get();
+        if padding != applied_padding.get() && size.0 > 0 && size.1 > 0 {
+            applied_padding.set(padding);
+            if let Some(terminal) = terminal_weak.upgrade() {
+                apply_terminal_viewport_size(&terminal, size, padding);
+            }
+        }
         match resize.borrow_mut().observe(size) {
             TerminalResizeAction::Ignore => {}
             TerminalResizeAction::ApplyInitial(size) => {
@@ -2933,18 +3208,12 @@ fn prepare_wallpaper_asset(config: &AppConfig, display: &gtk::gdk::Display) -> W
     }
 }
 
-fn install_settings_reload_action(
-    application: &gtk::Application,
-    display: &gtk::gdk::Display,
-    wallpaper: &WallpaperAsset,
-) {
+fn install_settings_reload_action(application: &gtk::Application) {
     if application.lookup_action(SETTINGS_RELOAD_ACTION).is_some() {
         return;
     }
 
     let action = gtk::gio::SimpleAction::new(SETTINGS_RELOAD_ACTION, None);
-    let display = display.clone();
-    let wallpaper = wallpaper.clone();
     action.connect_activate(move |_, _| {
         let config = match AppConfig::from_environment() {
             Ok(config) => config,
@@ -2953,7 +3222,7 @@ fn install_settings_reload_action(
                 return;
             }
         };
-        reload_wallpaper(&wallpaper, wallpaper_preparation(&config, &display));
+        reload_all_wallpapers(&config);
     });
     application.add_action(&action);
 }
@@ -3960,13 +4229,11 @@ mod tests {
     fn settings_wallpaper_text_distinguishes_each_source() {
         assert_eq!(wallpaper_setting_text(None), "");
         assert_eq!(
-            wallpaper_setting_text(Some(&WallpaperSource::Bundled)),
-            "builtin"
+            wallpaper_setting_text(Some(Path::new(BUNDLED_WALLPAPER_SETTING))),
+            BUNDLED_WALLPAPER_SETTING
         );
         assert_eq!(
-            wallpaper_setting_text(Some(&WallpaperSource::File(PathBuf::from(
-                "/tmp/custom.png"
-            )))),
+            wallpaper_setting_text(Some(Path::new("/tmp/custom.png"))),
             "/tmp/custom.png"
         );
 
@@ -3977,5 +4244,19 @@ mod tests {
             Some("/tmp/selected.png")
         );
         assert_eq!(wallpaper_file_text(&remote), None);
+    }
+
+    #[test]
+    fn settings_font_change_preserves_each_tab_zoom_offset() {
+        assert_eq!(font_size_after_settings_change(12.0, 12.0, 16.0), 16.0);
+        assert_eq!(font_size_after_settings_change(12.0, 15.0, 16.0), 19.0);
+        assert_eq!(
+            font_size_after_settings_change(12.0, 6.0, 6.0),
+            MIN_FONT_SIZE
+        );
+        assert_eq!(
+            font_size_after_settings_change(12.0, 72.0, 20.0),
+            MAX_FONT_SIZE
+        );
     }
 }

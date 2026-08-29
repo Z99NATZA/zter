@@ -16,13 +16,18 @@ and are not tracked by the project Git history.
 ## Settings Window
 
 The settings button beside the window controls opens one compact modal for its
-terminal window. The modal displays the effective startup shell, theme, font,
-padding, scrollback, wallpaper, and opacity values. The wallpaper field can
-browse local image formats supported by GdkPixbuf and place the selected path
-in the draft. Its controls are an in-memory draft only: closing the modal,
-pressing Escape, clicking Cancel, or closing the parent terminal discards edits
-without changing the settings file. OK is disabled while the modal has no
-persistence behavior.
+terminal window. It edits the active debug or release profile shared by all
+zter windows in that application. The wallpaper field can browse local image
+formats supported by GdkPixbuf and place the selected path in the draft. The
+inline Default action selects the bundled wallpaper.
+
+OK atomically saves the complete draft. Font, theme, padding, scrollback,
+wallpaper, and opacity changes then apply to every current window and tab. A
+font-size change preserves each tab's existing runtime zoom offset. A shell
+change applies only to tabs opened after the save and does not restart current
+shells. Closing the modal, pressing Escape, clicking Cancel, or closing the
+parent terminal discards unsaved edits. A save or runtime-configuration error
+is shown in the modal and retains the draft.
 
 ## Apply Project Settings
 
@@ -63,10 +68,11 @@ zter settings reload
 Use `cargo run -- settings reload` for the separate development application.
 The command prepares the replacement image on a temporary worker thread and
 updates every current tab together; tabs opened later share the replacement
-texture. Other settings continue using their startup values until zter is
-restarted. A preparation failure warns and keeps the current wallpaper. If the
-matching application is not running, the command succeeds without opening a
-window because the next startup reads the current settings.
+texture. This command reloads only wallpaper settings; the settings window has
+the broader live-apply behavior documented above. A preparation failure warns
+and keeps the current wallpaper. If the matching application is not running,
+the command succeeds without opening a window because the next startup reads
+the current settings.
 
 ## Keys
 
@@ -91,6 +97,8 @@ Every settings file contains every supported key.
 same `"builtin"` value or a local image path. Setting the environment variable
 to an empty value disables the configured wallpaper for that process. A running
 application retains its startup environment override during `settings reload`.
+The same override remains effective when the settings window saves a wallpaper
+value.
 
 ## Loading And Failure Handling
 
