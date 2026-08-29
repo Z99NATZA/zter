@@ -13,6 +13,14 @@ the paths are `$HOME/.config/zter/settings.json` and
 embedded template on first run. These per-user files are outside the repository
 and are not tracked by the project Git history.
 
+## Settings Window
+
+The settings button beside the window controls opens one compact modal for its
+terminal window. The modal displays the effective startup shell, theme, font,
+padding, scrollback, wallpaper, and opacity values. Its controls are an
+in-memory draft only: closing the modal, pressing Escape, or closing the parent
+terminal discards edits without changing the settings file.
+
 ## Apply Project Settings
 
 After editing `config/settings.json`, apply all project values to the per-user

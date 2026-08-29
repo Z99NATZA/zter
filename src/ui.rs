@@ -24,6 +24,7 @@ use crate::{
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
+const SETTINGS_WIDTH: i32 = 520;
 const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Screen;
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
@@ -174,6 +175,7 @@ struct HeaderWidgets {
     tab_scroller: gtk::ScrolledWindow,
     inline_new_tab: gtk::Button,
     pinned_new_tab: gtk::Button,
+    settings: gtk::Button,
     drag_space: gtk::WindowHandle,
     overflow_drag_space: gtk::WindowHandle,
 }
@@ -507,6 +509,7 @@ fn create_window(
     WINDOW_CONTEXTS.with(|contexts| contexts.borrow_mut().push(Rc::downgrade(&context)));
     install_new_tab_button(&header.inline_new_tab, &context);
     install_new_tab_button(&header.pinned_new_tab, &context);
+    install_settings_button(&header.settings, &window, config);
     install_tab_shortcuts(&context);
     install_tab_switch_handler(
         &window,
@@ -582,9 +585,18 @@ fn create_header() -> HeaderWidgets {
     let window_controls = gtk::WindowControls::new(gtk::PackType::End);
     window_controls.set_valign(gtk::Align::Center);
 
+    let settings = gtk::Button::builder()
+        .icon_name("preferences-system-symbolic")
+        .has_frame(false)
+        .tooltip_text("Settings")
+        .build();
+    settings.add_css_class("zter-settings-button");
+    settings.set_valign(gtk::Align::Center);
+
     header.append(&tab_scroller);
     header.append(&pinned_new_tab);
     header.append(&overflow_drag_space);
+    header.append(&settings);
     header.append(&window_controls);
 
     HeaderWidgets {
@@ -593,6 +605,7 @@ fn create_header() -> HeaderWidgets {
         tab_scroller,
         inline_new_tab,
         pinned_new_tab,
+        settings,
         drag_space,
         overflow_drag_space,
     }
@@ -618,6 +631,218 @@ fn install_new_tab_button(button: &gtk::Button, context: &Rc<WindowContext>) {
         };
         add_terminal_tab(&context);
     });
+}
+
+fn install_settings_button(
+    button: &gtk::Button,
+    parent: &gtk::ApplicationWindow,
+    config: &AppConfig,
+) {
+    let parent = parent.downgrade();
+    let config = config.clone();
+    let settings_window = Rc::new(RefCell::new(None::<gtk::glib::WeakRef<gtk::Window>>));
+    let settings_window_for_click = settings_window.clone();
+
+    button.connect_clicked(move |_| {
+        if let Some(window) = settings_window_for_click
+            .borrow()
+            .as_ref()
+            .and_then(gtk::glib::WeakRef::upgrade)
+        {
+            window.present();
+            return;
+        }
+        let Some(parent) = parent.upgrade() else {
+            return;
+        };
+
+        let window = create_settings_window(&parent, &config);
+        *settings_window_for_click.borrow_mut() = Some(window.downgrade());
+
+        let settings_window_for_destroy = settings_window_for_click.clone();
+        window.connect_destroy(move |_| {
+            *settings_window_for_destroy.borrow_mut() = None;
+        });
+        window.present();
+    });
+}
+
+fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -> gtk::Window {
+    let window = gtk::Window::builder()
+        .title("Settings")
+        .transient_for(parent)
+        .modal(true)
+        .decorated(false)
+        .resizable(false)
+        .destroy_with_parent(true)
+        .default_width(SETTINGS_WIDTH)
+        .build();
+    window.add_css_class("zter-settings-window");
+
+    let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    surface.add_css_class("zter-settings-surface");
+    surface.set_overflow(gtk::Overflow::Hidden);
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    header.add_css_class("zter-settings-header");
+
+    let handle = gtk::WindowHandle::new();
+    handle.set_hexpand(true);
+    let title = gtk::Label::builder().label("Settings").xalign(0.0).build();
+    title.add_css_class("zter-settings-title");
+    handle.set_child(Some(&title));
+
+    let close = gtk::Button::builder()
+        .icon_name("window-close-symbolic")
+        .has_frame(false)
+        .tooltip_text("Close settings")
+        .build();
+    close.add_css_class("zter-settings-close");
+    header.append(&handle);
+    header.append(&close);
+    surface.append(&header);
+
+    let form = gtk::Grid::builder()
+        .column_spacing(12)
+        .row_spacing(12)
+        .build();
+    form.add_css_class("zter-settings-form");
+
+    let shell = gtk::Entry::builder()
+        .text(config.shell())
+        .placeholder_text("Use the environment shell")
+        .hexpand(true)
+        .build();
+    form.attach(&settings_field("Shell", &shell), 0, 0, 2, 1);
+
+    let font_family = gtk::Entry::builder()
+        .text(config.font_family())
+        .hexpand(true)
+        .build();
+    form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
+
+    let font_size = settings_spin(config.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
+    form.attach(&settings_field("Font size · pt", &font_size), 1, 1, 1, 1);
+
+    let theme = gtk::Label::builder()
+        .label("One Half Dark")
+        .xalign(0.0)
+        .build();
+    theme.add_css_class("zter-settings-value");
+    form.attach(&settings_field("Theme", &theme), 0, 2, 1, 1);
+
+    let scrollback = settings_spin(
+        config.scrollback_lines() as f64,
+        0.0,
+        1_000_000.0,
+        1_000.0,
+        0,
+    );
+    form.attach(
+        &settings_field("Scrollback · lines", &scrollback),
+        1,
+        2,
+        1,
+        1,
+    );
+
+    let padding = config.terminal_padding();
+    let padding_inputs = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    padding_inputs.add_css_class("zter-settings-padding");
+    for (edge, value) in [
+        ("Top", padding.top()),
+        ("Right", padding.right()),
+        ("Bottom", padding.bottom()),
+        ("Left", padding.left()),
+    ] {
+        let input = settings_spin(f64::from(value), 0.0, 128.0, 1.0, 0);
+        input.set_tooltip_text(Some(edge));
+        input.set_hexpand(true);
+        padding_inputs.append(&settings_field(edge, &input));
+    }
+    let padding_group = gtk::Frame::builder()
+        .label("Padding · px")
+        .label_xalign(0.0)
+        .child(&padding_inputs)
+        .build();
+    padding_group.add_css_class("zter-settings-group");
+    form.attach(&padding_group, 0, 3, 2, 1);
+
+    let wallpaper = gtk::Entry::builder()
+        .text(wallpaper_setting_text(config.wallpaper()))
+        .placeholder_text("Disabled")
+        .hexpand(true)
+        .build();
+    form.attach(&settings_field("Wallpaper", &wallpaper), 0, 4, 2, 1);
+
+    let opacity = settings_spin(config.wallpaper_opacity(), 0.0, 0.6, 0.01, 2);
+    form.attach(
+        &settings_field("Wallpaper opacity · 0–0.60", &opacity),
+        0,
+        5,
+        2,
+        1,
+    );
+
+    surface.append(&form);
+    window.set_child(Some(&surface));
+
+    let window_weak = window.downgrade();
+    close.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let window_weak = window.downgrade();
+    key_controller.connect_key_pressed(move |_, key, _, _| {
+        if key != gtk::gdk::Key::Escape {
+            return gtk::glib::Propagation::Proceed;
+        }
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+        gtk::glib::Propagation::Stop
+    });
+    window.add_controller(key_controller);
+
+    window
+}
+
+fn settings_field(title: &str, control: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    field.add_css_class("zter-settings-field");
+    field.set_hexpand(true);
+
+    let title = gtk::Label::builder().label(title).xalign(0.0).build();
+    title.add_css_class("zter-settings-field-title");
+    field.append(&title);
+    field.append(control);
+    field
+}
+
+fn settings_spin(
+    value: f64,
+    minimum: f64,
+    maximum: f64,
+    step: f64,
+    digits: u32,
+) -> gtk::SpinButton {
+    let input = gtk::SpinButton::with_range(minimum, maximum, step);
+    input.set_value(value);
+    input.set_digits(digits);
+    input.set_numeric(true);
+    input
+}
+
+fn wallpaper_setting_text(wallpaper: Option<&WallpaperSource>) -> String {
+    match wallpaper {
+        None => String::new(),
+        Some(WallpaperSource::Bundled) => "builtin".to_owned(),
+        Some(WallpaperSource::File(path)) => path.to_string_lossy().into_owned(),
+    }
 }
 
 fn install_tab_overflow(
@@ -3645,5 +3870,20 @@ mod tests {
     #[test]
     fn wallpaper_uses_screen_blending() {
         assert_eq!(WALLPAPER_BLEND_OPERATOR, gtk::cairo::Operator::Screen);
+    }
+
+    #[test]
+    fn settings_wallpaper_text_distinguishes_each_source() {
+        assert_eq!(wallpaper_setting_text(None), "");
+        assert_eq!(
+            wallpaper_setting_text(Some(&WallpaperSource::Bundled)),
+            "builtin"
+        );
+        assert_eq!(
+            wallpaper_setting_text(Some(&WallpaperSource::File(PathBuf::from(
+                "/tmp/custom.png"
+            )))),
+            "/tmp/custom.png"
+        );
     }
 }

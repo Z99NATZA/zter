@@ -74,7 +74,7 @@ pub fn install_display_styles(display: &gdk::Display, terminal_padding: Terminal
 }
 
 fn application_css(terminal_padding: TerminalPadding) -> String {
-    format!(
+    let mut css = format!(
         "\
         window.zter-window {{
             background-color: {};
@@ -367,6 +367,167 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         terminal_padding.left(),
         Rgb(0x5c, 0x63, 0x70).css(),
         BACKGROUND.css()
+    );
+    css.push_str(&settings_window_css());
+    css
+}
+
+fn settings_window_css() -> String {
+    format!(
+        "\
+        window.zter-settings-window {{
+            background-color: transparent;
+            background-image: none;
+            border-radius: 12px;
+            box-shadow: none;
+        }}
+        window.zter-settings-window .zter-settings-surface {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 12px;
+            box-shadow: none;
+        }}
+        window.zter-settings-window .zter-settings-header {{
+            background-color: {};
+            background-image: none;
+            border-bottom: 1px solid {};
+            box-shadow: none;
+            min-height: 42px;
+        }}
+        window.zter-settings-window .zter-settings-title {{
+            color: {};
+            font-weight: 600;
+            padding-left: 16px;
+        }}
+        window.zter-settings-window button.zter-settings-close {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            color: {};
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 8px 0 2px;
+            padding: 0;
+            transition: background-color 180ms ease-out;
+        }}
+        window.zter-settings-window button.zter-settings-close:hover {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-settings-form {{
+            padding: 16px;
+        }}
+        window.zter-settings-window frame.zter-settings-group {{
+            background-color: transparent;
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 7px;
+            box-shadow: none;
+            padding: 2px 12px 12px;
+        }}
+        window.zter-settings-window frame.zter-settings-group > label {{
+            background-color: {};
+            color: {};
+            margin-left: 0;
+            padding: 0 4px 0 0;
+        }}
+        window.zter-settings-window .zter-settings-padding {{
+            margin-top: 6px;
+        }}
+        window.zter-settings-window .zter-settings-field {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+            padding: 0;
+        }}
+        window.zter-settings-window .zter-settings-field-title {{
+            color: {};
+            font-size: 12px;
+            min-height: 18px;
+            padding-left: 2px;
+        }}
+        window.zter-settings-window .zter-settings-field > entry,
+        window.zter-settings-window .zter-settings-field > spinbutton,
+        window.zter-settings-window .zter-settings-field > .zter-settings-value {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 7px;
+            box-shadow: none;
+            color: {};
+            min-height: 36px;
+            outline-width: 0;
+            padding: 0 10px;
+        }}
+        window.zter-settings-window .zter-settings-field spinbutton entry {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            box-shadow: none;
+            color: {};
+            min-height: 32px;
+            outline-width: 0;
+            padding: 0;
+        }}
+        window.zter-settings-window .zter-settings-field > entry:focus,
+        window.zter-settings-window .zter-settings-field > spinbutton:focus,
+        window.zter-settings-window .zter-settings-field spinbutton entry:focus {{
+            border-color: {};
+            box-shadow: none;
+            outline-width: 0;
+        }}
+        window.zter-settings-window .zter-settings-field spinbutton button {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 4px;
+            box-shadow: none;
+            color: {};
+            min-height: 28px;
+            min-width: 28px;
+            padding: 0;
+        }}
+        window.zter-settings-window .zter-settings-field spinbutton button:hover {{
+            background-color: {};
+        }}
+        window.zter-window .zter-header button.zter-settings-button {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 2px;
+            padding: 0;
+            transition: background-color 180ms ease-out;
+        }}
+        window.zter-window .zter-header button.zter-settings-button:hover {{
+            background-color: {};
+        }}",
+        BACKGROUND.css(),
+        SELECTION.css(),
+        HEADER_BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        FOREGROUND.css(),
+        TAB_HOVER.css(),
+        SELECTION.css(),
+        BACKGROUND.css(),
+        Rgb(0x9d, 0xa5, 0xb4).css(),
+        Rgb(0x9d, 0xa5, 0xb4).css(),
+        HEADER_BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        FOREGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        TAB_HOVER.css(),
+        TAB_HOVER.css()
     )
 }
 
@@ -414,7 +575,7 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 3);
+        assert_eq!(css.matches("border:").count(), 6);
         assert_eq!(css.matches("border-top:").count(), 2);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -634,5 +795,88 @@ mod tests {
         let (new_tab_rule, _) = new_tab_rule.split_once('}').unwrap();
 
         assert!(new_tab_rule.contains("margin: 0 0 0 4px"));
+    }
+
+    #[test]
+    fn settings_fields_use_a_border_without_input_focus_rings() {
+        let css = application_css(TerminalPadding::default());
+        let (_, input_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-field > entry,")
+            .unwrap();
+        let (input_rule, _) = input_rule.split_once('}').unwrap();
+        let (_, focus_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-field > entry:focus")
+            .unwrap();
+        let (focus_rule, _) = focus_rule.split_once('}').unwrap();
+
+        assert!(input_rule.contains("border: 1px solid #3E4451"));
+        assert!(input_rule.contains("box-shadow: none"));
+        assert!(input_rule.contains("min-height: 36px"));
+        assert!(focus_rule.contains("outline-width: 0"));
+        assert!(focus_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn settings_form_uses_comfortable_spacing() {
+        let css = application_css(TerminalPadding::default());
+        let (_, form_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-form {")
+            .unwrap();
+        let (form_rule, _) = form_rule.split_once('}').unwrap();
+        let (_, label_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-field-title {")
+            .unwrap();
+        let (label_rule, _) = label_rule.split_once('}').unwrap();
+
+        assert!(form_rule.contains("padding: 16px"));
+        assert!(label_rule.contains("font-size: 12px"));
+        assert!(label_rule.contains("min-height: 18px"));
+    }
+
+    #[test]
+    fn padding_group_uses_a_neutral_border_and_integrated_title() {
+        let css = application_css(TerminalPadding::default());
+        let (_, group_rule) = css
+            .split_once("window.zter-settings-window frame.zter-settings-group {")
+            .unwrap();
+        let (group_rule, _) = group_rule.split_once('}').unwrap();
+        let (_, title_rule) = css
+            .split_once("window.zter-settings-window frame.zter-settings-group > label {")
+            .unwrap();
+        let (title_rule, _) = title_rule.split_once('}').unwrap();
+
+        assert!(group_rule.contains("border: 1px solid #3E4451"));
+        assert!(group_rule.contains("box-shadow: none"));
+        assert!(title_rule.contains("background-color: #282C34"));
+        assert!(title_rule.contains("margin-left: 0"));
+        assert!(title_rule.contains("padding: 0 4px 0 0"));
+    }
+
+    #[test]
+    fn settings_close_button_matches_the_terminal_window_controls() {
+        let css = application_css(TerminalPadding::default());
+        let (_, close_rule) = css
+            .split_once("window.zter-settings-window button.zter-settings-close {")
+            .unwrap();
+        let (close_rule, _) = close_rule.split_once('}').unwrap();
+
+        assert!(close_rule.contains("border-radius: 999px"));
+        assert!(close_rule.contains("min-height: 28px"));
+        assert!(close_rule.contains("min-width: 28px"));
+        assert!(close_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn settings_button_matches_the_compact_header_controls() {
+        let css = application_css(TerminalPadding::default());
+        let (_, button_rule) = css
+            .split_once("window.zter-window .zter-header button.zter-settings-button {")
+            .unwrap();
+        let (button_rule, _) = button_rule.split_once('}').unwrap();
+
+        assert!(button_rule.contains("min-height: 28px"));
+        assert!(button_rule.contains("min-width: 28px"));
+        assert!(button_rule.contains("border-radius: 999px"));
+        assert!(button_rule.contains("box-shadow: none"));
     }
 }
