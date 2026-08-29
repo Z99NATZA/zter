@@ -393,7 +393,7 @@ fn settings_window_css() -> String {
             background-image: none;
             border-bottom: 1px solid {};
             box-shadow: none;
-            min-height: 42px;
+            min-height: 36px;
         }}
         window.zter-settings-window .zter-settings-title {{
             color: {};
@@ -494,6 +494,33 @@ fn settings_window_css() -> String {
         window.zter-settings-window .zter-settings-field spinbutton button:hover {{
             background-color: {};
         }}
+        window.zter-settings-window .zter-settings-actions {{
+            border-top: 1px solid {};
+            padding: 12px 16px;
+        }}
+        window.zter-settings-window .zter-settings-actions button {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 7px;
+            box-shadow: none;
+            color: {};
+            min-height: 32px;
+            min-width: 76px;
+            outline-width: 0;
+            padding: 0 14px;
+            transition: background-color 140ms ease-out;
+        }}
+        window.zter-settings-window .zter-settings-actions button:hover {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-settings-actions button:focus {{
+            box-shadow: none;
+            outline-width: 0;
+        }}
+        window.zter-settings-window .zter-settings-actions button:disabled {{
+            opacity: 0.45;
+        }}
         window.zter-window .zter-header button.zter-settings-button {{
             background-color: transparent;
             background-image: none;
@@ -524,6 +551,11 @@ fn settings_window_css() -> String {
         SELECTION.css(),
         FOREGROUND.css(),
         FOREGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        TAB_HOVER.css(),
+        SELECTION.css(),
+        HEADER_BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
         TAB_HOVER.css(),
@@ -575,8 +607,8 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 6);
-        assert_eq!(css.matches("border-top:").count(), 2);
+        assert_eq!(css.matches("border:").count(), 7);
+        assert_eq!(css.matches("border-top:").count(), 3);
         assert!(!shadow_rules.is_empty());
         assert!(
             shadow_rules
@@ -864,6 +896,43 @@ mod tests {
         assert!(close_rule.contains("min-height: 28px"));
         assert!(close_rule.contains("min-width: 28px"));
         assert!(close_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn settings_header_matches_the_terminal_header_height() {
+        let css = application_css(TerminalPadding::default());
+        let (_, settings_header_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-header {")
+            .unwrap();
+        let (settings_header_rule, _) = settings_header_rule.split_once('}').unwrap();
+        let (_, terminal_header_rule) =
+            css.split_once("window.zter-window .zter-header {").unwrap();
+        let (terminal_header_rule, _) = terminal_header_rule.split_once('}').unwrap();
+
+        assert!(settings_header_rule.contains("min-height: 36px"));
+        assert!(terminal_header_rule.contains("min-height: 36px"));
+    }
+
+    #[test]
+    fn settings_actions_are_separated_and_shadow_free() {
+        let css = application_css(TerminalPadding::default());
+        let (_, actions_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-actions {")
+            .unwrap();
+        let (actions_rule, _) = actions_rule.split_once('}').unwrap();
+        let (_, button_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-actions button {")
+            .unwrap();
+        let (button_rule, _) = button_rule.split_once('}').unwrap();
+
+        assert!(actions_rule.contains("border-top: 1px solid #3E4451"));
+        assert!(actions_rule.contains("padding: 12px 16px"));
+        assert!(button_rule.contains("background-color: #303643"));
+        assert!(button_rule.contains("border: 1px solid #3E4451"));
+        assert!(button_rule.contains("color: #DCDFE4"));
+        assert!(button_rule.contains("min-height: 32px"));
+        assert!(button_rule.contains("box-shadow: none"));
+        assert!(!css.contains("button.zter-settings-ok {"));
     }
 
     #[test]

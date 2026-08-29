@@ -698,6 +698,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
         .tooltip_text("Close settings")
         .build();
     close.add_css_class("zter-settings-close");
+    close.set_valign(gtk::Align::Center);
     header.append(&handle);
     header.append(&close);
     surface.append(&header);
@@ -722,7 +723,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
 
     let font_size = settings_spin(config.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
-    form.attach(&settings_field("Font size · pt", &font_size), 1, 1, 1, 1);
+    form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
 
     let theme = gtk::Label::builder()
         .label("One Half Dark")
@@ -739,7 +740,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
         0,
     );
     form.attach(
-        &settings_field("Scrollback · lines", &scrollback),
+        &settings_field("Scrollback (lines)", &scrollback),
         1,
         2,
         1,
@@ -761,7 +762,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
         padding_inputs.append(&settings_field(edge, &input));
     }
     let padding_group = gtk::Frame::builder()
-        .label("Padding · px")
+        .label("Padding")
         .label_xalign(0.0)
         .child(&padding_inputs)
         .build();
@@ -771,13 +772,27 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     let wallpaper = gtk::Entry::builder()
         .text(wallpaper_setting_text(config.wallpaper()))
         .placeholder_text("Disabled")
+        .secondary_icon_name("folder-open-symbolic")
+        .secondary_icon_activatable(true)
+        .secondary_icon_sensitive(true)
+        .secondary_icon_tooltip_text("Browse wallpaper")
         .hexpand(true)
         .build();
+    let window_weak = window.downgrade();
+    wallpaper.connect_icon_press(move |wallpaper, position| {
+        if position != gtk::EntryIconPosition::Secondary {
+            return;
+        }
+        let Some(window) = window_weak.upgrade() else {
+            return;
+        };
+        open_wallpaper_dialog(&window, wallpaper);
+    });
     form.attach(&settings_field("Wallpaper", &wallpaper), 0, 4, 2, 1);
 
     let opacity = settings_spin(config.wallpaper_opacity(), 0.0, 0.6, 0.01, 2);
     form.attach(
-        &settings_field("Wallpaper opacity · 0–0.60", &opacity),
+        &settings_field("Wallpaper opacity (0 – 0.60)", &opacity),
         0,
         5,
         2,
@@ -785,10 +800,38 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, config: &AppConfig) -
     );
 
     surface.append(&form);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.add_css_class("zter-settings-actions");
+    let action_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    action_spacer.set_hexpand(true);
+    let cancel = gtk::Button::builder()
+        .label("Cancel")
+        .has_frame(false)
+        .build();
+    cancel.add_css_class("zter-settings-cancel");
+    let ok = gtk::Button::builder()
+        .label("OK")
+        .has_frame(false)
+        .sensitive(false)
+        .tooltip_text("Saving settings is not available yet")
+        .build();
+    ok.add_css_class("zter-settings-ok");
+    actions.append(&action_spacer);
+    actions.append(&cancel);
+    actions.append(&ok);
+    surface.append(&actions);
+
     window.set_child(Some(&surface));
 
     let window_weak = window.downgrade();
     close.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+    let window_weak = window.downgrade();
+    cancel.connect_clicked(move |_| {
         if let Some(window) = window_weak.upgrade() {
             window.close();
         }
@@ -843,6 +886,47 @@ fn wallpaper_setting_text(wallpaper: Option<&WallpaperSource>) -> String {
         Some(WallpaperSource::Bundled) => "builtin".to_owned(),
         Some(WallpaperSource::File(path)) => path.to_string_lossy().into_owned(),
     }
+}
+
+fn open_wallpaper_dialog(parent: &gtk::Window, wallpaper: &gtk::Entry) {
+    let image_filter = gtk::FileFilter::new();
+    image_filter.set_name(Some("Images"));
+    image_filter.add_pixbuf_formats();
+
+    let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&image_filter);
+    let dialog = gtk::FileDialog::builder()
+        .title("Choose wallpaper")
+        .accept_label("Open")
+        .modal(true)
+        .filters(&filters)
+        .default_filter(&image_filter)
+        .build();
+
+    let wallpaper = wallpaper.downgrade();
+    dialog.open(
+        Some(parent),
+        None::<&gtk::gio::Cancellable>,
+        move |result| match result {
+            Ok(file) => {
+                let Some(path) = wallpaper_file_text(&file) else {
+                    eprintln!("zter: selected wallpaper is not a local file");
+                    return;
+                };
+                if let Some(wallpaper) = wallpaper.upgrade() {
+                    wallpaper.set_text(&path);
+                }
+            }
+            Err(error)
+                if error.matches(gtk::DialogError::Cancelled)
+                    || error.matches(gtk::DialogError::Dismissed) => {}
+            Err(error) => eprintln!("zter: could not choose wallpaper: {error}"),
+        },
+    );
+}
+
+fn wallpaper_file_text(file: &gtk::gio::File) -> Option<String> {
+    file.path().map(|path| path.to_string_lossy().into_owned())
 }
 
 fn install_tab_overflow(
@@ -3885,5 +3969,13 @@ mod tests {
             )))),
             "/tmp/custom.png"
         );
+
+        let local = gtk::gio::File::for_path("/tmp/selected.png");
+        let remote = gtk::gio::File::for_uri("https://example.com/wallpaper.png");
+        assert_eq!(
+            wallpaper_file_text(&local).as_deref(),
+            Some("/tmp/selected.png")
+        );
+        assert_eq!(wallpaper_file_text(&remote), None);
     }
 }

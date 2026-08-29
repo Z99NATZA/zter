@@ -17,9 +17,12 @@ and are not tracked by the project Git history.
 
 The settings button beside the window controls opens one compact modal for its
 terminal window. The modal displays the effective startup shell, theme, font,
-padding, scrollback, wallpaper, and opacity values. Its controls are an
-in-memory draft only: closing the modal, pressing Escape, or closing the parent
-terminal discards edits without changing the settings file.
+padding, scrollback, wallpaper, and opacity values. The wallpaper field can
+browse local image formats supported by GdkPixbuf and place the selected path
+in the draft. Its controls are an in-memory draft only: closing the modal,
+pressing Escape, clicking Cancel, or closing the parent terminal discards edits
+without changing the settings file. OK is disabled while the modal has no
+persistence behavior.
 
 ## Apply Project Settings
 
