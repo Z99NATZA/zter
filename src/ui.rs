@@ -758,15 +758,11 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     title.add_css_class("zter-settings-title");
     handle.set_child(Some(&title));
 
-    let close = gtk::Button::builder()
-        .icon_name("window-close-symbolic")
-        .has_frame(false)
-        .tooltip_text("Close settings")
-        .build();
-    close.add_css_class("zter-settings-close");
-    close.set_valign(gtk::Align::Center);
+    let window_controls = gtk::WindowControls::new(gtk::PackType::End);
+    window_controls.set_decoration_layout(Some(":close"));
+    window_controls.set_valign(gtk::Align::Center);
     header.append(&handle);
-    header.append(&close);
+    header.append(&window_controls);
     surface.append(&header);
 
     let form = gtk::Grid::builder()
@@ -949,12 +945,6 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
 
     window.set_child(Some(&surface));
 
-    let window_weak = window.downgrade();
-    close.connect_clicked(move |_| {
-        if let Some(window) = window_weak.upgrade() {
-            window.close();
-        }
-    });
     let window_weak = window.downgrade();
     cancel.connect_clicked(move |_| {
         if let Some(window) = window_weak.upgrade() {

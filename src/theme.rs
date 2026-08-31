@@ -95,7 +95,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             padding: 0;
             box-shadow: none;
         }}
-        window.zter-window .zter-header windowcontrols button {{
+        window.zter-window .zter-header windowcontrols button,
+        window.zter-settings-window .zter-settings-header windowcontrols button {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
@@ -107,7 +108,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             padding: 0;
             transition: all 180ms ease-out;
         }}
-        window.zter-window .zter-header windowcontrols button:hover {{
+        window.zter-window .zter-header windowcontrols button:hover,
+        window.zter-settings-window .zter-settings-header windowcontrols button:hover {{
             background-color: transparent;
         }}
         notebook.zter-tabs,
@@ -406,22 +408,6 @@ fn settings_window_css() -> String {
             font-weight: 600;
             padding-left: 16px;
         }}
-        window.zter-settings-window button.zter-settings-close {{
-            background-color: transparent;
-            background-image: none;
-            border-width: 0;
-            border-radius: 999px;
-            box-shadow: none;
-            color: {};
-            min-height: 28px;
-            min-width: 28px;
-            margin: 0 8px 0 2px;
-            padding: 0;
-            transition: background-color 180ms ease-out;
-        }}
-        window.zter-settings-window button.zter-settings-close:hover {{
-            background-color: {};
-        }}
         window.zter-settings-window .zter-settings-form {{
             padding: 16px;
         }}
@@ -511,12 +497,14 @@ fn settings_window_css() -> String {
             background-color: transparent;
             background-image: none;
             border-width: 0;
-            border-radius: 4px;
+            border-radius: 999px;
             box-shadow: none;
             color: {};
             min-height: 28px;
             min-width: 28px;
+            margin: 4px 2px;
             padding: 0;
+            transition: background-color 180ms ease-out;
         }}
         window.zter-settings-window .zter-settings-field spinbutton button:hover {{
             background-color: {};
@@ -572,8 +560,6 @@ fn settings_window_css() -> String {
         HEADER_BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
-        FOREGROUND.css(),
-        TAB_HOVER.css(),
         SELECTION.css(),
         BACKGROUND.css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
@@ -589,7 +575,7 @@ fn settings_window_css() -> String {
         FOREGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
-        TAB_HOVER.css(),
+        HEADER_BUTTON_HOVER.css(),
         SELECTION.css(),
         Rgb(0xe0, 0x6c, 0x75).css(),
         HEADER_BACKGROUND.css(),
@@ -939,15 +925,36 @@ mod tests {
     #[test]
     fn settings_close_button_matches_the_terminal_window_controls() {
         let css = application_css(TerminalPadding::default());
-        let (_, close_rule) = css
-            .split_once("window.zter-settings-window button.zter-settings-close {")
-            .unwrap();
-        let (close_rule, _) = close_rule.split_once('}').unwrap();
+        let selector = "window.zter-settings-window .zter-settings-header windowcontrols button";
+        let (_, close_rule) = css.split_once(selector).unwrap();
+        let (close_rule, remainder) = close_rule.split_once('}').unwrap();
+        let (_, close_hover) = remainder.split_once(&format!("{selector}:hover")).unwrap();
+        let (close_hover, _) = close_hover.split_once('}').unwrap();
 
+        assert!(close_rule.contains("background-color: transparent"));
         assert!(close_rule.contains("border-radius: 999px"));
         assert!(close_rule.contains("min-height: 28px"));
         assert!(close_rule.contains("min-width: 28px"));
         assert!(close_rule.contains("box-shadow: none"));
+        assert!(close_hover.contains("background-color: transparent"));
+    }
+
+    #[test]
+    fn settings_spin_buttons_match_the_terminal_window_controls() {
+        let css = application_css(TerminalPadding::default());
+        let selector = "window.zter-settings-window .zter-settings-field spinbutton button";
+        let (_, button_rule) = css.split_once(selector).unwrap();
+        let (button_rule, remainder) = button_rule.split_once('}').unwrap();
+        let (_, hover_rule) = remainder.split_once(&format!("{selector}:hover")).unwrap();
+        let (hover_rule, _) = hover_rule.split_once('}').unwrap();
+
+        assert!(button_rule.contains("background-color: transparent"));
+        assert!(button_rule.contains("border-radius: 999px"));
+        assert!(button_rule.contains("min-height: 28px"));
+        assert!(button_rule.contains("min-width: 28px"));
+        assert!(button_rule.contains("margin: 4px 2px"));
+        assert!(button_rule.contains("transition: background-color 180ms ease-out"));
+        assert!(hover_rule.contains("background-color: #444A55"));
     }
 
     #[test]

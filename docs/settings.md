@@ -19,7 +19,10 @@ The settings button beside the window controls opens one compact modal for its
 terminal window. It edits the active debug or release profile shared by all
 zter windows in that application. The wallpaper field can browse local image
 formats supported by GdkPixbuf and place the selected path in the draft. The
-inline Default action selects the bundled wallpaper.
+inline Default action selects the bundled wallpaper. The header close control
+uses the terminal window's native control style. Numeric decrement and increment
+controls keep circular `28px` background boxes inside their fields, with
+transparent resting fills and neutral `#444A55` hover fills.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
 wallpaper, and opacity changes then apply to every current window and tab. The
