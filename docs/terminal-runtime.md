@@ -87,19 +87,22 @@ terminal surface.
 The terminal uses the configured font family, font size, scrollback line count,
 and theme. `Ctrl+=`, `Ctrl+-`, and Control-modified mouse or touchpad scrolling
 change the active tab's font scale in one-point steps from `6` through `72`
-points. Runtime zoom does not resize the active tab's PTY grid. The zoom lasts
-until that tab closes, does not change other tabs or the settings file, and new
-tabs start at the configured font size. Ordinary scrolling retains its terminal
-history behavior. Prompt redraws produced by the running shell remain outside
-zter's control. The terminal scrolls to input on a keystroke, hides the pointer
-while typing, and recognizes OSC 8 hyperlinks. Control-primary-clicking a
-recognized hyperlink opens its URI with the system-default handler. Other
+points. `Ctrl+0` resets the active tab to 100% at the configured font size.
+Runtime zoom does not resize the active tab's PTY grid. It lasts until `Ctrl+0`,
+a settings save, or that tab closes; it does not change other tabs or the
+settings file, and new tabs start at 100%. Ordinary scrolling retains its
+terminal history behavior. Prompt redraws produced by the running shell remain
+outside zter's control. The terminal scrolls to input on a keystroke, hides the
+pointer while typing, and recognizes OSC 8 hyperlinks. Control-primary-clicking
+a recognized hyperlink opens its URI with the system-default handler. Other
 primary clicks retain their terminal behavior.
 
 Saving the settings window applies font, theme, padding, and scrollback changes
-to every current tab. Each tab retains its zoom offset relative to the previous
-configured font size. Wallpaper changes apply across current windows, while a
-shell change affects only subsequently opened tabs.
+to every current tab. The configured font size replaces each tab's runtime zoom,
+so all current tabs reset to 100% and have the same font size immediately after
+the save. Tabs can be zoomed independently again afterward. Wallpaper changes
+apply across current windows, while a shell change affects only subsequently
+opened tabs.
 `Ctrl+C` copies selected text from the physical `C` key across keyboard
 layouts. Without a selection, it retains the terminal interrupt behavior when
 only the shell owns the terminal. When a foreground process owns the terminal,

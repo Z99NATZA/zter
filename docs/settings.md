@@ -22,12 +22,13 @@ formats supported by GdkPixbuf and place the selected path in the draft. The
 inline Default action selects the bundled wallpaper.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
-wallpaper, and opacity changes then apply to every current window and tab. A
-font-size change preserves each tab's existing runtime zoom offset. A shell
-change applies only to tabs opened after the save and does not restart current
-shells. Closing the modal, pressing Escape, clicking Cancel, or closing the
-parent terminal discards unsaved edits. A save or runtime-configuration error
-is shown in the modal and retains the draft.
+wallpaper, and opacity changes then apply to every current window and tab. The
+configured font size replaces each tab's runtime zoom and resets every tab to
+100%; tabs can be zoomed independently again after the save. A shell change
+applies only to tabs opened after the save and does not restart current shells.
+Closing the modal, pressing Escape, clicking Cancel, or closing the parent
+terminal discards unsaved edits. A save or runtime-configuration error is shown
+in the modal and retains the draft.
 
 ## Apply Project Settings
 

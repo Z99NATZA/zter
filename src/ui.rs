@@ -103,6 +103,7 @@ enum ForegroundProcessShortcut {
 enum TerminalZoom {
     In,
     Out,
+    Reset,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -234,6 +235,7 @@ struct TabRuntime {
     id: String,
     location: RefCell<Rc<WindowContext>>,
     padding: Cell<TerminalPadding>,
+    zoom: Rc<RefCell<TerminalZoomState>>,
     shell_pid: Cell<Option<libc::pid_t>>,
     drag_transfer_completed: Cell<bool>,
 }
@@ -269,11 +271,17 @@ impl WindowContext {
 }
 
 impl TabRuntime {
-    fn new(id: String, location: Rc<WindowContext>, padding: TerminalPadding) -> Rc<Self> {
+    fn new(
+        id: String,
+        location: Rc<WindowContext>,
+        padding: TerminalPadding,
+        font_size: f64,
+    ) -> Rc<Self> {
         let runtime = Rc::new(Self {
             id: id.clone(),
             location: RefCell::new(location),
             padding: Cell::new(padding),
+            zoom: Rc::new(RefCell::new(TerminalZoomState::new(font_size))),
             shell_pid: Cell::new(None),
             drag_transfer_completed: Cell::new(false),
         });
@@ -458,16 +466,29 @@ impl DeferredTerminalResize {
 }
 
 struct TerminalZoomState {
+    configured_font_size: f64,
     font_size: f64,
 }
 
 impl TerminalZoomState {
     fn new(font_size: f64) -> Self {
-        Self { font_size }
+        Self {
+            configured_font_size: font_size,
+            font_size,
+        }
+    }
+
+    fn apply_settings(&mut self, font_size: f64) -> f64 {
+        self.configured_font_size = font_size;
+        self.font_size = font_size;
+        font_size
     }
 
     fn request(&mut self, zoom: TerminalZoom) -> Option<f64> {
-        let next = zoomed_font_size(self.font_size, zoom);
+        let next = match zoom {
+            TerminalZoom::Reset => self.configured_font_size,
+            TerminalZoom::In | TerminalZoom::Out => zoomed_font_size(self.font_size, zoom),
+        };
         if next == self.font_size {
             return None;
         }
@@ -484,10 +505,10 @@ struct TerminalZoomControl {
 }
 
 impl TerminalZoomControl {
-    fn new(terminal: &vte4::Terminal, initial_font_size: f64) -> Self {
+    fn new(terminal: &vte4::Terminal, state: Rc<RefCell<TerminalZoomState>>) -> Self {
         Self {
             terminal: terminal.downgrade(),
-            state: Rc::new(RefCell::new(TerminalZoomState::new(initial_font_size))),
+            state,
         }
     }
 
@@ -1129,11 +1150,12 @@ fn apply_app_config(config: &AppConfig) {
                 let Some(page) = notebook.nth_page(Some(page_number)) else {
                     continue;
                 };
-                if let Some(runtime) = tab_runtime(page.widget_name().as_str()) {
+                let runtime = tab_runtime(page.widget_name().as_str());
+                if let Some(runtime) = runtime.as_ref() {
                     runtime.padding.set(config.terminal_padding());
                 }
                 if let Some(terminal) = find_terminal(&page) {
-                    apply_terminal_config(&terminal, &previous, config);
+                    apply_terminal_config(&terminal, runtime.as_deref(), config);
                 }
             }
         }
@@ -1150,13 +1172,14 @@ fn apply_app_config(config: &AppConfig) {
     }
 }
 
-fn apply_terminal_config(terminal: &vte4::Terminal, previous: &AppConfig, config: &AppConfig) {
-    let current_font_size = terminal.font_scale() * TERMINAL_FONT_SCALE_BASE_SIZE;
-    let font_size = font_size_after_settings_change(
-        previous.font_size(),
-        current_font_size,
-        config.font_size(),
-    );
+fn apply_terminal_config(
+    terminal: &vte4::Terminal,
+    runtime: Option<&TabRuntime>,
+    config: &AppConfig,
+) {
+    let font_size = runtime.map_or(config.font_size(), |runtime| {
+        runtime.zoom.borrow_mut().apply_settings(config.font_size())
+    });
     terminal.set_font(Some(&terminal_font(
         config.font_family(),
         TERMINAL_FONT_SCALE_BASE_SIZE,
@@ -1164,10 +1187,6 @@ fn apply_terminal_config(terminal: &vte4::Terminal, previous: &AppConfig, config
     terminal.set_font_scale(terminal_font_scale(font_size));
     terminal.set_scrollback_lines(config.scrollback_lines());
     theme::apply_to(terminal, config.theme());
-}
-
-fn font_size_after_settings_change(previous: f64, current: f64, next: f64) -> f64 {
-    (next + current - previous).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
 }
 
 fn reload_all_wallpapers(config: &AppConfig) {
@@ -1310,26 +1329,25 @@ fn add_terminal_tab(context: &Rc<WindowContext>) {
     let working_directory = new_tab_working_directory(&notebook, &config);
     let fallback_title = default_tab_title(config.shell());
     let tab_id = next_tab_id();
-    let runtime = TabRuntime::new(tab_id.clone(), context.clone(), config.terminal_padding());
+    let runtime = TabRuntime::new(
+        tab_id.clone(),
+        context.clone(),
+        config.terminal_padding(),
+        config.font_size(),
+    );
     let terminal = create_terminal(&config, &runtime);
     install_foreground_process_key_protection(&terminal, &runtime);
     let terminal_for_spawn = terminal.clone();
     let config_for_spawn = config.clone();
     let runtime_for_spawn = runtime.clone();
-    let content = create_content(
-        &terminal,
-        &config,
-        &context.wallpaper,
-        &runtime,
-        move || {
-            spawn_shell(
-                &terminal_for_spawn,
-                &config_for_spawn,
-                &working_directory,
-                &runtime_for_spawn,
-            );
-        },
-    );
+    let content = create_content(&terminal, &context.wallpaper, &runtime, move || {
+        spawn_shell(
+            &terminal_for_spawn,
+            &config_for_spawn,
+            &working_directory,
+            &runtime_for_spawn,
+        );
+    });
     content.set_widget_name(&tab_id);
     let header = create_header_tab(&fallback_title, &tab_id);
     let title_state = Rc::new(RefCell::new(TabTitleState::new(fallback_title.clone())));
@@ -2930,7 +2948,6 @@ fn clipboard_menu_button(label: &str, shortcut: &str) -> gtk::Button {
 
 fn create_content<F>(
     terminal: &vte4::Terminal,
-    config: &AppConfig,
     wallpaper: &WallpaperAsset,
     runtime: &Rc<TabRuntime>,
     on_initial_size: F,
@@ -2943,7 +2960,7 @@ where
     overlay.set_overflow(gtk::Overflow::Hidden);
 
     let background = create_background(wallpaper);
-    let terminal_viewport = create_terminal_viewport(terminal, config, runtime, on_initial_size);
+    let terminal_viewport = create_terminal_viewport(terminal, runtime, on_initial_size);
     let terminal_scrollbar = create_terminal_scrollbar(terminal);
     overlay.set_child(Some(&background));
     overlay.add_overlay(&terminal_viewport);
@@ -2995,7 +3012,6 @@ fn terminal_has_scrollback(lower: f64, upper: f64, page_size: f64) -> bool {
 
 fn create_terminal_viewport<F>(
     terminal: &vte4::Terminal,
-    config: &AppConfig,
     runtime: &Rc<TabRuntime>,
     on_initial_size: F,
 ) -> gtk::ScrolledWindow
@@ -3019,12 +3035,12 @@ where
         .child(&scroll_content)
         .build();
     install_deferred_terminal_resize(&viewport, terminal, runtime, on_initial_size);
-    install_terminal_zoom(terminal, config.font_size());
+    install_terminal_zoom(terminal, runtime.zoom.clone());
     viewport
 }
 
-fn install_terminal_zoom(terminal: &vte4::Terminal, initial_font_size: f64) {
-    let control = TerminalZoomControl::new(terminal, initial_font_size);
+fn install_terminal_zoom(terminal: &vte4::Terminal, state: Rc<RefCell<TerminalZoomState>>) {
+    let control = TerminalZoomControl::new(terminal, state);
 
     let key_controller = gtk::EventControllerKey::new();
     key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -3069,6 +3085,7 @@ fn terminal_zoom_shortcut(
     match key {
         gtk::gdk::Key::equal => Some(TerminalZoom::In),
         gtk::gdk::Key::minus => Some(TerminalZoom::Out),
+        gtk::gdk::Key::_0 => Some(TerminalZoom::Reset),
         _ => None,
     }
 }
@@ -3097,6 +3114,7 @@ fn zoomed_font_size(current: f64, zoom: TerminalZoom) -> f64 {
     let delta = match zoom {
         TerminalZoom::In => TERMINAL_ZOOM_STEP,
         TerminalZoom::Out => -TERMINAL_ZOOM_STEP,
+        TerminalZoom::Reset => return current,
     };
     (current + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
 }
@@ -3557,7 +3575,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_zoom_shortcuts_cover_plain_equal_and_minus() {
+    fn terminal_zoom_shortcuts_cover_plain_equal_minus_and_reset() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
         let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
@@ -3569,6 +3587,10 @@ mod tests {
         assert_eq!(
             terminal_zoom_shortcut(gtk::gdk::Key::minus, control),
             Some(TerminalZoom::Out)
+        );
+        assert_eq!(
+            terminal_zoom_shortcut(gtk::gdk::Key::_0, control),
+            Some(TerminalZoom::Reset)
         );
         assert_eq!(terminal_zoom_shortcut(gtk::gdk::Key::KP_Add, control), None);
         assert_eq!(
@@ -3591,6 +3613,7 @@ mod tests {
             terminal_zoom_shortcut(gtk::gdk::Key::minus, control_shift),
             None
         );
+        assert_eq!(terminal_zoom_shortcut(gtk::gdk::Key::_0, control_alt), None);
     }
 
     #[test]
@@ -3629,7 +3652,9 @@ mod tests {
         assert_eq!(zoom.request(TerminalZoom::In), Some(13.0));
         assert_eq!(zoom.request(TerminalZoom::In), Some(14.0));
         assert_eq!(zoom.request(TerminalZoom::Out), Some(13.0));
-        assert_eq!(zoom.font_size, 13.0);
+        assert_eq!(zoom.request(TerminalZoom::Reset), Some(12.0));
+        assert_eq!(zoom.request(TerminalZoom::Reset), None);
+        assert_eq!(zoom.font_size, 12.0);
     }
 
     #[test]
@@ -4247,16 +4272,17 @@ mod tests {
     }
 
     #[test]
-    fn settings_font_change_preserves_each_tab_zoom_offset() {
-        assert_eq!(font_size_after_settings_change(12.0, 12.0, 16.0), 16.0);
-        assert_eq!(font_size_after_settings_change(12.0, 15.0, 16.0), 19.0);
-        assert_eq!(
-            font_size_after_settings_change(12.0, 6.0, 6.0),
-            MIN_FONT_SIZE
-        );
-        assert_eq!(
-            font_size_after_settings_change(12.0, 72.0, 20.0),
-            MAX_FONT_SIZE
-        );
+    fn settings_font_change_resets_each_tab_zoom_offset() {
+        let mut zoomed_in = TerminalZoomState::new(12.0);
+        let mut zoomed_out = TerminalZoomState::new(12.0);
+        assert_eq!(zoomed_in.request(TerminalZoom::In), Some(13.0));
+        assert_eq!(zoomed_out.request(TerminalZoom::Out), Some(11.0));
+
+        assert_eq!(zoomed_in.apply_settings(16.0), 16.0);
+        assert_eq!(zoomed_out.apply_settings(16.0), 16.0);
+        assert_eq!(zoomed_in.font_size, 16.0);
+        assert_eq!(zoomed_out.font_size, 16.0);
+        assert_eq!(zoomed_in.request(TerminalZoom::Reset), None);
+        assert_eq!(zoomed_out.request(TerminalZoom::Reset), None);
     }
 }

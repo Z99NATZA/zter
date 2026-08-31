@@ -12,5 +12,6 @@
 | `Ctrl+T`                | New tab                                                    |
 | `Ctrl+=`                | Increase the active tab's font size                        |
 | `Ctrl+-`                | Decrease the active tab's font size                        |
+| `Ctrl+0`                | Reset the active tab to the configured font size           |
 | `Ctrl+mouse wheel`      | Increase or decrease the active tab's font size            |
 | `Ctrl+left-click`       | Open an OSC 8 hyperlink with the system-default handler    |
