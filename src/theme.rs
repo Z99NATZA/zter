@@ -10,6 +10,8 @@ const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
 const TAB_HOVER: Rgb = Rgb(0x35, 0x3b, 0x48);
+const HEADER_BUTTON_HOVER: Rgb = Rgb(0x44, 0x4a, 0x55);
+const TAB_CLOSE_HOVER: Rgb = Rgb(0x5c, 0x63, 0x70);
 const TAB_DROP_TARGET: Rgb = Rgb(0xff, 0xff, 0xff);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
@@ -185,6 +187,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-color: transparent;
             background-image: none;
             border-width: 0;
+            border-radius: 999px;
             box-shadow: none;
             min-height: 20px;
             min-width: 20px;
@@ -202,7 +205,9 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             margin: 0 0 0 4px;
             padding: 0;
         }}
-        button.zter-tab-close:hover,
+        button.zter-tab-close:hover {{
+            background-color: {};
+        }}
         button.zter-new-tab:hover {{
             background-color: {};
         }}
@@ -345,7 +350,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         SELECTION.css(),
         TAB_DROP_TARGET.css(),
         BACKGROUND.css(),
-        SELECTION.css(),
+        TAB_CLOSE_HOVER.css(),
+        HEADER_BUTTON_HOVER.css(),
         HEADER_BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -590,7 +596,7 @@ fn settings_window_css() -> String {
         SELECTION.css(),
         FOREGROUND.css(),
         TAB_HOVER.css(),
-        TAB_HOVER.css()
+        HEADER_BUTTON_HOVER.css()
     )
 }
 
@@ -993,5 +999,33 @@ mod tests {
         assert!(button_rule.contains("min-width: 28px"));
         assert!(button_rule.contains("border-radius: 999px"));
         assert!(button_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn app_owned_header_buttons_use_visible_hover_fills() {
+        let css = application_css(TerminalPadding::default());
+        let (_, tab_close_hover) = css.split_once("button.zter-tab-close:hover {").unwrap();
+        let (tab_close_hover, _) = tab_close_hover.split_once('}').unwrap();
+        let (_, new_tab_hover) = css.split_once("button.zter-new-tab:hover {").unwrap();
+        let (new_tab_hover, _) = new_tab_hover.split_once('}').unwrap();
+        let (_, settings_button_hover) = css
+            .split_once("window.zter-window .zter-header button.zter-settings-button:hover {")
+            .unwrap();
+        let (settings_button_hover, _) = settings_button_hover.split_once('}').unwrap();
+
+        assert!(tab_close_hover.contains("background-color: #5C6370"));
+        assert!(new_tab_hover.contains("background-color: #444A55"));
+        assert!(settings_button_hover.contains("background-color: #444A55"));
+    }
+
+    #[test]
+    fn tab_close_button_is_compact_and_circular() {
+        let css = application_css(TerminalPadding::default());
+        let (_, close_button) = css.split_once("button.zter-tab-close {").unwrap();
+        let (close_button, _) = close_button.split_once('}').unwrap();
+
+        assert!(close_button.contains("border-radius: 999px"));
+        assert!(close_button.contains("min-height: 20px"));
+        assert!(close_button.contains("min-width: 20px"));
     }
 }

@@ -154,11 +154,13 @@ The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
 and the active tab uses `#3E4451`. Active state is communicated by this neutral
 fill change only. Outside valid drag-destination feedback, tabs have no
 app-owned border, outline, or shadow. Header hover transitions last `180ms`.
-The destination outline does not alter tab or titlebar allocation, and the
-source tab does not highlight itself. Native window controls use compact spacing
-and do not receive an additional app-owned hover fill. The new-tab button and
-the first native window control retain a minimum `40px` draggable gap while tabs
-overflow.
+The settings and new-tab controls use the neutral `#444A55` hover fill. Every
+tab-close button is a circular `20px` control and uses the stronger neutral
+`#5C6370` hover fill. The destination outline does not alter tab or titlebar
+allocation, and the source tab does not highlight itself. Native window controls
+use compact spacing and do not receive an additional app-owned hover fill. The
+new-tab button and the first native window control retain a minimum `40px`
+draggable gap while tabs overflow.
 
 ## Theme Palette
 
