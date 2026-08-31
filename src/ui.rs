@@ -32,6 +32,8 @@ const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Scr
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const TAB_ID_PREFIX: &str = "zter-tab-";
 const TAB_DROP_TARGET_CLASS: &str = "zter-tab-drop-target";
+const TAB_DROP_BEFORE_CLASS: &str = "zter-tab-drop-before";
+const TAB_DROP_AFTER_CLASS: &str = "zter-tab-drop-after";
 const HEADER_DROP_TARGET_CLASS: &str = "zter-header-drop-target";
 const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 48.0;
@@ -1696,14 +1698,30 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
         gtk::DropTarget::new(TabDragPayload::static_type(), gtk::gdk::DragAction::MOVE);
     drop_target.set_preload(true);
     let hovering = Rc::new(Cell::new(false));
+    let pointer_x = Rc::new(Cell::new(0.0));
 
     let tab_weak = tab.downgrade();
     let target_id = runtime.id.clone();
     let hovering_on_enter = hovering.clone();
-    drop_target.connect_enter(move |drop_target, _, _| {
+    let pointer_x_on_enter = pointer_x.clone();
+    drop_target.connect_enter(move |drop_target, x, _| {
         hovering_on_enter.set(true);
+        pointer_x_on_enter.set(x);
         if let Some(tab) = tab_weak.upgrade() {
-            sync_tab_drop_highlight(drop_target, &tab, &target_id, true);
+            sync_tab_drop_indicator(drop_target, &tab, &target_id, true, x);
+        }
+        gtk::gdk::DragAction::MOVE
+    });
+
+    let tab_weak = tab.downgrade();
+    let target_id = runtime.id.clone();
+    let hovering_on_motion = hovering.clone();
+    let pointer_x_on_motion = pointer_x.clone();
+    drop_target.connect_motion(move |drop_target, x, _| {
+        hovering_on_motion.set(true);
+        pointer_x_on_motion.set(x);
+        if let Some(tab) = tab_weak.upgrade() {
+            sync_tab_drop_indicator(drop_target, &tab, &target_id, true, x);
         }
         gtk::gdk::DragAction::MOVE
     });
@@ -1711,9 +1729,16 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
     let tab_weak = tab.downgrade();
     let target_id = runtime.id.clone();
     let hovering_on_value = hovering.clone();
+    let pointer_x_on_value = pointer_x;
     drop_target.connect_value_notify(move |drop_target| {
         if let Some(tab) = tab_weak.upgrade() {
-            sync_tab_drop_highlight(drop_target, &tab, &target_id, hovering_on_value.get());
+            sync_tab_drop_indicator(
+                drop_target,
+                &tab,
+                &target_id,
+                hovering_on_value.get(),
+                pointer_x_on_value.get(),
+            );
         }
     });
 
@@ -1722,7 +1747,7 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
     drop_target.connect_leave(move |_| {
         hovering_on_leave.set(false);
         if let Some(tab) = tab_weak.upgrade() {
-            tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+            clear_tab_drop_indicator(&tab);
         }
     });
 
@@ -1732,7 +1757,7 @@ fn install_tab_drag_and_drop(runtime: &Rc<TabRuntime>, tab: &gtk::Box, drag_hand
     drop_target.connect_drop(move |_, value, x, _| {
         hovering_on_drop.set(false);
         if let Some(tab) = tab_weak.upgrade() {
-            tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+            clear_tab_drop_indicator(&tab);
         }
         let Some(source_id) = tab_drag_source_id(&value) else {
             return false;
@@ -1812,24 +1837,34 @@ fn install_header_drop_target(drop_area: &gtk::WindowHandle, context: &Rc<Window
     drop_area.add_controller(drop_target);
 }
 
-fn sync_tab_drop_highlight(
+fn sync_tab_drop_indicator(
     drop_target: &gtk::DropTarget,
     tab: &gtk::Box,
     target_id: &str,
     hovering: bool,
+    x: f64,
 ) {
     let source_id = drop_target
         .value()
         .and_then(|value| tab_drag_source_id(&value));
+    clear_tab_drop_indicator(tab);
     if should_highlight_tab_drop_target(source_id.as_deref(), target_id, hovering)
         && source_id
             .as_deref()
             .is_some_and(|source_id| tab_runtime(source_id).is_some())
     {
         tab.add_css_class(TAB_DROP_TARGET_CLASS);
-    } else {
-        tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+        match tab_drop_side(x, f64::from(tab.width())) {
+            TabDropSide::Before => tab.add_css_class(TAB_DROP_BEFORE_CLASS),
+            TabDropSide::After => tab.add_css_class(TAB_DROP_AFTER_CLASS),
+        }
     }
+}
+
+fn clear_tab_drop_indicator(tab: &gtk::Box) {
+    tab.remove_css_class(TAB_DROP_TARGET_CLASS);
+    tab.remove_css_class(TAB_DROP_BEFORE_CLASS);
+    tab.remove_css_class(TAB_DROP_AFTER_CLASS);
 }
 
 fn sync_header_drop_highlight(

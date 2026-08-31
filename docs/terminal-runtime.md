@@ -24,14 +24,17 @@ next tab. Tabs can be reordered within a window or moved between zter windows in
 the same process by dragging them. Dropping on the left or right half of an
 existing tab inserts before or after it. Dropping on the blank titlebar drag
 area appends the tab. Both valid destinations show a `1px` inset white outline
-only while the dragged tab is over them. Releasing outside every same-process
-zter window creates a new window containing the moved tab without additional
-app-owned drag UI. A zter window in another process is not a valid destination;
-releasing over it instead creates the new window in the source process. Escape
-cancels the drag. The internal tab payload is not exposed as text or file data
-to other applications. A move preserves the existing VTE, shell process, title,
-and runtime zoom; an emptied source window closes only after the transfer
-succeeds.
+only while the dragged tab is over them. A hovered tab also shows a white
+insertion marker at `25%` or `75%` of its width as the pointer crosses between
+its halves, keeping the marker separate from the outline. No placeholder tab is
+inserted, and the source tab remains in its existing position until the drop
+succeeds. Releasing outside every same-process zter window creates a new window
+containing the moved tab without additional app-owned drag UI. A zter window in
+another process is not a valid destination; releasing over it instead creates
+the new window in the source process. Escape cancels the drag. The internal tab
+payload is not exposed as text or file data to other applications. A move
+preserves the existing VTE, shell process, title, and runtime zoom; an emptied
+source window closes only after the transfer succeeds.
 New tabs use the working directory reported by the active tab's shell.
 If that directory is unavailable or cannot be represented as UTF-8, they use
 the working directory captured when the zter window started. This behavior is

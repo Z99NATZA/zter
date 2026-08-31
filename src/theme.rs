@@ -76,6 +76,7 @@ pub fn install_display_styles(display: &gdk::Display, terminal_padding: Terminal
 }
 
 fn application_css(terminal_padding: TerminalPadding) -> String {
+    let tab_drop_target = TAB_DROP_TARGET.css();
     let mut css = format!(
         "\
         window.zter-window {{
@@ -161,6 +162,12 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             outline: 1px solid {};
             outline-offset: -1px;
             box-shadow: none;
+        }}
+        .zter-header-tab.zter-tab-drop-target.zter-tab-drop-before {{
+            background-image: linear-gradient(to right, transparent 24.5%, {tab_drop_target} 24.5%, {tab_drop_target} 25.5%, transparent 25.5%);
+        }}
+        .zter-header-tab.zter-tab-drop-target.zter-tab-drop-after {{
+            background-image: linear-gradient(to right, transparent 74.5%, {tab_drop_target} 74.5%, {tab_drop_target} 75.5%, transparent 75.5%);
         }}
         button.zter-tab-select {{
             background-color: transparent;
@@ -770,6 +777,24 @@ mod tests {
         assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
         assert!(target_rule.contains("outline-offset: -1px"));
         assert!(target_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn tab_drop_target_marks_space_evenly_inset_positions() {
+        let css = application_css(TerminalPadding::default());
+        let (_, before_rule) = css
+            .split_once(".zter-tab-drop-target.zter-tab-drop-before")
+            .unwrap();
+        let (before_rule, _) = before_rule.split_once('}').unwrap();
+        let (_, after_rule) = css
+            .split_once(".zter-tab-drop-target.zter-tab-drop-after")
+            .unwrap();
+        let (after_rule, _) = after_rule.split_once('}').unwrap();
+
+        assert!(before_rule.contains("transparent 24.5%, #FFFFFF 24.5%"));
+        assert!(before_rule.contains("#FFFFFF 25.5%, transparent 25.5%"));
+        assert!(after_rule.contains("transparent 74.5%, #FFFFFF 74.5%"));
+        assert!(after_rule.contains("#FFFFFF 75.5%, transparent 75.5%"));
     }
 
     #[test]
