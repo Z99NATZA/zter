@@ -80,7 +80,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
     let mut css = format!(
         "\
         window.zter-window {{
-            background-color: {};
+            background-color: transparent;
             background-image: none;
             color: {};
             box-shadow: none;
@@ -344,11 +344,10 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border-radius: 0 0 12px 12px;
         }}
         picture.zter-background {{
-            background-color: {};
+            background-color: transparent;
             background-image: none;
             border-radius: 0 0 12px 12px;
         }}",
-        BACKGROUND.css(),
         FOREGROUND.css(),
         SELECTION.css(),
         HEADER_BACKGROUND.css(),
@@ -380,8 +379,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         terminal_padding.right(),
         terminal_padding.bottom(),
         terminal_padding.left(),
-        Rgb(0x5c, 0x63, 0x70).css(),
-        BACKGROUND.css()
+        Rgb(0x5c, 0x63, 0x70).css()
     );
     css.push_str(&settings_window_css());
     css
@@ -447,27 +445,6 @@ fn settings_window_css() -> String {
             font-size: 12px;
             min-height: 18px;
             padding-left: 2px;
-        }}
-        window.zter-settings-window button.zter-settings-inline-action {{
-            background-color: {};
-            background-image: none;
-            border: 1px solid {};
-            border-radius: 4px;
-            box-shadow: none;
-            color: {};
-            font-size: 11px;
-            min-height: 16px;
-            min-width: 0;
-            outline-width: 0;
-            padding: 0 5px;
-        }}
-        window.zter-settings-window button.zter-settings-inline-action:hover {{
-            background-color: {};
-            color: {};
-        }}
-        window.zter-settings-window button.zter-settings-inline-action:focus {{
-            box-shadow: none;
-            outline-width: 0;
         }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
@@ -571,12 +548,7 @@ fn settings_window_css() -> String {
         BACKGROUND.css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
-        SELECTION.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        TAB_HOVER.css(),
-        FOREGROUND.css(),
-        HEADER_BACKGROUND.css(),
+        BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
         FOREGROUND.css(),
@@ -691,11 +663,12 @@ mod tests {
     #[test]
     fn header_uses_reference_tone_without_red_or_a_second_divider() {
         let css = application_css(TerminalPadding::default());
+        let (_, header_rule) = css.split_once("window.zter-window .zter-header {").unwrap();
+        let (header_rule, _) = header_rule.split_once('}').unwrap();
 
-        assert!(css.contains("window.zter-window .zter-header"));
-        assert!(css.contains("background-color: #303643"));
-        assert!(css.contains("border-bottom-width: 0"));
-        assert!(!css.contains("#E06C75"));
+        assert!(header_rule.contains("background-color: #303643"));
+        assert!(header_rule.contains("border-bottom-width: 0"));
+        assert!(!header_rule.contains("#E06C75"));
     }
 
     #[test]
@@ -711,13 +684,23 @@ mod tests {
     }
 
     #[test]
-    fn prepared_wallpaper_surface_keeps_the_opaque_theme_fallback() {
+    fn background_surface_css_is_transparent_for_prepared_alpha_pixels() {
         let css = application_css(TerminalPadding::default());
         let (_, background_rule) = css.split_once("picture.zter-background").unwrap();
         let (background_rule, _) = background_rule.split_once('}').unwrap();
 
-        assert!(background_rule.contains("background-color: #282C34"));
+        assert!(background_rule.contains("background-color: transparent"));
         assert!(background_rule.contains("background-image: none"));
+    }
+
+    #[test]
+    fn app_window_css_allows_terminal_background_alpha() {
+        let css = application_css(TerminalPadding::default());
+        let (_, window_rule) = css.split_once("window.zter-window").unwrap();
+        let (window_rule, _) = window_rule.split_once('}').unwrap();
+
+        assert!(window_rule.contains("background-color: transparent"));
+        assert!(window_rule.contains("border: 1px solid #3E4451"));
     }
 
     #[test]
@@ -911,21 +894,6 @@ mod tests {
         assert!(form_rule.contains("padding: 16px"));
         assert!(label_rule.contains("font-size: 12px"));
         assert!(label_rule.contains("min-height: 18px"));
-    }
-
-    #[test]
-    fn settings_inline_action_is_a_compact_shadow_free_tag() {
-        let css = application_css(TerminalPadding::default());
-        let (_, action_rule) = css
-            .split_once("window.zter-settings-window button.zter-settings-inline-action {")
-            .unwrap();
-        let (action_rule, _) = action_rule.split_once('}').unwrap();
-
-        assert!(action_rule.contains("border-radius: 4px"));
-        assert!(action_rule.contains("box-shadow: none"));
-        assert!(action_rule.contains("font-size: 11px"));
-        assert!(action_rule.contains("min-height: 16px"));
-        assert!(action_rule.contains("min-width: 0"));
     }
 
     #[test]

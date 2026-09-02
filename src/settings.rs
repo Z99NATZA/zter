@@ -11,13 +11,15 @@ use serde_json::Value;
 use crate::identity::SETTINGS_DIRECTORY;
 
 const SETTINGS_FILE: &str = "settings.json";
-const CURRENT_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SCHEMA_VERSION: u32 = 3;
 const DEFAULT_PADDING: u16 = 0;
 pub(crate) const MAX_PADDING: u16 = 128;
 pub(crate) const MIN_FONT_SIZE: f64 = 6.0;
 pub(crate) const MAX_FONT_SIZE: f64 = 72.0;
 pub(crate) const MAX_SCROLLBACK_LINES: i64 = 1_000_000;
-pub(crate) const MAX_WALLPAPER_OPACITY: f64 = 0.6;
+pub(crate) const MAX_BACKGROUND_IMAGE_OPACITY: f64 = 0.6;
+pub(crate) const MIN_WINDOW_OPACITY: f64 = 0.6;
+pub(crate) const MAX_WINDOW_OPACITY: f64 = 1.0;
 const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,7 +68,7 @@ impl TerminalPadding {
 pub struct Settings {
     schema_version: u32,
     shell: Option<String>,
-    wallpaper: Option<PathBuf>,
+    background_image: Option<PathBuf>,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -79,18 +81,20 @@ pub struct Settings {
     #[serde(default = "default_padding", deserialize_with = "deserialize_padding")]
     padding_left: u16,
     scrollback_lines: i64,
-    wallpaper_opacity: f64,
+    background_image_opacity: f64,
+    window_opacity: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SettingsUpdate {
     pub shell: Option<String>,
-    pub wallpaper: Option<PathBuf>,
+    pub background_image: Option<PathBuf>,
     pub font_family: String,
     pub font_size: f64,
     pub terminal_padding: TerminalPadding,
     pub scrollback_lines: i64,
-    pub wallpaper_opacity: f64,
+    pub background_image_opacity: f64,
+    pub window_opacity: f64,
 }
 
 impl Settings {
@@ -121,9 +125,9 @@ impl Settings {
             .shell
             .map(|shell| shell.trim().to_owned())
             .filter(|shell| !shell.is_empty());
-        self.wallpaper = update
-            .wallpaper
-            .filter(|wallpaper| !wallpaper.as_os_str().is_empty());
+        self.background_image = update
+            .background_image
+            .filter(|background_image| !background_image.as_os_str().is_empty());
         self.font_family = nonempty_or(update.font_family, defaults.font_family);
         self.font_size = ranged_or(
             update.font_size,
@@ -143,11 +147,17 @@ impl Settings {
         } else {
             defaults.scrollback_lines
         };
-        self.wallpaper_opacity = ranged_or(
-            update.wallpaper_opacity,
+        self.background_image_opacity = ranged_or(
+            update.background_image_opacity,
             0.0,
-            MAX_WALLPAPER_OPACITY,
-            defaults.wallpaper_opacity,
+            MAX_BACKGROUND_IMAGE_OPACITY,
+            defaults.background_image_opacity,
+        );
+        self.window_opacity = ranged_or(
+            update.window_opacity,
+            MIN_WINDOW_OPACITY,
+            MAX_WINDOW_OPACITY,
+            defaults.window_opacity,
         );
     }
 
@@ -214,8 +224,8 @@ impl Settings {
         self.shell.as_deref()
     }
 
-    pub fn wallpaper(&self) -> Option<&Path> {
-        self.wallpaper.as_deref()
+    pub fn background_image(&self) -> Option<&Path> {
+        self.background_image.as_deref()
     }
 
     pub fn theme(&self) -> Theme {
@@ -243,8 +253,12 @@ impl Settings {
         self.scrollback_lines
     }
 
-    pub fn wallpaper_opacity(&self) -> f64 {
-        self.wallpaper_opacity
+    pub fn background_image_opacity(&self) -> f64 {
+        self.background_image_opacity
+    }
+
+    pub fn window_opacity(&self) -> f64 {
+        self.window_opacity
     }
 
     pub(crate) fn defaults() -> Self {
@@ -433,7 +447,7 @@ fn resolve_user_settings(
     let mut changed = false;
     let mut has_invalid_keys = false;
     match user_settings.get("schema_version") {
-        Some(value) if value.as_u64() == Some(1) => {
+        Some(value) if matches!(value.as_u64(), Some(1 | 2)) => {
             migrate_legacy_settings(&mut user_settings, &mut has_invalid_keys);
             changed = true;
         }
@@ -476,23 +490,33 @@ fn migrate_legacy_settings(
     settings: &mut serde_json::Map<String, Value>,
     has_invalid_keys: &mut bool,
 ) {
-    if !settings.contains_key("wallpaper_opacity")
-        && let Some(shade) = settings.get("wallpaper_shade")
+    if !settings.contains_key("background_image")
+        && let Some(wallpaper) = settings.get("wallpaper")
     {
-        match shade
-            .as_f64()
-            .filter(|shade| shade.is_finite() && (0.0..=1.0).contains(shade))
-        {
-            Some(shade) => {
-                settings.insert(
-                    "wallpaper_opacity".to_owned(),
-                    Value::from(legacy_shade_to_opacity(shade)),
-                );
+        settings.insert("background_image".to_owned(), wallpaper.clone());
+    }
+
+    if !settings.contains_key("background_image_opacity") {
+        if let Some(opacity) = settings.get("wallpaper_opacity") {
+            settings.insert("background_image_opacity".to_owned(), opacity.clone());
+        } else if let Some(shade) = settings.get("wallpaper_shade") {
+            match shade
+                .as_f64()
+                .filter(|shade| shade.is_finite() && (0.0..=1.0).contains(shade))
+            {
+                Some(shade) => {
+                    settings.insert(
+                        "background_image_opacity".to_owned(),
+                        Value::from(legacy_shade_to_opacity(shade)),
+                    );
+                }
+                None => *has_invalid_keys = true,
             }
-            None => *has_invalid_keys = true,
         }
     }
 
+    settings.remove("wallpaper");
+    settings.remove("wallpaper_opacity");
     settings.remove("wallpaper_shade");
     settings.insert(
         "schema_version".to_owned(),
@@ -504,7 +528,7 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
     match key {
         "schema_version" => (value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)))
             .then(|| Value::from(CURRENT_SCHEMA_VERSION)),
-        "shell" | "wallpaper" => match value {
+        "shell" | "background_image" => match value {
             Value::Null => Some(Value::Null),
             Value::String(value) if value.trim().is_empty() => Some(Value::Null),
             Value::String(_) => Some(value.clone()),
@@ -529,9 +553,17 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
             .as_i64()
             .filter(|value| (0..=MAX_SCROLLBACK_LINES).contains(value))
             .map(Value::from),
-        "wallpaper_opacity" => value
+        "background_image_opacity" => value
             .as_f64()
-            .filter(|value| value.is_finite() && (0.0..=MAX_WALLPAPER_OPACITY).contains(value))
+            .filter(|value| {
+                value.is_finite() && (0.0..=MAX_BACKGROUND_IMAGE_OPACITY).contains(value)
+            })
+            .map(|_| value.clone()),
+        "window_opacity" => value
+            .as_f64()
+            .filter(|value| {
+                value.is_finite() && (MIN_WINDOW_OPACITY..=MAX_WINDOW_OPACITY).contains(value)
+            })
             .map(|_| value.clone()),
         _ => None,
     }
@@ -585,10 +617,18 @@ impl Settings {
                 "scrollback_lines must be between 0 and 1000000",
             ));
         }
-        if !self.wallpaper_opacity.is_finite()
-            || !(0.0..=MAX_WALLPAPER_OPACITY).contains(&self.wallpaper_opacity)
+        if !self.background_image_opacity.is_finite()
+            || !(0.0..=MAX_BACKGROUND_IMAGE_OPACITY).contains(&self.background_image_opacity)
         {
-            return Err(invalid(path, "wallpaper_opacity must be between 0 and 0.6"));
+            return Err(invalid(
+                path,
+                "background_image_opacity must be between 0 and 0.6",
+            ));
+        }
+        if !self.window_opacity.is_finite()
+            || !(MIN_WINDOW_OPACITY..=MAX_WINDOW_OPACITY).contains(&self.window_opacity)
+        {
+            return Err(invalid(path, "window_opacity must be between 0.6 and 1.0"));
         }
 
         Ok(())
@@ -697,6 +737,8 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "background_image",
+                "background_image_opacity",
                 "font_family",
                 "font_size",
                 "padding_bottom",
@@ -707,8 +749,7 @@ mod tests {
                 "scrollback_lines",
                 "shell",
                 "theme",
-                "wallpaper",
-                "wallpaper_opacity",
+                "window_opacity",
             ]
         );
     }
@@ -739,7 +780,7 @@ mod tests {
 
         assert_eq!(settings.font_size(), 16.0);
         assert_eq!(saved["font_size"], 16.0);
-        assert_eq!(saved.as_object().unwrap().len(), 12);
+        assert_eq!(saved.as_object().unwrap().len(), 13);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -807,7 +848,7 @@ mod tests {
         let mut value = project_settings_value().unwrap();
         let values = value.as_object_mut().unwrap();
         values.insert("shell".to_owned(), Value::from(""));
-        values.insert("wallpaper".to_owned(), Value::from(""));
+        values.insert("background_image".to_owned(), Value::from(""));
         values.insert("theme".to_owned(), Value::Null);
         values.insert("font_family".to_owned(), Value::from(""));
         values.insert("font_size".to_owned(), Value::from(""));
@@ -816,7 +857,8 @@ mod tests {
         values.insert("padding_bottom".to_owned(), Value::from(999));
         values.insert("padding_left".to_owned(), Value::from(4.5));
         values.insert("scrollback_lines".to_owned(), Value::from(""));
-        values.insert("wallpaper_opacity".to_owned(), Value::Null);
+        values.insert("background_image_opacity".to_owned(), Value::Null);
+        values.insert("window_opacity".to_owned(), Value::Null);
         let source = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         fs::write(&path, &source).unwrap();
 
@@ -824,19 +866,23 @@ mod tests {
         let defaults = Settings::defaults();
 
         assert_eq!(settings.shell(), None);
-        assert_eq!(settings.wallpaper(), None);
+        assert_eq!(settings.background_image(), None);
         assert_eq!(settings.theme(), defaults.theme());
         assert_eq!(settings.font_family(), defaults.font_family());
         assert_eq!(settings.font_size(), defaults.font_size());
         assert_eq!(settings.terminal_padding(), defaults.terminal_padding());
         assert_eq!(settings.scrollback_lines(), defaults.scrollback_lines());
-        assert_eq!(settings.wallpaper_opacity(), defaults.wallpaper_opacity());
+        assert_eq!(
+            settings.background_image_opacity(),
+            defaults.background_image_opacity()
+        );
+        assert_eq!(settings.window_opacity(), defaults.window_opacity());
         assert_eq!(fs::read_to_string(&path).unwrap(), source);
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn schema_one_shade_migrates_to_equivalent_wallpaper_opacity() {
+    fn schema_one_shade_migrates_to_equivalent_background_image_opacity() {
         let directory = test_directory("shade-migration");
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
@@ -849,10 +895,37 @@ mod tests {
         let settings = Settings::load_or_create_at(&path).unwrap();
         let saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
-        assert_eq!(settings.wallpaper_opacity(), 0.2);
-        assert_eq!(saved["schema_version"], 2);
+        assert_eq!(settings.background_image_opacity(), 0.2);
+        assert_eq!(saved["schema_version"], 3);
         assert!(saved.get("wallpaper_shade").is_none());
-        assert_eq!(saved["wallpaper_opacity"], 0.2);
+        assert!(saved.get("wallpaper_opacity").is_none());
+        assert_eq!(saved["background_image_opacity"], 0.2);
+        assert_eq!(saved["window_opacity"], 1.0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn schema_two_wallpaper_keys_migrate_to_background_image_keys() {
+        let directory = test_directory("schema-two-migration");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            &path,
+            "{\"schema_version\":2,\"wallpaper\":\"/tmp/bg.png\",\"wallpaper_opacity\":0.25}",
+        )
+        .unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+        let saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(settings.background_image(), Some(Path::new("/tmp/bg.png")));
+        assert_eq!(settings.background_image_opacity(), 0.25);
+        assert_eq!(settings.window_opacity(), 1.0);
+        assert_eq!(saved["schema_version"], 3);
+        assert!(saved.get("wallpaper").is_none());
+        assert!(saved.get("wallpaper_opacity").is_none());
+        assert_eq!(saved["background_image"], "/tmp/bg.png");
+        assert_eq!(saved["background_image_opacity"], 0.25);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -914,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn wallpaper_opacity_above_the_supported_maximum_uses_its_default() {
+    fn background_image_opacity_above_the_supported_maximum_uses_its_default() {
         let directory = test_directory("invalid-opacity");
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
@@ -922,15 +995,38 @@ mod tests {
         value
             .as_object_mut()
             .unwrap()
-            .insert("wallpaper_opacity".to_owned(), Value::from(0.7));
+            .insert("background_image_opacity".to_owned(), Value::from(0.7));
         let invalid = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
         fs::write(&path, &invalid).unwrap();
 
         let settings = Settings::load_or_create_at(&path).unwrap();
 
         assert_eq!(
-            settings.wallpaper_opacity(),
-            Settings::defaults().wallpaper_opacity()
+            settings.background_image_opacity(),
+            Settings::defaults().background_image_opacity()
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn window_opacity_outside_supported_range_uses_its_default() {
+        let directory = test_directory("invalid-window-opacity");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let mut value = project_settings_value().unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("window_opacity".to_owned(), Value::from(0.5));
+        let invalid = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
+        fs::write(&path, &invalid).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(
+            settings.window_opacity(),
+            Settings::defaults().window_opacity()
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
         fs::remove_dir_all(directory).unwrap();
@@ -942,7 +1038,7 @@ mod tests {
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
         let source =
-            PROJECT_SETTINGS_JSON.replace("\"schema_version\": 2", "\"schema_version\": 99");
+            PROJECT_SETTINGS_JSON.replace("\"schema_version\": 3", "\"schema_version\": 99");
         fs::write(&path, &source).unwrap();
 
         assert_eq!(
@@ -979,19 +1075,23 @@ mod tests {
         let mut settings = Settings::defaults();
         settings.apply_update(SettingsUpdate {
             shell: Some(" /bin/fish ".to_owned()),
-            wallpaper: Some(PathBuf::from("/tmp/wallpaper.png")),
+            background_image: Some(PathBuf::from("/tmp/wallpaper.png")),
             font_family: "JetBrains Mono".to_owned(),
             font_size: 16.0,
             terminal_padding: TerminalPadding::new(1, 2, 3, 4),
             scrollback_lines: 25_000,
-            wallpaper_opacity: 0.25,
+            background_image_opacity: 0.25,
+            window_opacity: 0.85,
         });
 
         write_settings(&path, &settings).unwrap();
         let reloaded = Settings::load_or_create_at(&path).unwrap();
 
         assert_eq!(reloaded.shell(), Some("/bin/fish"));
-        assert_eq!(reloaded.wallpaper(), Some(Path::new("/tmp/wallpaper.png")));
+        assert_eq!(
+            reloaded.background_image(),
+            Some(Path::new("/tmp/wallpaper.png"))
+        );
         assert_eq!(reloaded.font_family(), "JetBrains Mono");
         assert_eq!(reloaded.font_size(), 16.0);
         assert_eq!(
@@ -999,7 +1099,8 @@ mod tests {
             TerminalPadding::new(1, 2, 3, 4)
         );
         assert_eq!(reloaded.scrollback_lines(), 25_000);
-        assert_eq!(reloaded.wallpaper_opacity(), 0.25);
+        assert_eq!(reloaded.background_image_opacity(), 0.25);
+        assert_eq!(reloaded.window_opacity(), 0.85);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1009,16 +1110,17 @@ mod tests {
         let mut settings = defaults.clone();
         settings.apply_update(SettingsUpdate {
             shell: Some("  ".to_owned()),
-            wallpaper: Some(PathBuf::new()),
+            background_image: Some(PathBuf::new()),
             font_family: "  ".to_owned(),
             font_size: f64::NAN,
             terminal_padding: TerminalPadding::new(MAX_PADDING + 1, 2, 3, 4),
             scrollback_lines: MAX_SCROLLBACK_LINES + 1,
-            wallpaper_opacity: MAX_WALLPAPER_OPACITY + 0.01,
+            background_image_opacity: MAX_BACKGROUND_IMAGE_OPACITY + 0.01,
+            window_opacity: MIN_WINDOW_OPACITY - 0.01,
         });
 
         assert_eq!(settings.shell(), None);
-        assert_eq!(settings.wallpaper(), None);
+        assert_eq!(settings.background_image(), None);
         assert_eq!(settings.font_family(), defaults.font_family());
         assert_eq!(settings.font_size(), defaults.font_size());
         assert_eq!(
@@ -1027,7 +1129,11 @@ mod tests {
         );
         assert_eq!(settings.terminal_padding().right(), 2);
         assert_eq!(settings.scrollback_lines(), defaults.scrollback_lines());
-        assert_eq!(settings.wallpaper_opacity(), defaults.wallpaper_opacity());
+        assert_eq!(
+            settings.background_image_opacity(),
+            defaults.background_image_opacity()
+        );
+        assert_eq!(settings.window_opacity(), defaults.window_opacity());
     }
 
     #[test]

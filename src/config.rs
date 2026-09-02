@@ -7,12 +7,13 @@ use std::path::{Path, PathBuf};
 use crate::settings::{Settings, SettingsError, TerminalPadding, Theme};
 
 const FALLBACK_SHELL: &str = "/bin/sh";
-pub(crate) const BUNDLED_WALLPAPER_SETTING: &str = "builtin";
+pub(crate) const DEFAULT_BACKGROUND_IMAGE_SETTING: &str = "builtin";
+pub const BACKGROUND_IMAGE_ENV: &str = "ZTER_BACKGROUND_IMAGE";
 pub const WALLPAPER_ENV: &str = "ZTER_WALLPAPER";
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum WallpaperSource {
-    Bundled,
+pub enum BackgroundImageSource {
+    Default,
     File(PathBuf),
 }
 
@@ -20,13 +21,14 @@ pub enum WallpaperSource {
 pub struct AppConfig {
     shell: String,
     working_directory: String,
-    wallpaper: Option<WallpaperSource>,
+    background_image: Option<BackgroundImageSource>,
     theme: Theme,
     font_family: String,
     font_size: f64,
     terminal_padding: TerminalPadding,
     scrollback_lines: i64,
-    wallpaper_opacity: f64,
+    background_image_opacity: f64,
+    window_opacity: f64,
 }
 
 impl AppConfig {
@@ -36,7 +38,7 @@ impl AppConfig {
             settings,
             env::var_os("SHELL"),
             env::current_dir().map_err(ConfigError::CurrentDirectory)?,
-            env::var_os(WALLPAPER_ENV),
+            background_image_override(),
         )
     }
 
@@ -44,22 +46,24 @@ impl AppConfig {
         settings: Settings,
         environment_shell: Option<OsString>,
         working_directory: PathBuf,
-        wallpaper_override: Option<OsString>,
+        background_image_override: Option<OsString>,
     ) -> Result<Self, ConfigError> {
         let shell = parse_shell(settings.shell(), environment_shell)?;
         let working_directory = path_to_string(working_directory)?;
-        let wallpaper = parse_wallpaper(settings.wallpaper(), wallpaper_override);
+        let background_image =
+            parse_background_image(settings.background_image(), background_image_override);
 
         Ok(Self {
             shell,
             working_directory,
-            wallpaper,
+            background_image,
             theme: settings.theme(),
             font_family: settings.font_family().to_owned(),
             font_size: settings.font_size(),
             terminal_padding: settings.terminal_padding(),
             scrollback_lines: settings.scrollback_lines(),
-            wallpaper_opacity: settings.wallpaper_opacity(),
+            background_image_opacity: settings.background_image_opacity(),
+            window_opacity: settings.window_opacity(),
         })
     }
 
@@ -71,8 +75,8 @@ impl AppConfig {
         &self.working_directory
     }
 
-    pub fn wallpaper(&self) -> Option<&WallpaperSource> {
-        self.wallpaper.as_ref()
+    pub fn background_image(&self) -> Option<&BackgroundImageSource> {
+        self.background_image.as_ref()
     }
 
     pub fn theme(&self) -> Theme {
@@ -95,9 +99,17 @@ impl AppConfig {
         self.scrollback_lines
     }
 
-    pub fn wallpaper_opacity(&self) -> f64 {
-        self.wallpaper_opacity
+    pub fn background_image_opacity(&self) -> f64 {
+        self.background_image_opacity
     }
+
+    pub fn window_opacity(&self) -> f64 {
+        self.window_opacity
+    }
+}
+
+fn background_image_override() -> Option<OsString> {
+    env::var_os(BACKGROUND_IMAGE_ENV).or_else(|| env::var_os(WALLPAPER_ENV))
 }
 
 #[derive(Debug)]
@@ -158,29 +170,29 @@ fn path_to_string(path: PathBuf) -> Result<String, ConfigError> {
         .map_err(|path| ConfigError::NonUnicodePath(PathBuf::from(path)))
 }
 
-fn parse_wallpaper(
-    configured_wallpaper: Option<&Path>,
-    wallpaper_override: Option<OsString>,
-) -> Option<WallpaperSource> {
-    let wallpaper = match wallpaper_override {
+fn parse_background_image(
+    configured_background_image: Option<&Path>,
+    background_image_override: Option<OsString>,
+) -> Option<BackgroundImageSource> {
+    let background_image = match background_image_override {
         Some(value) if value.is_empty() => return None,
         Some(value) => Some(PathBuf::from(value)),
-        None => configured_wallpaper.map(Path::to_owned),
+        None => configured_background_image.map(Path::to_owned),
     };
 
-    let path = wallpaper?;
-    if path == Path::new(BUNDLED_WALLPAPER_SETTING) {
-        return Some(WallpaperSource::Bundled);
+    let path = background_image?;
+    if path == Path::new(DEFAULT_BACKGROUND_IMAGE_SETTING) {
+        return Some(BackgroundImageSource::Default);
     }
     if !path.is_file() {
         eprintln!(
-            "zter: warning: wallpaper {} is not a file; using the bundled wallpaper",
+            "zter: warning: background image {} is not a file; using the default background image",
             path.display()
         );
-        return Some(WallpaperSource::Bundled);
+        return Some(BackgroundImageSource::Default);
     }
 
-    Some(WallpaperSource::File(path))
+    Some(BackgroundImageSource::File(path))
 }
 
 #[cfg(test)]
@@ -189,13 +201,13 @@ mod tests {
 
     fn config(
         environment_shell: Option<OsString>,
-        wallpaper_override: Option<OsString>,
+        background_image_override: Option<OsString>,
     ) -> Result<AppConfig, ConfigError> {
         AppConfig::from_values(
             Settings::defaults(),
             environment_shell,
             PathBuf::from("/tmp"),
-            wallpaper_override,
+            background_image_override,
         )
     }
 
@@ -228,41 +240,50 @@ mod tests {
     }
 
     #[test]
-    fn empty_wallpaper_override_disables_wallpaper() {
+    fn empty_background_image_override_disables_background_image() {
         let config = config(None, Some(OsString::new())).unwrap();
 
-        assert_eq!(config.wallpaper(), None);
+        assert_eq!(config.background_image(), None);
     }
 
     #[test]
-    fn project_settings_use_the_bundled_wallpaper() {
+    fn project_settings_use_the_default_background_image() {
         let config = config(None, None).unwrap();
 
-        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
+        assert_eq!(
+            config.background_image(),
+            Some(&BackgroundImageSource::Default)
+        );
     }
 
     #[test]
-    fn bundled_wallpaper_override_is_supported() {
-        let config = config(None, Some(OsString::from(BUNDLED_WALLPAPER_SETTING))).unwrap();
+    fn default_background_image_override_is_supported() {
+        let config = config(None, Some(OsString::from(DEFAULT_BACKGROUND_IMAGE_SETTING))).unwrap();
 
-        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
+        assert_eq!(
+            config.background_image(),
+            Some(&BackgroundImageSource::Default)
+        );
     }
 
     #[test]
-    fn null_wallpaper_setting_disables_wallpaper() {
+    fn null_background_image_setting_disables_background_image() {
         let settings = customized_settings(serde_json::Value::Null, serde_json::Value::Null);
         let config = AppConfig::from_values(settings, None, PathBuf::from("/tmp"), None).unwrap();
 
-        assert_eq!(config.wallpaper(), None);
+        assert_eq!(config.background_image(), None);
     }
 
     #[test]
-    fn missing_wallpaper_falls_back_to_the_bundled_wallpaper() {
-        let missing = PathBuf::from("/zter-test/missing-wallpaper.png");
+    fn missing_background_image_falls_back_to_the_default_background_image() {
+        let missing = PathBuf::from("/zter-test/missing-background-image.png");
 
         let config = config(None, Some(missing.into_os_string())).unwrap();
 
-        assert_eq!(config.wallpaper(), Some(&WallpaperSource::Bundled));
+        assert_eq!(
+            config.background_image(),
+            Some(&BackgroundImageSource::Default)
+        );
     }
 
     #[test]
@@ -273,7 +294,8 @@ mod tests {
         assert_eq!(config.font_family(), "Monospace");
         assert_eq!(config.font_size(), 12.0);
         assert_eq!(config.scrollback_lines(), 10_000);
-        assert_eq!(config.wallpaper_opacity(), 0.15);
+        assert_eq!(config.background_image_opacity(), 0.1);
+        assert_eq!(config.window_opacity(), 1.0);
     }
 
     #[test]
@@ -286,11 +308,14 @@ mod tests {
         );
     }
 
-    fn customized_settings(shell: serde_json::Value, wallpaper: serde_json::Value) -> Settings {
+    fn customized_settings(
+        shell: serde_json::Value,
+        background_image: serde_json::Value,
+    ) -> Settings {
         serde_json::from_value(serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "shell": shell,
-            "wallpaper": wallpaper,
+            "background_image": background_image,
             "theme": "one-half-dark",
             "font_family": "Monospace",
             "font_size": 12.0,
@@ -299,7 +324,8 @@ mod tests {
             "padding_bottom": 0,
             "padding_left": 0,
             "scrollback_lines": 10000,
-            "wallpaper_opacity": 0.1
+            "background_image_opacity": 0.1,
+            "window_opacity": 1.0
         }))
         .unwrap()
     }

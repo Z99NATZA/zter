@@ -1,7 +1,7 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "shell": null,
-  "wallpaper": "builtin",
+  "background_image": "builtin",
   "theme": "one-half-dark",
   "font_family": "Monospace",
   "font_size": 12.0,
@@ -10,5 +10,6 @@
   "padding_bottom": 16,
   "padding_left": 16,
   "scrollback_lines": 10000,
-  "wallpaper_opacity": 0.1
+  "background_image_opacity": 0.1,
+  "window_opacity": 1.0
 }

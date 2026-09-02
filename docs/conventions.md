@@ -27,7 +27,7 @@ cargo fmt --check
 
 - Write the project and product name as lowercase `zter` in UI and prose. Keep
   uppercase forms only where technical conventions require them, such as
-  `ZTER_WALLPAPER`.
+  `ZTER_BACKGROUND_IMAGE`.
 - Do not add app-owned box or text shadows. Use a border when a visual boundary
   is necessary.
 - Add borders only between meaningful content or interaction regions. Do not

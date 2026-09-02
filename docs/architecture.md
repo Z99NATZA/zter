@@ -34,9 +34,9 @@ src/main.rs
   validates paths used for startup.
 - `src/theme.rs` owns terminal surface and ANSI palette colors.
 - `src/ui.rs` owns GTK widgets, the shared live application configuration, VTE
-  behavior, wallpaper composition, and shell spawning.
+  behavior, background image composition, and shell spawning.
 - `data/` owns the desktop launcher metadata, scalable application icons, and
-  bundled wallpaper.
+  default background image asset.
 - `scripts/` owns the user-local desktop installation and removal commands.
 
 The tracked `config/settings.json` is the complete project template and is

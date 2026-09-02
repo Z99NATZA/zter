@@ -16,10 +16,10 @@ and is tracked at
 `data/icons/hicolor/scalable/apps/io.github.z99natza.zter.Devel.svg`. Its desktop
 metadata is `data/io.github.z99natza.zter.Devel.desktop`.
 
-The original zter wallpaper is tracked at
+The default zter background image is tracked at
 `data/wallpapers/zter-wallpaper.png` and embedded in both debug and release
 binaries. The user-local installer therefore does not need to copy a separate
-wallpaper file.
+image file.
 
 ## User-local installation
 

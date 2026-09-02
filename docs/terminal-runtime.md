@@ -103,9 +103,9 @@ primary clicks retain their terminal behavior.
 Saving the settings window applies font, theme, padding, and scrollback changes
 to every current tab. The configured font size replaces each tab's runtime zoom,
 so all current tabs reset to 100% and have the same font size immediately after
-the save. Tabs can be zoomed independently again afterward. Wallpaper changes
-apply across current windows, while a shell change affects only subsequently
-opened tabs.
+the save. Tabs can be zoomed independently again afterward. Background image
+and opacity changes apply across current windows, while a shell change affects
+only subsequently opened tabs.
 `Ctrl+C` copies selected text from the physical `C` key across keyboard
 layouts. Without a selection, it retains the terminal interrupt behavior when
 only the shell owns the terminal. When a foreground process owns the terminal,
@@ -133,15 +133,17 @@ not participate in viewport measurement, so appearing or disappearing does not
 change the terminal grid or reflow text.
 Selected cells swap their existing foreground and background colors, so the
 highlight adapts to colored terminal output instead of using one fixed color.
-The composition layer paints the opaque One Half Dark background while VTE
-remains transparent.
+The composition layer paints the One Half Dark background and optional
+background image while VTE remains transparent. `window_opacity` applies only
+to this lower composition layer, so terminal text, the cursor, selection, tabs,
+the titlebar, and modals remain opaque.
 
 Each tab waits for its first positive viewport allocation, applies that terminal
 grid, and only then starts its shell. During continuous window resizing, the
-wallpaper follows the window while the terminal grid remains at its last applied
-size. After the window allocation is stable for `120ms`, zter applies its latest
-grid. Font zoom instead applies immediately through VTE's native font scale and
-does not enter the deferred window-resize path.
+background image follows the window while the terminal grid remains at its last
+applied size. After the window allocation is stable for `120ms`, zter applies
+its latest grid. Font zoom instead applies immediately through VTE's native font
+scale and does not enter the deferred window-resize path.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 `#3E4451` border and `12px` rounded corners. The lower composition layer is
@@ -149,9 +151,9 @@ clipped to the same radius. The terminal content surface uses a top border of
 the same color as the only header/content divider. Its top, right, bottom, and
 left inner padding are independently configurable from `0px` through `128px`
 and default to `16px`. The GTK titlebar's theme border is disabled so it does not
-create a second dark line. The wallpaper does not add borders or shrink with
-terminal padding. Window-manager or compositor decoration remains system-owned
-and may include an outer window shadow beyond the app border.
+create a second dark line. The background image does not add borders or shrink
+with terminal padding. Window-manager or compositor decoration remains
+system-owned and may include an outer window shadow beyond the app border.
 
 The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
 and the active tab uses `#3E4451`. Active state is communicated by this neutral
@@ -182,33 +184,35 @@ slots used by terminal programs for error semantics.
 | Cyan       | `#56B6C2` | `#56B6C2` |
 | White      | `#DCDFE4` | `#FFFFFF` |
 
-Foreground is `#DCDFE4`, the opaque background is `#282C34`, the cursor is
+Foreground is `#DCDFE4`, the terminal background is `#282C34`, the cursor is
 `#61AFEF`, selection is `#3E4451`, and the header background is `#303643`.
 
-## Wallpaper
+## Background Image
 
-The `wallpaper` setting defaults to `"builtin"`, which selects the original
-zter wallpaper embedded in every debug and release binary. Another non-empty
-string selects an image path, while `null` or an empty string disables the
-wallpaper. `ZTER_WALLPAPER` overrides that value for one process, and an empty
-override disables the wallpaper. A missing or unreadable external image falls
-back to the bundled wallpaper; if the bundled image cannot load, zter uses the
-solid theme background.
+The `background_image` setting defaults to `"builtin"`, which selects the
+default zter image embedded in every debug and release binary. Another
+non-empty string selects an image path, while `null` or an empty string disables
+the image layer. `ZTER_BACKGROUND_IMAGE` overrides that value for one process,
+and an empty override disables the image layer. `ZTER_WALLPAPER` remains a
+compatibility alias when `ZTER_BACKGROUND_IMAGE` is not set. A missing or
+unreadable external image falls back to the default image; if the default image
+cannot load, zter keeps the prepared theme background.
 
 Before presenting the window, zter decodes the selected image, reduces images
 larger than the pixels needed to cover the connected display, and applies the
-One Half Dark background, Screen blend mode, and configured opacity. The result
-is one opaque texture shared by every tab. GTK scales that unchanged texture to
-cover each terminal surface while preserving its aspect ratio; interactive
-terminal redraws do not decode, resize, or blend the wallpaper again. Both VTE
-background painting and the terminal widget's GTK CSS background remain
-transparent.
+One Half Dark background, Screen blend mode, `background_image_opacity`, and
+`window_opacity`. When the image layer is disabled, zter prepares a solid
+theme background texture instead of doing image work. The result is one texture
+shared by every tab. GTK scales that unchanged texture to cover each terminal
+surface while preserving its aspect ratio; interactive terminal redraws do not
+decode, resize, or blend the background image again. Both VTE background
+painting and the terminal widget's GTK CSS background remain transparent.
 
-`zter settings reload` rereads wallpaper-related settings in the running
-profile-matched application. Image preparation runs on a temporary worker
-thread, and the completed texture replaces the shared texture for all tabs on
-the GTK main thread. Reloading does not restart terminal children; a failure
-keeps the active texture.
+`zter settings reload` rereads background image and opacity settings in the
+running profile-matched application. Background preparation runs on a temporary
+worker thread, and the completed texture replaces the shared texture for all
+tabs on the GTK main thread. Reloading does not restart terminal children; a
+failure keeps the active texture.
 
 Settings paths, defaults, ranges, and failure handling are documented in
 [Settings](settings.md).
