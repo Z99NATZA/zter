@@ -19,10 +19,15 @@ The settings button beside the window controls opens one compact modal for its
 terminal window. It edits the active debug or release profile shared by all
 zter windows in that application. The background image mode selects Default,
 Custom, or None. Custom can browse local image formats supported by GdkPixbuf
-and place the selected path in the draft. The header close control uses the
-terminal window's native control style. Numeric decrement and increment
-controls keep circular `28px` background boxes inside their fields, with
-transparent resting fills and neutral `#444A55` hover fills.
+and place the selected path in the draft. Background image opacity and window
+opacity each have a checkbox before the label, and clicking the label toggles
+the checkbox. The checkbox indicator uses the same background and border tones
+as settings inputs. An unchecked opacity control applies the embedded default
+and keeps the current input value in the draft; a checked opacity control
+applies the input value. The header close control uses the terminal window's
+native control style. Numeric decrement and increment controls keep circular
+`28px` background boxes inside their fields, with transparent resting fills and
+neutral `#444A55` hover fills.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
 background image, background image opacity, and window opacity changes then

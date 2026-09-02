@@ -199,8 +199,12 @@ struct SettingsControls {
     scrollback: gtk::SpinButton,
     background_image_mode: gtk::DropDown,
     background_image_path: gtk::Entry,
+    background_image_opacity_enabled: gtk::CheckButton,
     background_image_opacity: gtk::SpinButton,
+    background_image_opacity_default: f64,
+    window_opacity_enabled: gtk::CheckButton,
     window_opacity: gtk::SpinButton,
+    window_opacity_default: f64,
 }
 
 impl SettingsControls {
@@ -226,10 +230,26 @@ impl SettingsControls {
                 self.padding[3].value_as_int() as u16,
             ),
             scrollback_lines: i64::from(self.scrollback.value_as_int()),
-            background_image_opacity: self.background_image_opacity.value(),
-            window_opacity: self.window_opacity.value(),
+            background_image_opacity: selected_opacity(
+                self.background_image_opacity_enabled.is_active(),
+                self.background_image_opacity.value(),
+                self.background_image_opacity_default,
+            ),
+            window_opacity: selected_opacity(
+                self.window_opacity_enabled.is_active(),
+                self.window_opacity.value(),
+                self.window_opacity_default,
+            ),
         }
     }
+}
+
+fn selected_opacity(enabled: bool, value: f64, default: f64) -> f64 {
+    if enabled { value } else { default }
+}
+
+fn opacity_uses_custom_value(value: f64, default: f64) -> bool {
+    (value - default).abs() > f64::EPSILON
 }
 
 fn selected_background_image(selected: u32, path: &gtk::Entry) -> Option<PathBuf> {
@@ -762,6 +782,7 @@ fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
 }
 
 fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -> gtk::Window {
+    let defaults = Settings::defaults();
     let window = gtk::Window::builder()
         .title("Settings")
         .transient_for(parent)
@@ -931,9 +952,17 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         0.01,
         2,
     );
+    let background_image_opacity_enabled = settings_checkbox(
+        opacity_uses_custom_value(
+            settings.background_image_opacity(),
+            defaults.background_image_opacity(),
+        ),
+        "Use custom background image opacity",
+    );
     form.attach(
-        &settings_field(
+        &settings_field_with_checkbox(
             "Background image opacity (0 - 0.60)",
+            &background_image_opacity_enabled,
             &background_image_opacity,
         ),
         0,
@@ -949,8 +978,16 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         0.01,
         2,
     );
+    let window_opacity_enabled = settings_checkbox(
+        opacity_uses_custom_value(settings.window_opacity(), defaults.window_opacity()),
+        "Use custom window opacity",
+    );
     form.attach(
-        &settings_field("Window opacity (0.60 - 1.00)", &window_opacity),
+        &settings_field_with_checkbox(
+            "Window opacity (0.60 - 1.00)",
+            &window_opacity_enabled,
+            &window_opacity,
+        ),
         0,
         7,
         2,
@@ -959,16 +996,35 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     sync_background_image_controls(
         &background_image_mode,
         &background_image_path,
+        &background_image_opacity_enabled,
         &background_image_opacity,
     );
     let background_image_path_for_mode = background_image_path.clone();
+    let background_image_opacity_enabled_for_mode = background_image_opacity_enabled.clone();
     let background_image_opacity_for_mode = background_image_opacity.clone();
     background_image_mode.connect_selected_notify(move |background_image_mode| {
         sync_background_image_controls(
             background_image_mode,
             &background_image_path_for_mode,
+            &background_image_opacity_enabled_for_mode,
             &background_image_opacity_for_mode,
         );
+    });
+    let background_image_mode_for_opacity = background_image_mode.clone();
+    let background_image_path_for_opacity = background_image_path.clone();
+    let background_image_opacity_for_toggle = background_image_opacity.clone();
+    background_image_opacity_enabled.connect_toggled(move |background_image_opacity_enabled| {
+        sync_background_image_controls(
+            &background_image_mode_for_opacity,
+            &background_image_path_for_opacity,
+            background_image_opacity_enabled,
+            &background_image_opacity_for_toggle,
+        );
+    });
+    sync_opacity_control(&window_opacity_enabled, &window_opacity);
+    let window_opacity_for_toggle = window_opacity.clone();
+    window_opacity_enabled.connect_toggled(move |window_opacity_enabled| {
+        sync_opacity_control(window_opacity_enabled, &window_opacity_for_toggle);
     });
 
     surface.append(&form);
@@ -981,8 +1037,12 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         scrollback,
         background_image_mode,
         background_image_path,
+        background_image_opacity_enabled,
         background_image_opacity,
+        background_image_opacity_default: defaults.background_image_opacity(),
+        window_opacity_enabled,
         window_opacity,
+        window_opacity_default: defaults.window_opacity(),
     };
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -1072,6 +1132,15 @@ fn settings_field(title: &str, control: &impl IsA<gtk::Widget>) -> gtk::Box {
     settings_field_with_heading(&title, control)
 }
 
+fn settings_field_with_checkbox(
+    title: &str,
+    checkbox: &gtk::CheckButton,
+    control: &impl IsA<gtk::Widget>,
+) -> gtk::Box {
+    checkbox.set_label(Some(title));
+    settings_field_with_heading(checkbox, control)
+}
+
 fn settings_field_with_heading(
     heading: &impl IsA<gtk::Widget>,
     control: &impl IsA<gtk::Widget>,
@@ -1099,6 +1168,16 @@ fn settings_spin(
     input
 }
 
+fn settings_checkbox(active: bool, tooltip: &str) -> gtk::CheckButton {
+    let checkbox = gtk::CheckButton::new();
+    checkbox.add_css_class("zter-settings-checkbox");
+    checkbox.set_active(active);
+    checkbox.set_halign(gtk::Align::Start);
+    checkbox.set_tooltip_text(Some(tooltip));
+    checkbox.set_valign(gtk::Align::Center);
+    checkbox
+}
+
 fn background_image_mode_setting(background_image: Option<&Path>) -> u32 {
     match background_image {
         Some(path) if path == Path::new(DEFAULT_BACKGROUND_IMAGE_SETTING) => {
@@ -1119,13 +1198,19 @@ fn custom_background_image_text(background_image: Option<&Path>) -> String {
 fn sync_background_image_controls(
     mode: &gtk::DropDown,
     path: &gtk::Entry,
+    opacity_enabled: &gtk::CheckButton,
     opacity: &gtk::SpinButton,
 ) {
     let is_custom = mode.selected() == BACKGROUND_IMAGE_MODE_CUSTOM;
     let has_image = mode.selected() != BACKGROUND_IMAGE_MODE_NONE;
     path.set_sensitive(is_custom);
     path.set_secondary_icon_sensitive(is_custom);
-    opacity.set_sensitive(has_image);
+    opacity_enabled.set_sensitive(has_image);
+    opacity.set_sensitive(has_image && opacity_enabled.is_active());
+}
+
+fn sync_opacity_control(enabled: &gtk::CheckButton, opacity: &gtk::SpinButton) {
+    opacity.set_sensitive(enabled.is_active());
 }
 
 fn show_settings_error(status: &gtk::Label, message: &str) {
@@ -4422,6 +4507,20 @@ mod tests {
             Some("/tmp/selected.png")
         );
         assert_eq!(background_image_file_text(&remote), None);
+    }
+
+    #[test]
+    fn opacity_checkbox_selects_between_default_and_input_value() {
+        assert_eq!(selected_opacity(false, 0.42, 0.1), 0.1);
+        assert_eq!(selected_opacity(true, 0.42, 0.1), 0.42);
+    }
+
+    #[test]
+    fn default_opacity_values_start_with_custom_opacity_disabled() {
+        assert!(!opacity_uses_custom_value(0.1, 0.1));
+        assert!(!opacity_uses_custom_value(1.0, 1.0));
+        assert!(opacity_uses_custom_value(0.25, 0.1));
+        assert!(opacity_uses_custom_value(0.85, 1.0));
     }
 
     fn pixel_offset(prepared: &PreparedWallpaper, x: i32, y: i32) -> usize {

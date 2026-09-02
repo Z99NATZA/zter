@@ -446,6 +446,32 @@ fn settings_window_css() -> String {
             min-height: 18px;
             padding-left: 2px;
         }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox {{
+            background-color: transparent;
+            background-image: none;
+            box-shadow: none;
+            color: {};
+            margin: 0;
+            min-height: 18px;
+            padding: 0;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox label {{
+            font-size: 12px;
+            min-height: 18px;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox check {{
+            background-color: {};
+            background-image: none;
+            border: 1px solid {};
+            border-radius: 4px;
+            box-shadow: none;
+            color: {};
+            min-height: 14px;
+            min-width: 14px;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox:checked check {{
+            background-color: {};
+        }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
         window.zter-settings-window .zter-settings-field > .zter-settings-value {{
@@ -548,6 +574,11 @@ fn settings_window_css() -> String {
         BACKGROUND.css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
         Rgb(0x9d, 0xa5, 0xb4).css(),
+        Rgb(0x9d, 0xa5, 0xb4).css(),
+        BACKGROUND.css(),
+        SELECTION.css(),
+        FOREGROUND.css(),
+        HEADER_BUTTON_HOVER.css(),
         BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -609,7 +640,7 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 7);
+        assert_eq!(css.matches("border:").count(), 8);
         assert_eq!(css.matches("border-top:").count(), 3);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -894,6 +925,33 @@ mod tests {
         assert!(form_rule.contains("padding: 16px"));
         assert!(label_rule.contains("font-size: 12px"));
         assert!(label_rule.contains("min-height: 18px"));
+    }
+
+    #[test]
+    fn settings_opacity_checkbox_is_compact_and_shadow_free() {
+        let css = application_css(TerminalPadding::default());
+        let (_, checkbox_rule) = css
+            .split_once("checkbutton.zter-settings-checkbox {")
+            .unwrap();
+        let (checkbox_rule, _) = checkbox_rule.split_once('}').unwrap();
+        let (_, label_rule) = css
+            .split_once("checkbutton.zter-settings-checkbox label {")
+            .unwrap();
+        let (label_rule, _) = label_rule.split_once('}').unwrap();
+        let (_, check_rule) = css
+            .split_once("checkbutton.zter-settings-checkbox check {")
+            .unwrap();
+        let (check_rule, _) = check_rule.split_once('}').unwrap();
+
+        assert!(checkbox_rule.contains("background-color: transparent"));
+        assert!(checkbox_rule.contains("box-shadow: none"));
+        assert!(checkbox_rule.contains("min-height: 18px"));
+        assert!(label_rule.contains("font-size: 12px"));
+        assert!(check_rule.contains("background-color: #282C34"));
+        assert!(check_rule.contains("border: 1px solid #3E4451"));
+        assert!(check_rule.contains("box-shadow: none"));
+        assert!(check_rule.contains("min-height: 14px"));
+        assert!(check_rule.contains("min-width: 14px"));
     }
 
     #[test]
