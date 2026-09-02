@@ -485,6 +485,33 @@ fn settings_window_css() -> String {
             outline-width: 0;
             padding: 0 10px;
         }}
+        window.zter-settings-window scale.zter-settings-opacity-scale trough {{
+            background-color: #303643;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 6px;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
+            background-color: #61AFEF;
+            background-image: none;
+            border-radius: 999px;
+            box-shadow: none;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale slider {{
+            background-color: #DCDFE4;
+            background-image: none;
+            border: 1px solid #3E4451;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 14px;
+            min-width: 14px;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale value {{
+            color: #DCDFE4;
+            min-width: 34px;
+        }}
         window.zter-settings-window .zter-settings-field spinbutton entry {{
             background-color: transparent;
             background-image: none;
@@ -640,7 +667,7 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 8);
+        assert_eq!(css.matches("border:").count(), 9);
         assert_eq!(css.matches("border-top:").count(), 3);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -952,6 +979,30 @@ mod tests {
         assert!(check_rule.contains("box-shadow: none"));
         assert!(check_rule.contains("min-height: 14px"));
         assert!(check_rule.contains("min-width: 14px"));
+    }
+
+    #[test]
+    fn settings_opacity_scale_uses_the_neutral_input_surface() {
+        let css = application_css(TerminalPadding::default());
+        let (_, trough_rule) = css
+            .split_once("scale.zter-settings-opacity-scale trough {")
+            .unwrap();
+        let (trough_rule, _) = trough_rule.split_once('}').unwrap();
+        let (_, highlight_rule) = css
+            .split_once("scale.zter-settings-opacity-scale highlight {")
+            .unwrap();
+        let (highlight_rule, _) = highlight_rule.split_once('}').unwrap();
+        let (_, slider_rule) = css
+            .split_once("scale.zter-settings-opacity-scale slider {")
+            .unwrap();
+        let (slider_rule, _) = slider_rule.split_once('}').unwrap();
+
+        assert!(trough_rule.contains("background-color: #303643"));
+        assert!(trough_rule.contains("box-shadow: none"));
+        assert!(highlight_rule.contains("background-color: #61AFEF"));
+        assert!(slider_rule.contains("background-color: #DCDFE4"));
+        assert!(slider_rule.contains("border: 1px solid #3E4451"));
+        assert!(slider_rule.contains("box-shadow: none"));
     }
 
     #[test]

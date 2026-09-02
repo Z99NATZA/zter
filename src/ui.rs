@@ -200,10 +200,10 @@ struct SettingsControls {
     background_image_mode: gtk::DropDown,
     background_image_path: gtk::Entry,
     background_image_opacity_enabled: gtk::CheckButton,
-    background_image_opacity: gtk::SpinButton,
+    background_image_opacity: gtk::Scale,
     background_image_opacity_default: f64,
     window_opacity_enabled: gtk::CheckButton,
-    window_opacity: gtk::SpinButton,
+    window_opacity: gtk::Scale,
     window_opacity_default: f64,
 }
 
@@ -945,7 +945,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         1,
     );
 
-    let background_image_opacity = settings_spin(
+    let background_image_opacity = settings_scale(
         settings.background_image_opacity(),
         0.0,
         MAX_BACKGROUND_IMAGE_OPACITY,
@@ -971,7 +971,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         1,
     );
 
-    let window_opacity = settings_spin(
+    let window_opacity = settings_scale(
         settings.window_opacity(),
         MIN_WINDOW_OPACITY,
         MAX_WINDOW_OPACITY,
@@ -1168,6 +1168,18 @@ fn settings_spin(
     input
 }
 
+fn settings_scale(value: f64, minimum: f64, maximum: f64, step: f64, digits: i32) -> gtk::Scale {
+    let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, minimum, maximum, step);
+    scale.add_css_class("zter-settings-value");
+    scale.add_css_class("zter-settings-opacity-scale");
+    scale.set_draw_value(true);
+    scale.set_digits(digits);
+    scale.set_hexpand(true);
+    scale.set_value(value);
+    scale.set_value_pos(gtk::PositionType::Right);
+    scale
+}
+
 fn settings_checkbox(active: bool, tooltip: &str) -> gtk::CheckButton {
     let checkbox = gtk::CheckButton::new();
     checkbox.add_css_class("zter-settings-checkbox");
@@ -1199,7 +1211,7 @@ fn sync_background_image_controls(
     mode: &gtk::DropDown,
     path: &gtk::Entry,
     opacity_enabled: &gtk::CheckButton,
-    opacity: &gtk::SpinButton,
+    opacity: &gtk::Scale,
 ) {
     let is_custom = mode.selected() == BACKGROUND_IMAGE_MODE_CUSTOM;
     let has_image = mode.selected() != BACKGROUND_IMAGE_MODE_NONE;
@@ -1209,7 +1221,7 @@ fn sync_background_image_controls(
     opacity.set_sensitive(has_image && opacity_enabled.is_active());
 }
 
-fn sync_opacity_control(enabled: &gtk::CheckButton, opacity: &gtk::SpinButton) {
+fn sync_opacity_control(enabled: &gtk::CheckButton, opacity: &gtk::Scale) {
     opacity.set_sensitive(enabled.is_active());
 }
 

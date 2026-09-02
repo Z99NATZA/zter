@@ -23,8 +23,9 @@ and place the selected path in the draft. Background image opacity and window
 opacity each have a checkbox before the label, and clicking the label toggles
 the checkbox. The checkbox indicator uses the same background and border tones
 as settings inputs. An unchecked opacity control applies the embedded default
-and keeps the current input value in the draft; a checked opacity control
-applies the input value. The header close control uses the terminal window's
+and keeps the current slider value in the draft; a checked opacity control
+applies the slider value. Opacity sliders show two-decimal values. The header
+close control uses the terminal window's
 native control style. Numeric decrement and increment controls keep circular
 `28px` background boxes inside their fields, with transparent resting fills and
 neutral `#444A55` hover fills.
