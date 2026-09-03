@@ -32,5 +32,6 @@ cargo fmt --check
   is necessary.
 - Add borders only between meaningful content or interaction regions. Do not
   outline every nested surface or use borders as decoration.
-- Use neutral One Half Dark colors for routine separation. Reserve red for
-  errors that require immediate attention.
+- App-owned chrome and controls use only neutral One Half Dark tones and theme
+  white; do not introduce colored accents for selected or active states.
+  Reserve red for errors that require immediate attention.

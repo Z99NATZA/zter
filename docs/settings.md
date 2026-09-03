@@ -23,12 +23,14 @@ by GdkPixbuf and place the selected path in the draft. Background image opacity
 and window opacity each have a checkbox before the label. Clicking the label
 toggles the checkbox. Both opacity controls start checked. Unchecked checkbox
 and radio indicators use the settings background and border tones. Checked
-indicators use the softer theme foreground with the main settings background
-for their marks instead of the system accent color. An unchecked opacity
-control applies the embedded default and keeps the current slider value in the
-draft; a checked opacity control applies the slider value. Enabled slider
-highlights use the theme foreground. Disabled settings controls use `0.3`
-opacity, and disabled slider tracks are gray.
+indicators, enabled slider highlights, and resting slider thumbs use the muted
+theme foreground with the main settings background for indicator marks. Hovered
+indicators use the same muted foreground for their borders. Focused indicators
+and hovered or focused slider thumbs use the theme white; no colored accent is
+used. An unchecked opacity control applies the embedded default and keeps the
+current slider value in the draft; a checked opacity control applies the slider
+value. Disabled settings controls use `0.3` opacity, and disabled slider tracks
+are gray.
 Opacity sliders show two-decimal values. The header close control uses the
 terminal window's native control style. Numeric decrement and increment
 controls keep circular `28px` background boxes inside their fields, with

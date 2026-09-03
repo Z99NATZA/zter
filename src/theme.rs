@@ -479,10 +479,16 @@ fn settings_window_css() -> String {
             min-height: 14px;
             min-width: 14px;
         }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox:hover check {{
+            border-color: #9DA5B4;
+        }}
         window.zter-settings-window checkbutton.zter-settings-checkbox:checked check {{
             background-color: {};
-            border-color: #DCDFE4;
+            border-color: #9DA5B4;
             color: #282C34;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-checkbox:focus check {{
+            border-color: #DCDFE4;
         }}
         window.zter-settings-window checkbutton.zter-settings-radio {{
             background-color: transparent;
@@ -501,11 +507,17 @@ fn settings_window_css() -> String {
             min-height: 14px;
             min-width: 14px;
         }}
+        window.zter-settings-window checkbutton.zter-settings-radio:hover radio {{
+            border-color: #9DA5B4;
+        }}
         window.zter-settings-window checkbutton.zter-settings-radio:checked radio {{
-            background-color: #DCDFE4;
+            background-color: #9DA5B4;
             background-image: none;
-            border-color: #DCDFE4;
+            border-color: #9DA5B4;
             color: #282C34;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-radio:focus radio {{
+            border-color: #DCDFE4;
         }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
@@ -529,7 +541,7 @@ fn settings_window_css() -> String {
             min-height: 6px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
-            background-color: #DCDFE4;
+            background-color: #9DA5B4;
             background-image: none;
             border-radius: 999px;
             box-shadow: none;
@@ -539,13 +551,20 @@ fn settings_window_css() -> String {
             background-color: #5C6370;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale slider {{
-            background-color: #DCDFE4;
+            background-color: #9DA5B4;
             background-image: none;
-            border: 1px solid #3E4451;
+            border: 1px solid #5C6370;
             border-radius: 999px;
             box-shadow: none;
             min-height: 14px;
             min-width: 14px;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:hover slider,
+        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
+            background-color: #DCDFE4;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
+            border-color: #DCDFE4;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled slider {{
             background-color: #5C6370;
@@ -652,7 +671,7 @@ fn settings_window_css() -> String {
         BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
-        FOREGROUND.css(),
+        Rgb(0x9d, 0xa5, 0xb4).css(),
         BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -1030,8 +1049,8 @@ mod tests {
         assert!(check_rule.contains("box-shadow: none"));
         assert!(check_rule.contains("min-height: 14px"));
         assert!(check_rule.contains("min-width: 14px"));
-        assert!(checked_rule.contains("background-color: #DCDFE4"));
-        assert!(checked_rule.contains("border-color: #DCDFE4"));
+        assert!(checked_rule.contains("background-color: #9DA5B4"));
+        assert!(checked_rule.contains("border-color: #9DA5B4"));
         assert!(checked_rule.contains("color: #282C34"));
     }
 
@@ -1053,9 +1072,9 @@ mod tests {
         assert!(radio_rule.contains("box-shadow: none"));
         assert!(radio_rule.contains("min-height: 14px"));
         assert!(radio_rule.contains("min-width: 14px"));
-        assert!(checked_rule.contains("background-color: #DCDFE4"));
+        assert!(checked_rule.contains("background-color: #9DA5B4"));
         assert!(checked_rule.contains("background-image: none"));
-        assert!(checked_rule.contains("border-color: #DCDFE4"));
+        assert!(checked_rule.contains("border-color: #9DA5B4"));
         assert!(checked_rule.contains("color: #282C34"));
     }
 
@@ -1085,12 +1104,43 @@ mod tests {
 
         assert!(trough_rule.contains("background-color: #303643"));
         assert!(trough_rule.contains("box-shadow: none"));
-        assert!(highlight_rule.contains("background-color: #DCDFE4"));
+        assert!(highlight_rule.contains("background-color: #9DA5B4"));
         assert!(disabled_track_rule.contains("background-color: #5C6370"));
         assert!(disabled_control_rule.contains("opacity: 0.3"));
-        assert!(slider_rule.contains("background-color: #DCDFE4"));
-        assert!(slider_rule.contains("border: 1px solid #3E4451"));
+        assert!(slider_rule.contains("background-color: #9DA5B4"));
+        assert!(slider_rule.contains("border: 1px solid #5C6370"));
         assert!(slider_rule.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn settings_selection_controls_have_distinct_hover_and_focus_states() {
+        let css = application_css(TerminalPadding::default());
+
+        assert!(css.contains(
+            "checkbutton.zter-settings-checkbox:hover check {\n            border-color: #9DA5B4"
+        ));
+        assert!(css.contains(
+            "checkbutton.zter-settings-checkbox:focus check {\n            border-color: #DCDFE4"
+        ));
+        assert!(css.contains(
+            "checkbutton.zter-settings-radio:hover radio {\n            border-color: #9DA5B4"
+        ));
+        assert!(css.contains(
+            "checkbutton.zter-settings-radio:focus radio {\n            border-color: #DCDFE4"
+        ));
+        assert!(css.contains(
+            "scale.zter-settings-opacity-scale:hover slider,\n        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {\n            background-color: #DCDFE4"
+        ));
+        assert!(css.contains(
+            "scale.zter-settings-opacity-scale:focus slider {\n            border-color: #DCDFE4"
+        ));
+    }
+
+    #[test]
+    fn settings_selection_controls_do_not_use_the_blue_terminal_accent() {
+        let css = settings_window_css();
+
+        assert!(!css.contains(&CURSOR.css()));
     }
 
     #[test]
