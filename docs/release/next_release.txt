@@ -1,4 +1,4 @@
 - ป้องกัน ctrl+z เผลอปิด terminal ที่มี foreground process รันอยู่
 - ลาก tab ออกจาก window ปัจจุบัน เพื่อสร้าง window ใหม่ และสามารถลาก tab เพื่อย้าย tab ไปยัง window อื่น
 - settings ได้จาก ui
-
+- window opacity

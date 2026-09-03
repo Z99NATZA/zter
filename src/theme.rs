@@ -472,6 +472,22 @@ fn settings_window_css() -> String {
         window.zter-settings-window checkbutton.zter-settings-checkbox:checked check {{
             background-color: {};
         }}
+        window.zter-settings-window checkbutton.zter-settings-radio {{
+            background-color: transparent;
+            background-image: none;
+            box-shadow: none;
+            color: #DCDFE4;
+            margin: 0;
+            padding: 0;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-radio radio {{
+            background-color: #282C34;
+            border: 1px solid #3E4451;
+            box-shadow: none;
+            color: #DCDFE4;
+            min-height: 14px;
+            min-width: 14px;
+        }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
         window.zter-settings-window .zter-settings-field > .zter-settings-value {{
@@ -494,10 +510,14 @@ fn settings_window_css() -> String {
             min-height: 6px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
-            background-color: #61AFEF;
+            background-color: #FFFFFF;
             background-image: none;
             border-radius: 999px;
             box-shadow: none;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:disabled trough,
+        window.zter-settings-window scale.zter-settings-opacity-scale:disabled highlight {{
+            background-color: #5C6370;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale slider {{
             background-color: #DCDFE4;
@@ -508,9 +528,22 @@ fn settings_window_css() -> String {
             min-height: 14px;
             min-width: 14px;
         }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:disabled slider {{
+            background-color: #5C6370;
+        }}
         window.zter-settings-window scale.zter-settings-opacity-scale value {{
             color: #DCDFE4;
             min-width: 34px;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:disabled value {{
+            color: #9DA5B4;
+        }}
+        window.zter-settings-window .zter-settings-field > entry:disabled,
+        window.zter-settings-window .zter-settings-field > spinbutton:disabled,
+        window.zter-settings-window .zter-settings-field > .zter-settings-value:disabled,
+        window.zter-settings-window checkbutton.zter-settings-checkbox:disabled,
+        window.zter-settings-window .zter-settings-actions button:disabled {{
+            opacity: 0.3;
         }}
         window.zter-settings-window .zter-settings-field spinbutton entry {{
             background-color: transparent;
@@ -573,9 +606,6 @@ fn settings_window_css() -> String {
         window.zter-settings-window .zter-settings-actions button:focus {{
             box-shadow: none;
             outline-width: 0;
-        }}
-        window.zter-settings-window .zter-settings-actions button:disabled {{
-            opacity: 0.45;
         }}
         window.zter-window .zter-header button.zter-settings-button {{
             background-color: transparent;
@@ -667,7 +697,7 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 9);
+        assert_eq!(css.matches("border:").count(), 10);
         assert_eq!(css.matches("border-top:").count(), 3);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -982,6 +1012,21 @@ mod tests {
     }
 
     #[test]
+    fn settings_background_image_modes_use_neutral_radio_controls() {
+        let css = application_css(TerminalPadding::default());
+        let (_, radio_rule) = css
+            .split_once("checkbutton.zter-settings-radio radio {")
+            .unwrap();
+        let (radio_rule, _) = radio_rule.split_once('}').unwrap();
+
+        assert!(radio_rule.contains("background-color: #282C34"));
+        assert!(radio_rule.contains("border: 1px solid #3E4451"));
+        assert!(radio_rule.contains("box-shadow: none"));
+        assert!(radio_rule.contains("min-height: 14px"));
+        assert!(radio_rule.contains("min-width: 14px"));
+    }
+
+    #[test]
     fn settings_opacity_scale_uses_the_neutral_input_surface() {
         let css = application_css(TerminalPadding::default());
         let (_, trough_rule) = css
@@ -996,10 +1041,20 @@ mod tests {
             .split_once("scale.zter-settings-opacity-scale slider {")
             .unwrap();
         let (slider_rule, _) = slider_rule.split_once('}').unwrap();
+        let (_, disabled_track_rule) = css
+            .split_once("scale.zter-settings-opacity-scale:disabled trough,")
+            .unwrap();
+        let (disabled_track_rule, _) = disabled_track_rule.split_once('}').unwrap();
+        let (_, disabled_control_rule) = css
+            .split_once(".zter-settings-field > entry:disabled,")
+            .unwrap();
+        let (disabled_control_rule, _) = disabled_control_rule.split_once('}').unwrap();
 
         assert!(trough_rule.contains("background-color: #303643"));
         assert!(trough_rule.contains("box-shadow: none"));
-        assert!(highlight_rule.contains("background-color: #61AFEF"));
+        assert!(highlight_rule.contains("background-color: #FFFFFF"));
+        assert!(disabled_track_rule.contains("background-color: #5C6370"));
+        assert!(disabled_control_rule.contains("opacity: 0.3"));
         assert!(slider_rule.contains("background-color: #DCDFE4"));
         assert!(slider_rule.contains("border: 1px solid #3E4451"));
         assert!(slider_rule.contains("box-shadow: none"));
