@@ -1208,7 +1208,6 @@ fn settings_radio_group(labels: [&str; 3], selected: u32) -> ([gtk::CheckButton;
 
     let group = gtk::Box::new(gtk::Orientation::Horizontal, 18);
     group.add_css_class("zter-settings-radio-group");
-    group.add_css_class("zter-settings-value");
     for button in &buttons {
         group.append(button);
     }

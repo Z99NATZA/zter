@@ -96,8 +96,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             padding: 0;
             box-shadow: none;
         }}
-        window.zter-window .zter-header windowcontrols button,
-        window.zter-settings-window .zter-settings-header windowcontrols button {{
+        window.zter-window .zter-header windowcontrols button {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
@@ -108,6 +107,17 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             margin: 0 2px;
             padding: 0;
             transition: all 180ms ease-out;
+        }}
+        window.zter-settings-window .zter-settings-header windowcontrols button {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 2px;
+            padding: 0;
         }}
         window.zter-window .zter-header windowcontrols button:hover,
         window.zter-settings-window .zter-settings-header windowcontrols button:hover {{
@@ -471,6 +481,8 @@ fn settings_window_css() -> String {
         }}
         window.zter-settings-window checkbutton.zter-settings-checkbox:checked check {{
             background-color: {};
+            border-color: #DCDFE4;
+            color: #282C34;
         }}
         window.zter-settings-window checkbutton.zter-settings-radio {{
             background-color: transparent;
@@ -482,11 +494,18 @@ fn settings_window_css() -> String {
         }}
         window.zter-settings-window checkbutton.zter-settings-radio radio {{
             background-color: #282C34;
+            background-image: none;
             border: 1px solid #3E4451;
             box-shadow: none;
             color: #DCDFE4;
             min-height: 14px;
             min-width: 14px;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-radio:checked radio {{
+            background-color: #DCDFE4;
+            background-image: none;
+            border-color: #DCDFE4;
+            color: #282C34;
         }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
@@ -510,7 +529,7 @@ fn settings_window_css() -> String {
             min-height: 6px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
-            background-color: #FFFFFF;
+            background-color: #DCDFE4;
             background-image: none;
             border-radius: 999px;
             box-shadow: none;
@@ -574,7 +593,6 @@ fn settings_window_css() -> String {
             min-width: 28px;
             margin: 4px 2px;
             padding: 0;
-            transition: background-color 180ms ease-out;
         }}
         window.zter-settings-window .zter-settings-field spinbutton button:hover {{
             background-color: {};
@@ -598,7 +616,6 @@ fn settings_window_css() -> String {
             min-width: 76px;
             outline-width: 0;
             padding: 0 14px;
-            transition: background-color 140ms ease-out;
         }}
         window.zter-settings-window .zter-settings-actions button:hover {{
             background-color: {};
@@ -635,7 +652,7 @@ fn settings_window_css() -> String {
         BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
-        HEADER_BUTTON_HOVER.css(),
+        FOREGROUND.css(),
         BACKGROUND.css(),
         SELECTION.css(),
         FOREGROUND.css(),
@@ -999,6 +1016,10 @@ mod tests {
             .split_once("checkbutton.zter-settings-checkbox check {")
             .unwrap();
         let (check_rule, _) = check_rule.split_once('}').unwrap();
+        let (_, checked_rule) = css
+            .split_once("checkbutton.zter-settings-checkbox:checked check {")
+            .unwrap();
+        let (checked_rule, _) = checked_rule.split_once('}').unwrap();
 
         assert!(checkbox_rule.contains("background-color: transparent"));
         assert!(checkbox_rule.contains("box-shadow: none"));
@@ -1009,6 +1030,9 @@ mod tests {
         assert!(check_rule.contains("box-shadow: none"));
         assert!(check_rule.contains("min-height: 14px"));
         assert!(check_rule.contains("min-width: 14px"));
+        assert!(checked_rule.contains("background-color: #DCDFE4"));
+        assert!(checked_rule.contains("border-color: #DCDFE4"));
+        assert!(checked_rule.contains("color: #282C34"));
     }
 
     #[test]
@@ -1018,12 +1042,21 @@ mod tests {
             .split_once("checkbutton.zter-settings-radio radio {")
             .unwrap();
         let (radio_rule, _) = radio_rule.split_once('}').unwrap();
+        let (_, checked_rule) = css
+            .split_once("checkbutton.zter-settings-radio:checked radio {")
+            .unwrap();
+        let (checked_rule, _) = checked_rule.split_once('}').unwrap();
 
         assert!(radio_rule.contains("background-color: #282C34"));
+        assert!(radio_rule.contains("background-image: none"));
         assert!(radio_rule.contains("border: 1px solid #3E4451"));
         assert!(radio_rule.contains("box-shadow: none"));
         assert!(radio_rule.contains("min-height: 14px"));
         assert!(radio_rule.contains("min-width: 14px"));
+        assert!(checked_rule.contains("background-color: #DCDFE4"));
+        assert!(checked_rule.contains("background-image: none"));
+        assert!(checked_rule.contains("border-color: #DCDFE4"));
+        assert!(checked_rule.contains("color: #282C34"));
     }
 
     #[test]
@@ -1052,7 +1085,7 @@ mod tests {
 
         assert!(trough_rule.contains("background-color: #303643"));
         assert!(trough_rule.contains("box-shadow: none"));
-        assert!(highlight_rule.contains("background-color: #FFFFFF"));
+        assert!(highlight_rule.contains("background-color: #DCDFE4"));
         assert!(disabled_track_rule.contains("background-color: #5C6370"));
         assert!(disabled_control_rule.contains("opacity: 0.3"));
         assert!(slider_rule.contains("background-color: #DCDFE4"));
@@ -1093,6 +1126,7 @@ mod tests {
         assert!(close_rule.contains("min-height: 28px"));
         assert!(close_rule.contains("min-width: 28px"));
         assert!(close_rule.contains("box-shadow: none"));
+        assert!(!close_rule.contains("transition:"));
         assert!(close_hover.contains("background-color: transparent"));
     }
 
@@ -1110,7 +1144,7 @@ mod tests {
         assert!(button_rule.contains("min-height: 28px"));
         assert!(button_rule.contains("min-width: 28px"));
         assert!(button_rule.contains("margin: 4px 2px"));
-        assert!(button_rule.contains("transition: background-color 180ms ease-out"));
+        assert!(!button_rule.contains("transition:"));
         assert!(hover_rule.contains("background-color: #444A55"));
     }
 
@@ -1148,6 +1182,7 @@ mod tests {
         assert!(button_rule.contains("color: #DCDFE4"));
         assert!(button_rule.contains("min-height: 32px"));
         assert!(button_rule.contains("box-shadow: none"));
+        assert!(!button_rule.contains("transition:"));
         assert!(!css.contains("button.zter-settings-ok {"));
     }
 

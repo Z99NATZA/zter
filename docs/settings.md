@@ -17,20 +17,23 @@ and are not tracked by the project Git history.
 
 The settings button beside the window controls opens one compact modal for its
 terminal window. It edits the active debug or release profile shared by all
-zter windows in that application. A radio group selects the Default, Custom,
-or None background image mode. Custom can browse local image formats supported
+zter windows in that application. An unboxed radio group selects the Default,
+Custom, or None background image mode. Custom can browse local image formats supported
 by GdkPixbuf and place the selected path in the draft. Background image opacity
 and window opacity each have a checkbox before the label. Clicking the label
-toggles the checkbox. Both opacity controls start checked. The checkbox
-indicator uses the same background and border tones as settings inputs. An
-unchecked opacity control applies the embedded default and keeps the current
-slider value in the draft; a checked opacity control applies the slider value.
-Enabled slider highlights are white. Disabled settings controls use `0.3`
-opacity, and disabled slider tracks are gray. Opacity sliders show two-decimal
-values. The header close control uses the terminal window's
-native control style. Numeric decrement and increment controls keep circular
-`28px` background boxes inside their fields, with transparent resting fills and
-neutral `#444A55` hover fills.
+toggles the checkbox. Both opacity controls start checked. Unchecked checkbox
+and radio indicators use the settings background and border tones. Checked
+indicators use the softer theme foreground with the main settings background
+for their marks instead of the system accent color. An unchecked opacity
+control applies the embedded default and keeps the current slider value in the
+draft; a checked opacity control applies the slider value. Enabled slider
+highlights use the theme foreground. Disabled settings controls use `0.3`
+opacity, and disabled slider tracks are gray.
+Opacity sliders show two-decimal values. The header close control uses the
+terminal window's native control style. Numeric decrement and increment
+controls keep circular `28px` background boxes inside their fields, with
+transparent resting fills and neutral `#444A55` hover fills.
+Settings controls change state without transition durations.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
 background image, background image opacity, and window opacity changes then
