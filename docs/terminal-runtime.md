@@ -49,6 +49,14 @@ the default action, Escape cancels, and only Close confirms. The modal uses a
 uniform `12px` corner radius, while Close uses a restrained red accent. A child
 shell exit still removes its tab immediately without showing the modal.
 
+Secondary-clicking a tab opens the same compact neutral popover used by the
+terminal Copy and Paste menu, with `Close to left` and `Close to right`. An
+action is disabled when its side is empty, and the anchor tab is never included.
+One idle target closes immediately. One target with a foreground process uses
+the existing tab-close confirmation; closing multiple targets always uses one
+directional confirmation modal and then closes the targets together without
+per-tab prompts.
+
 Each tab has the same height as the titlebar. Tab titles are ellipsized at the
 available width. Tabs share the available strip width evenly and shrink to a
 minimum width of `80px`, retaining the close button and ellipsizing the title in

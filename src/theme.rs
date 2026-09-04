@@ -244,13 +244,13 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         button.zter-tab-scroll-button:hover {{
             background-color: {};
         }}
-        popover.zter-clipboard-menu {{
+        popover.zter-context-menu {{
             background-color: transparent;
             background-image: none;
             box-shadow: none;
             padding: 0;
         }}
-        popover.zter-clipboard-menu > contents {{
+        popover.zter-context-menu > contents {{
             background-color: {};
             background-image: none;
             border: 1px solid {};
@@ -258,7 +258,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             box-shadow: none;
             padding: 4px;
         }}
-        popover.zter-clipboard-menu button.zter-clipboard-menu-item {{
+        popover.zter-context-menu button.zter-context-menu-item {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
@@ -269,13 +269,13 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             min-width: 168px;
             padding: 0 10px;
         }}
-        popover.zter-clipboard-menu button.zter-clipboard-menu-item:hover {{
+        popover.zter-context-menu button.zter-context-menu-item:hover {{
             background-color: {};
         }}
-        popover.zter-clipboard-menu button.zter-clipboard-menu-item:disabled {{
+        popover.zter-context-menu button.zter-context-menu-item:disabled {{
             opacity: 0.45;
         }}
-        popover.zter-clipboard-menu .zter-clipboard-shortcut {{
+        popover.zter-context-menu .zter-context-menu-shortcut {{
             color: {};
         }}
         window.zter-close-dialog {{
@@ -782,13 +782,13 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_menu_is_compact_and_uses_the_neutral_palette() {
+    fn context_menus_are_compact_and_use_the_neutral_palette() {
         let css = application_css(TerminalPadding::default());
         let (_, surface_rule) = css
-            .split_once("popover.zter-clipboard-menu > contents")
+            .split_once("popover.zter-context-menu > contents")
             .unwrap();
         let (surface_rule, _) = surface_rule.split_once('}').unwrap();
-        let (_, item_rule) = css.split_once("button.zter-clipboard-menu-item {").unwrap();
+        let (_, item_rule) = css.split_once("button.zter-context-menu-item {").unwrap();
         let (item_rule, _) = item_rule.split_once('}').unwrap();
 
         assert!(surface_rule.contains("background-color: #303643"));

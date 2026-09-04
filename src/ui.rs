@@ -297,6 +297,28 @@ enum TabDropSide {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TabCloseDirection {
+    Left,
+    Right,
+}
+
+impl TabCloseDirection {
+    fn menu_label(self) -> &'static str {
+        match self {
+            Self::Left => "Close to left",
+            Self::Right => "Close to right",
+        }
+    }
+
+    fn confirmation_message(self) -> &'static str {
+        match self {
+            Self::Left => "Close tabs to the left?",
+            Self::Right => "Close tabs to the right?",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FailedTabDragAction {
     Cancel,
     Detach,
@@ -1639,6 +1661,7 @@ fn add_terminal_tab(context: &Rc<WindowContext>) {
     });
 
     install_tab_drag_and_drop(&runtime, &header.tab, &header.select_button);
+    install_tab_context_menu(&runtime, &header.tab);
 
     let content_weak = content.downgrade();
     let runtime_for_close = runtime.clone();
@@ -1923,6 +1946,57 @@ fn install_tab_title_editing(
         gtk::glib::Propagation::Stop
     });
     header.title_entry.add_controller(key_controller);
+}
+
+fn install_tab_context_menu(runtime: &Rc<TabRuntime>, tab: &gtk::Box) {
+    let popover = create_context_menu(tab);
+    let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let close_left = context_menu_button(TabCloseDirection::Left.menu_label(), None);
+    let close_right = context_menu_button(TabCloseDirection::Right.menu_label(), None);
+    menu.append(&close_left);
+    menu.append(&close_right);
+    popover.set_child(Some(&menu));
+
+    let runtime_for_left = runtime.clone();
+    let popover_weak = popover.downgrade();
+    close_left.connect_clicked(move |_| {
+        if let Some(popover) = popover_weak.upgrade() {
+            popover.popdown();
+        }
+        request_close_adjacent_tabs(&runtime_for_left, TabCloseDirection::Left);
+    });
+
+    let runtime_for_right = runtime.clone();
+    let popover_weak = popover.downgrade();
+    close_right.connect_clicked(move |_| {
+        if let Some(popover) = popover_weak.upgrade() {
+            popover.popdown();
+        }
+        request_close_adjacent_tabs(&runtime_for_right, TabCloseDirection::Right);
+    });
+
+    let click = gtk::GestureClick::new();
+    click.set_button(gtk::gdk::BUTTON_SECONDARY);
+    click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let runtime = runtime.clone();
+    let popover_weak = popover.downgrade();
+    click.connect_pressed(move |gesture, _, x, y| {
+        let location = runtime.location();
+        let (Some(notebook), Some(popover)) = (location.notebook.upgrade(), popover_weak.upgrade())
+        else {
+            return;
+        };
+        close_left.set_sensitive(
+            !tab_ids_to_close(&notebook, &runtime.id, TabCloseDirection::Left).is_empty(),
+        );
+        close_right.set_sensitive(
+            !tab_ids_to_close(&notebook, &runtime.id, TabCloseDirection::Right).is_empty(),
+        );
+        popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        popover.popup();
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+    });
+    tab.add_controller(click);
 }
 
 fn next_tab_id() -> String {
@@ -2530,6 +2604,84 @@ fn request_close_runtime_tab(runtime: &Rc<TabRuntime>, content: &impl IsA<gtk::W
     );
 }
 
+fn request_close_adjacent_tabs(runtime: &Rc<TabRuntime>, direction: TabCloseDirection) {
+    let location = runtime.location();
+    let Some((window, notebook, tab_strip, tab_scroller)) = location.widgets() else {
+        return;
+    };
+    let tab_ids = tab_ids_to_close(&notebook, &runtime.id, direction);
+    if tab_ids.is_empty() {
+        return;
+    }
+
+    let one_foreground_process = tab_ids.len() == 1
+        && notebook_page_by_id(&notebook, &tab_ids[0]).is_some_and(|page| {
+            tab_has_running_foreground_process(&page, &location.close_protection)
+        });
+    if !tab_close_requires_confirmation(tab_ids.len(), one_foreground_process) {
+        close_tabs_by_id(&window, &notebook, &tab_strip, &tab_scroller, &tab_ids);
+        return;
+    }
+    if location.close_protection.prompt_open.get() {
+        return;
+    }
+
+    let window_weak = window.downgrade();
+    let notebook_weak = notebook.downgrade();
+    let tab_strip_weak = tab_strip.downgrade();
+    let tab_scroller_weak = tab_scroller.downgrade();
+    let message = if one_foreground_process {
+        "A process is still running. Close this tab?"
+    } else {
+        direction.confirmation_message()
+    };
+    show_close_confirmation(&window, &location.close_protection, message, move || {
+        let (Some(window), Some(notebook), Some(tab_strip), Some(tab_scroller)) = (
+            window_weak.upgrade(),
+            notebook_weak.upgrade(),
+            tab_strip_weak.upgrade(),
+            tab_scroller_weak.upgrade(),
+        ) else {
+            return;
+        };
+        close_tabs_by_id(&window, &notebook, &tab_strip, &tab_scroller, &tab_ids);
+    });
+}
+
+fn tab_ids_to_close(
+    notebook: &gtk::Notebook,
+    anchor_id: &str,
+    direction: TabCloseDirection,
+) -> Vec<String> {
+    let Some(anchor) = notebook_page_by_id(notebook, anchor_id) else {
+        return Vec::new();
+    };
+    let Some(anchor_position) = notebook.page_num(&anchor) else {
+        return Vec::new();
+    };
+
+    tab_positions_to_close(notebook.n_pages(), anchor_position, direction)
+        .filter_map(|position| notebook.nth_page(Some(position)))
+        .map(|page| page.widget_name().to_string())
+        .collect()
+}
+
+fn tab_positions_to_close(
+    page_count: u32,
+    anchor_position: u32,
+    direction: TabCloseDirection,
+) -> impl Iterator<Item = u32> {
+    let range = match direction {
+        TabCloseDirection::Left => 0..anchor_position.min(page_count),
+        TabCloseDirection::Right => anchor_position.saturating_add(1).min(page_count)..page_count,
+    };
+    range
+}
+
+fn tab_close_requires_confirmation(target_count: usize, has_foreground_process: bool) -> bool {
+    target_count > 1 || (target_count == 1 && has_foreground_process)
+}
+
 fn close_runtime_tab(runtime: &Rc<TabRuntime>, content: &impl IsA<gtk::Widget>) {
     let location = runtime.location();
     let Some((window, notebook, tab_strip, tab_scroller)) = location.widgets() else {
@@ -2754,15 +2906,44 @@ fn close_tab(
     content: &impl IsA<gtk::Widget>,
     _close_protection: &CloseProtection,
 ) {
-    let Some(page_number) = notebook.page_num(content) else {
+    if notebook.page_num(content).is_none() {
         return;
-    };
-    if let Some(tab) = tab_by_id(tab_strip, &content.widget_name()) {
-        tab_strip.remove(&tab);
     }
-    unregister_tab_runtime(content.widget_name().as_str());
-    notebook.remove_page(Some(page_number));
+    close_tabs_by_id(
+        window,
+        notebook,
+        tab_strip,
+        tab_scroller,
+        &[content.widget_name().to_string()],
+    );
+}
 
+fn close_tabs_by_id(
+    window: &gtk::ApplicationWindow,
+    notebook: &gtk::Notebook,
+    tab_strip: &gtk::Box,
+    tab_scroller: &gtk::ScrolledWindow,
+    tab_ids: &[String],
+) {
+    let mut closed_any = false;
+    for tab_id in tab_ids {
+        let Some(content) = notebook_page_by_id(notebook, tab_id) else {
+            continue;
+        };
+        let Some(page_number) = notebook.page_num(&content) else {
+            continue;
+        };
+        if let Some(tab) = tab_by_id(tab_strip, tab_id) {
+            tab_strip.remove(&tab);
+        }
+        unregister_tab_runtime(tab_id);
+        notebook.remove_page(Some(page_number));
+        closed_any = true;
+    }
+
+    if !closed_any {
+        return;
+    }
     if notebook.n_pages() == 0 {
         window.close();
     } else {
@@ -3174,21 +3355,10 @@ fn is_control_hyperlink_click(modifiers: gtk::gdk::ModifierType) -> bool {
 }
 
 fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
-    let popover = gtk::Popover::new();
-    popover.add_css_class("zter-clipboard-menu");
-    popover.set_autohide(true);
-    popover.set_has_arrow(false);
-    popover.set_parent(terminal);
-    let popover_for_destroy = popover.clone();
-    terminal.connect_destroy(move |_| {
-        if popover_for_destroy.parent().is_some() {
-            popover_for_destroy.unparent();
-        }
-    });
-
+    let popover = create_context_menu(terminal);
     let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let copy_button = clipboard_menu_button("Copy", "Ctrl+C");
-    let paste_button = clipboard_menu_button("Paste", "Ctrl+V");
+    let copy_button = context_menu_button("Copy", Some("Ctrl+C"));
+    let paste_button = context_menu_button("Paste", Some("Ctrl+V"));
     menu.append(&copy_button);
     menu.append(&paste_button);
     popover.set_child(Some(&menu));
@@ -3233,7 +3403,22 @@ fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
     terminal.add_controller(click);
 }
 
-fn clipboard_menu_button(label: &str, shortcut: &str) -> gtk::Button {
+fn create_context_menu(parent: &impl IsA<gtk::Widget>) -> gtk::Popover {
+    let popover = gtk::Popover::new();
+    popover.add_css_class("zter-context-menu");
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_parent(parent);
+    let popover_for_destroy = popover.clone();
+    parent.connect_destroy(move |_| {
+        if popover_for_destroy.parent().is_some() {
+            popover_for_destroy.unparent();
+        }
+    });
+    popover
+}
+
+fn context_menu_button(label: &str, shortcut: Option<&str>) -> gtk::Button {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
 
     let label = gtk::Label::new(Some(label));
@@ -3241,13 +3426,15 @@ fn clipboard_menu_button(label: &str, shortcut: &str) -> gtk::Button {
     label.set_hexpand(true);
     row.append(&label);
 
-    let shortcut = gtk::Label::new(Some(shortcut));
-    shortcut.add_css_class("zter-clipboard-shortcut");
-    shortcut.set_halign(gtk::Align::End);
-    row.append(&shortcut);
+    if let Some(shortcut) = shortcut {
+        let shortcut = gtk::Label::new(Some(shortcut));
+        shortcut.add_css_class("zter-context-menu-shortcut");
+        shortcut.set_halign(gtk::Align::End);
+        row.append(&shortcut);
+    }
 
     let button = gtk::Button::new();
-    button.add_css_class("zter-clipboard-menu-item");
+    button.add_css_class("zter-context-menu-item");
     button.set_child(Some(&row));
     button
 }
@@ -3961,6 +4148,51 @@ mod tests {
                 forward: false,
             }
         );
+    }
+
+    #[test]
+    fn adjacent_tab_close_ranges_exclude_the_anchor() {
+        assert_eq!(
+            tab_positions_to_close(4, 2, TabCloseDirection::Left).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(
+            tab_positions_to_close(4, 2, TabCloseDirection::Right).collect::<Vec<_>>(),
+            vec![3]
+        );
+        assert!(
+            tab_positions_to_close(4, 0, TabCloseDirection::Left)
+                .collect::<Vec<_>>()
+                .is_empty()
+        );
+        assert!(
+            tab_positions_to_close(4, 3, TabCloseDirection::Right)
+                .collect::<Vec<_>>()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn adjacent_tab_close_uses_the_requested_short_labels() {
+        assert_eq!(TabCloseDirection::Left.menu_label(), "Close to left");
+        assert_eq!(TabCloseDirection::Right.menu_label(), "Close to right");
+        assert_eq!(
+            TabCloseDirection::Left.confirmation_message(),
+            "Close tabs to the left?"
+        );
+        assert_eq!(
+            TabCloseDirection::Right.confirmation_message(),
+            "Close tabs to the right?"
+        );
+    }
+
+    #[test]
+    fn adjacent_tab_close_confirms_multiple_or_foreground_targets() {
+        assert!(!tab_close_requires_confirmation(0, false));
+        assert!(!tab_close_requires_confirmation(1, false));
+        assert!(tab_close_requires_confirmation(1, true));
+        assert!(tab_close_requires_confirmation(2, false));
+        assert!(tab_close_requires_confirmation(2, true));
     }
 
     #[test]
