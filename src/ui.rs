@@ -41,7 +41,8 @@ const TAB_DROP_BEFORE_CLASS: &str = "zter-tab-drop-before";
 const TAB_DROP_AFTER_CLASS: &str = "zter-tab-drop-after";
 const HEADER_DROP_TARGET_CLASS: &str = "zter-header-drop-target";
 const TAB_WIDTH: f64 = 220.0;
-const TAB_SCROLL_STEP: f64 = 48.0;
+const TAB_SCROLL_STEP: f64 = 80.0;
+const TAB_SCROLL_OVERLAY_WIDTH: f64 = 28.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
@@ -68,6 +69,13 @@ enum TabShortcut {
     New,
     Previous,
     Next,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TabScrollState {
+    overflow: bool,
+    backward: bool,
+    forward: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, glib::Boxed)]
@@ -668,6 +676,20 @@ fn create_header() -> HeaderWidgets {
     tab_scroller.add_css_class("zter-tab-scroller");
     install_tab_strip_scrolling(&tab_scroller);
 
+    let previous_tab_button = create_tab_scroll_button("go-previous-symbolic", "Scroll tabs left");
+    previous_tab_button.set_halign(gtk::Align::Start);
+    let next_tab_button = create_tab_scroll_button("go-next-symbolic", "Scroll tabs right");
+    next_tab_button.set_halign(gtk::Align::End);
+
+    let tab_overlay = gtk::Overlay::new();
+    tab_overlay.add_css_class("zter-tab-scroll-overlay");
+    tab_overlay.set_hexpand(true);
+    tab_overlay.set_child(Some(&tab_scroller));
+    tab_overlay.add_overlay(&previous_tab_button);
+    tab_overlay.add_overlay(&next_tab_button);
+    install_tab_scroll_button(&previous_tab_button, &tab_scroller, -TAB_SCROLL_STEP);
+    install_tab_scroll_button(&next_tab_button, &tab_scroller, TAB_SCROLL_STEP);
+
     let inline_new_tab = create_new_tab_button();
     let pinned_new_tab = create_new_tab_button();
     pinned_new_tab.set_visible(false);
@@ -685,6 +707,8 @@ fn create_header() -> HeaderWidgets {
         &inline_new_tab,
         &pinned_new_tab,
         &overflow_drag_space,
+        &previous_tab_button,
+        &next_tab_button,
     );
 
     let window_controls = gtk::WindowControls::new(gtk::PackType::End);
@@ -698,7 +722,7 @@ fn create_header() -> HeaderWidgets {
     settings.add_css_class("zter-settings-button");
     settings.set_valign(gtk::Align::Center);
 
-    header.append(&tab_scroller);
+    header.append(&tab_overlay);
     header.append(&pinned_new_tab);
     header.append(&overflow_drag_space);
     header.append(&settings);
@@ -725,6 +749,18 @@ fn create_new_tab_button() -> gtk::Button {
     button.add_css_class("zter-new-tab");
     button.set_valign(gtk::Align::Center);
 
+    button
+}
+
+fn create_tab_scroll_button(icon_name: &str, tooltip: &str) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .icon_name(icon_name)
+        .has_frame(false)
+        .tooltip_text(tooltip)
+        .build();
+    button.add_css_class("zter-tab-scroll-button");
+    button.set_valign(gtk::Align::Fill);
+    button.set_visible(false);
     button
 }
 
@@ -1392,29 +1428,80 @@ fn install_tab_overflow(
     inline_button: &gtk::Button,
     pinned_button: &gtk::Button,
     drag_space: &gtk::WindowHandle,
+    previous_button: &gtk::Button,
+    next_button: &gtk::Button,
 ) {
     let inline_weak = inline_button.downgrade();
     let pinned_weak = pinned_button.downgrade();
     let drag_space_weak = drag_space.downgrade();
-    scroller.hadjustment().connect_changed(move |adjustment| {
-        let (Some(inline_button), Some(pinned_button), Some(drag_space)) = (
+    let previous_weak = previous_button.downgrade();
+    let next_weak = next_button.downgrade();
+    let sync_controls = Rc::new(move |adjustment: &gtk::Adjustment| {
+        let (
+            Some(inline_button),
+            Some(pinned_button),
+            Some(drag_space),
+            Some(previous_button),
+            Some(next_button),
+        ) = (
             inline_weak.upgrade(),
             pinned_weak.upgrade(),
             drag_space_weak.upgrade(),
-        ) else {
+            previous_weak.upgrade(),
+            next_weak.upgrade(),
+        )
+        else {
             return;
         };
-        let overflow = adjustment.upper() > adjustment.page_size() + 0.5;
-        inline_button.set_visible(!overflow);
-        pinned_button.set_visible(overflow);
-        drag_space.set_visible(overflow);
+        let state = tab_scroll_state(
+            adjustment.lower(),
+            adjustment.value(),
+            adjustment.upper(),
+            adjustment.page_size(),
+        );
+        inline_button.set_visible(!state.overflow);
+        pinned_button.set_visible(state.overflow);
+        drag_space.set_visible(state.overflow);
+        previous_button.set_visible(state.backward);
+        next_button.set_visible(state.forward);
     });
 
     let adjustment = scroller.hadjustment();
-    let overflow = adjustment.upper() > adjustment.page_size() + 0.5;
-    inline_button.set_visible(!overflow);
-    pinned_button.set_visible(overflow);
-    drag_space.set_visible(overflow);
+    let sync_changed = sync_controls.clone();
+    adjustment.connect_changed(move |adjustment| sync_changed(adjustment));
+    let sync_value = sync_controls.clone();
+    adjustment.connect_value_changed(move |adjustment| sync_value(adjustment));
+    sync_controls(&adjustment);
+}
+
+fn tab_scroll_state(lower: f64, value: f64, upper: f64, page_size: f64) -> TabScrollState {
+    let maximum = (upper - page_size).max(lower);
+    let overflow = maximum > lower + 0.5;
+    TabScrollState {
+        overflow,
+        backward: overflow && value > lower + 0.5,
+        forward: overflow && value < maximum - 0.5,
+    }
+}
+
+fn install_tab_scroll_button(button: &gtk::Button, scroller: &gtk::ScrolledWindow, delta: f64) {
+    let scroller_weak = scroller.downgrade();
+    button.connect_clicked(move |_| {
+        let Some(scroller) = scroller_weak.upgrade() else {
+            return;
+        };
+        scroll_tab_strip(&scroller.hadjustment(), delta);
+    });
+}
+
+fn scroll_tab_strip(adjustment: &gtk::Adjustment, delta: f64) -> bool {
+    let maximum = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+    if delta == 0.0 || maximum <= adjustment.lower() {
+        return false;
+    }
+
+    adjustment.set_value((adjustment.value() + delta).clamp(adjustment.lower(), maximum));
+    true
 }
 
 fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {
@@ -1426,17 +1513,10 @@ fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {
         let Some(scroller) = scroller_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
-        let adjustment = scroller.hadjustment();
         let delta = if dx.abs() > dy.abs() { dx } else { dy };
-        let maximum = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
-
-        if delta == 0.0 || maximum <= adjustment.lower() {
+        if !scroll_tab_strip(&scroller.hadjustment(), delta * TAB_SCROLL_STEP) {
             return gtk::glib::Propagation::Proceed;
         }
-
-        adjustment.set_value(
-            (adjustment.value() + delta * TAB_SCROLL_STEP).clamp(adjustment.lower(), maximum),
-        );
         gtk::glib::Propagation::Stop
     });
     scroller.add_controller(controller);
@@ -2369,18 +2449,25 @@ fn reveal_tab(tab_scroller: &gtk::ScrolledWindow, tab: &gtk::Widget, tab_positio
         }
 
         let adjustment = tab_scroller.hadjustment();
-        let visible_start = adjustment.value();
-        let visible_end = visible_start + adjustment.page_size();
-        let tab_start = f64::from(tab_position) * TAB_WIDTH;
-        let tab_end = tab_start + TAB_WIDTH;
+        let maximum = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+        let overlay_start = (adjustment.value() > adjustment.lower() + 0.5)
+            .then_some(TAB_SCROLL_OVERLAY_WIDTH)
+            .unwrap_or_default();
+        let overlay_end = (adjustment.value() < maximum - 0.5)
+            .then_some(TAB_SCROLL_OVERLAY_WIDTH)
+            .unwrap_or_default();
+        let visible_start = adjustment.value() + overlay_start;
+        let visible_end = adjustment.value() + adjustment.page_size() - overlay_end;
+        let tab_width = f64::from(tab.width()).max(1.0);
+        let tab_start = f64::from(tab_position) * tab_width;
+        let tab_end = tab_start + tab_width;
         let requested = if tab_start < visible_start {
-            tab_start
+            tab_start - overlay_start
         } else if tab_end > visible_end {
-            tab_end - adjustment.page_size()
+            tab_end + overlay_end - adjustment.page_size()
         } else {
             return gtk::glib::ControlFlow::Break;
         };
-        let maximum = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
         adjustment.set_value(requested.clamp(adjustment.lower(), maximum));
         gtk::glib::ControlFlow::Break
     });
@@ -3838,6 +3925,42 @@ mod tests {
             Some(TabShortcut::Next)
         );
         assert_eq!(tab_shortcut(gtk::gdk::Key::Page_Up, control_shift), None);
+    }
+
+    #[test]
+    fn tab_scroll_controls_follow_hidden_content_directions() {
+        assert_eq!(
+            tab_scroll_state(0.0, 0.0, 400.0, 400.0),
+            TabScrollState {
+                overflow: false,
+                backward: false,
+                forward: false,
+            }
+        );
+        assert_eq!(
+            tab_scroll_state(0.0, 0.0, 800.0, 400.0),
+            TabScrollState {
+                overflow: true,
+                backward: false,
+                forward: true,
+            }
+        );
+        assert_eq!(
+            tab_scroll_state(0.0, 200.0, 800.0, 400.0),
+            TabScrollState {
+                overflow: true,
+                backward: true,
+                forward: true,
+            }
+        );
+        assert_eq!(
+            tab_scroll_state(0.0, 400.0, 800.0, 400.0),
+            TabScrollState {
+                overflow: true,
+                backward: true,
+                forward: false,
+            }
+        );
     }
 
     #[test]

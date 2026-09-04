@@ -155,7 +155,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-image: none;
             border-width: 0;
             min-height: 36px;
-            min-width: 64px;
+            min-width: 80px;
             outline-width: 0;
             box-shadow: none;
         }}
@@ -228,6 +228,20 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-color: {};
         }}
         button.zter-new-tab:hover {{
+            background-color: {};
+        }}
+        button.zter-tab-scroll-button {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            box-shadow: none;
+            min-height: 36px;
+            min-width: 28px;
+            padding: 0;
+            transition: background-color 180ms ease-out;
+        }}
+        button.zter-tab-scroll-button:hover {{
             background-color: {};
         }}
         popover.zter-clipboard-menu {{
@@ -369,6 +383,8 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
         TAB_DROP_TARGET.css(),
         BACKGROUND.css(),
         TAB_CLOSE_HOVER.css(),
+        HEADER_BUTTON_HOVER.css(),
+        HEADER_BACKGROUND.css(),
         HEADER_BUTTON_HOVER.css(),
         HEADER_BACKGROUND.css(),
         SELECTION.css(),
@@ -941,12 +957,29 @@ mod tests {
     }
 
     #[test]
-    fn tabs_keep_a_compact_minimum_width_for_title_and_close_button() {
+    fn tabs_keep_a_readable_minimum_width_for_title_and_close_button() {
         let css = application_css(TerminalPadding::default());
         let (_, tab_rule) = css.split_once(".zter-header-tab {").unwrap();
         let (tab_rule, _) = tab_rule.split_once('}').unwrap();
 
-        assert!(tab_rule.contains("min-width: 64px"));
+        assert!(tab_rule.contains("min-width: 80px"));
+    }
+
+    #[test]
+    fn tab_scroll_overlay_controls_use_neutral_edge_fills_without_shadows() {
+        let css = application_css(TerminalPadding::default());
+        let (_, button_rule) = css.split_once("button.zter-tab-scroll-button {").unwrap();
+        let (button_rule, remainder) = button_rule.split_once('}').unwrap();
+        let (_, hover_rule) = remainder
+            .split_once("button.zter-tab-scroll-button:hover {")
+            .unwrap();
+        let (hover_rule, _) = hover_rule.split_once('}').unwrap();
+
+        assert!(button_rule.contains("background-color: #303643"));
+        assert!(button_rule.contains("min-width: 28px"));
+        assert!(button_rule.contains("box-shadow: none"));
+        assert!(button_rule.contains("transition: background-color 180ms ease-out"));
+        assert!(hover_rule.contains("background-color: #444A55"));
     }
 
     #[test]
