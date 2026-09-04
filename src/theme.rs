@@ -155,7 +155,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-image: none;
             border-width: 0;
             min-height: 36px;
-            min-width: 220px;
+            min-width: 64px;
             outline-width: 0;
             box-shadow: none;
         }}
@@ -938,6 +938,15 @@ mod tests {
 
         assert!(header_rule.contains("min-height: 36px"));
         assert!(tab_rule.contains("min-height: 36px"));
+    }
+
+    #[test]
+    fn tabs_keep_a_compact_minimum_width_for_title_and_close_button() {
+        let css = application_css(TerminalPadding::default());
+        let (_, tab_rule) = css.split_once(".zter-header-tab {").unwrap();
+        let (tab_rule, _) = tab_rule.split_once('}').unwrap();
+
+        assert!(tab_rule.contains("min-width: 64px"));
     }
 
     #[test]

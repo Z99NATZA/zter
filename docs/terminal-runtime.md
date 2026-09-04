@@ -50,10 +50,12 @@ uniform `12px` corner radius, while Close uses a restrained red accent. A child
 shell exit still removes its tab immediately without showing the modal.
 
 Each tab has the same height as the titlebar. Tab titles are ellipsized at the
-available width. The new-tab button follows the last tab while the tabs fit.
+available width. Tabs share the available strip width evenly and shrink to a
+minimum width of `64px`, retaining the close button and ellipsizing the title in
+the remaining space. The new-tab button follows the last tab while the tabs fit.
 The expanding drag area after that button retains a minimum width of `40px`.
-When the tabs exceed the available titlebar space, the strip scrolls
-horizontally with a mouse wheel or trackpad and automatically reveals the
+Only after every tab reaches its minimum width does the strip scroll
+horizontally with a mouse wheel or trackpad and automatically reveal the
 selected tab, while the new-tab button, a following minimum `40px` drag area,
 and system window controls remain fixed. The titlebar content is `36px` high.
 Its blank area moves the window and double-clicking that area toggles

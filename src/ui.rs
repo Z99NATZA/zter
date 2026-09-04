@@ -652,6 +652,7 @@ fn create_header() -> HeaderWidgets {
 
     let tab_strip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tab_strip.add_css_class("zter-tab-strip");
+    tab_strip.set_homogeneous(true);
     tab_strip.set_hexpand(false);
 
     let scroll_content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
