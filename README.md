@@ -1,12 +1,14 @@
 # zter
 
 ```text
+- Date format Y-m-d
 - Project created at 2026-08-24
-- README.md updated at 2026-08-29
+- README.md updated at 2026-09-04
 - Developed on Ubuntu
 ```
 
 ![Terminal interface](docs/images/terminal-interface.png)
+![Terminal interface2](docs/images/terminal-interface-2.png)
 
 ## Installation
 
@@ -52,4 +54,4 @@ cargo run -- -v
 - [Terminal runtime](docs/terminal-runtime.md)
 - [Desktop integration](docs/desktop-integration.md)
 
-## [LICENSE MIT](LICENSE)
+## MIT [LICENSE](LICENSE)
