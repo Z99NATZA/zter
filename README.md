@@ -54,4 +54,5 @@ cargo run -- -v
 - [Terminal runtime](docs/terminal-runtime.md)
 - [Desktop integration](docs/desktop-integration.md)
 
-## MIT [LICENSE](LICENSE)
+## LICENSE
+MIT [LICENSE](LICENSE)
