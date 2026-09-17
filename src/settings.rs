@@ -69,6 +69,7 @@ pub struct Settings {
     schema_version: u32,
     shell: Option<String>,
     background_image: Option<PathBuf>,
+    header_visible: bool,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -111,6 +112,12 @@ impl Settings {
     pub fn apply_project() -> Result<ApplyOutcome, SettingsError> {
         let path = settings_path()?;
         Self::apply_project_at(&path)
+    }
+
+    pub fn save_header_visibility(visible: bool) -> Result<PathBuf, SettingsError> {
+        let path = settings_path()?;
+        Self::save_header_visibility_at(&path, visible)?;
+        Ok(path)
     }
 
     pub(crate) fn save_user(&self) -> Result<PathBuf, SettingsError> {
@@ -220,12 +227,22 @@ impl Settings {
         })
     }
 
+    fn save_header_visibility_at(path: &Path, visible: bool) -> Result<(), SettingsError> {
+        let mut settings = Self::load_or_create_at(path)?;
+        settings.header_visible = visible;
+        write_settings(path, &settings)
+    }
+
     pub fn shell(&self) -> Option<&str> {
         self.shell.as_deref()
     }
 
     pub fn background_image(&self) -> Option<&Path> {
         self.background_image.as_deref()
+    }
+
+    pub fn header_visible(&self) -> bool {
+        self.header_visible
     }
 
     pub fn theme(&self) -> Theme {
@@ -534,6 +551,7 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
             Value::String(_) => Some(value.clone()),
             _ => None,
         },
+        "header_visible" => value.as_bool().map(Value::from),
         "theme" => serde_json::from_value::<Theme>(value.clone())
             .ok()
             .map(|_| value.clone()),
@@ -741,6 +759,7 @@ mod tests {
                 "background_image_opacity",
                 "font_family",
                 "font_size",
+                "header_visible",
                 "padding_bottom",
                 "padding_left",
                 "padding_right",
@@ -780,7 +799,7 @@ mod tests {
 
         assert_eq!(settings.font_size(), 16.0);
         assert_eq!(saved["font_size"], 16.0);
-        assert_eq!(saved.as_object().unwrap().len(), 13);
+        assert_eq!(saved.as_object().unwrap().len(), 14);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1101,6 +1120,31 @@ mod tests {
         assert_eq!(reloaded.scrollback_lines(), 25_000);
         assert_eq!(reloaded.background_image_opacity(), 0.25);
         assert_eq!(reloaded.window_opacity(), 0.85);
+        assert!(reloaded.header_visible());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn header_visibility_update_preserves_other_settings() {
+        let directory = test_directory("header-visibility");
+        let path = directory.join("settings.json");
+        let mut value = project_settings_value().unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("font_size".to_owned(), Value::from(16.0));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        Settings::save_header_visibility_at(&path, false).unwrap();
+        let hidden = Settings::load_or_create_at(&path).unwrap();
+        assert!(!hidden.header_visible());
+        assert_eq!(hidden.font_size(), 16.0);
+
+        Settings::save_header_visibility_at(&path, true).unwrap();
+        let shown = Settings::load_or_create_at(&path).unwrap();
+        assert!(shown.header_visible());
+        assert_eq!(shown.font_size(), 16.0);
         fs::remove_dir_all(directory).unwrap();
     }
 

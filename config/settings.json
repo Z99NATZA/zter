@@ -2,6 +2,7 @@
   "schema_version": 3,
   "shell": null,
   "background_image": "builtin",
+  "header_visible": true,
   "theme": "one-half-dark",
   "font_family": "Monospace",
   "font_size": 12.0,

@@ -20,7 +20,10 @@ GTK.
 Tabs share one titlebar row with the window controls. The pinned symbolic `+`
 button beside the tab strip and `Ctrl+T` open a new tab, and the close button
 closes the current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or
-next tab. Tabs can be reordered within a window or moved between zter windows in
+next tab. `zter header hide` hides this row in every window of the running
+profile-matched application and saves that state for later windows;
+`zter header show` restores it. Standalone instances adopt the saved state on
+their next start. Tabs can be reordered within a window or moved between zter windows in
 the same process by dragging them. Dropping on the left or right half of an
 existing tab inserts before or after it. Dropping on the blank titlebar drag
 area appends the tab. Both valid destinations show a `1px` inset white outline

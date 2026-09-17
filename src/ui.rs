@@ -17,7 +17,9 @@ use vte4::prelude::*;
 
 use crate::{
     config::{AppConfig, BackgroundImageSource, DEFAULT_BACKGROUND_IMAGE_SETTING},
-    identity::{APPLICATION_NAME, ICON_NAME, SETTINGS_RELOAD_ACTION},
+    identity::{
+        APPLICATION_NAME, HEADER_HIDE_ACTION, HEADER_SHOW_ACTION, ICON_NAME, SETTINGS_RELOAD_ACTION,
+    },
     settings::{
         MAX_BACKGROUND_IMAGE_OPACITY, MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES,
         MAX_WINDOW_OPACITY, MIN_FONT_SIZE, MIN_WINDOW_OPACITY, Settings, SettingsUpdate,
@@ -272,6 +274,7 @@ fn selected_background_image(selected: u32, path: &gtk::Entry) -> Option<PathBuf
 
 struct WindowContext {
     window: gtk::glib::WeakRef<gtk::ApplicationWindow>,
+    header: gtk::glib::WeakRef<gtk::Box>,
     notebook: gtk::glib::WeakRef<gtk::Notebook>,
     tab_strip: gtk::glib::WeakRef<gtk::Box>,
     tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
@@ -601,7 +604,11 @@ impl TerminalZoomControl {
 }
 
 pub fn build(application: &gtk::Application, config: &AppConfig) {
-    create_window(application, config, true);
+    let config = active_window_contexts()
+        .first()
+        .map(|context| context.config.borrow().clone())
+        .unwrap_or_else(|| config.clone());
+    create_window(application, &config, true);
 }
 
 fn create_window(
@@ -623,6 +630,7 @@ fn create_window(
     );
     let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
     install_settings_reload_action(application);
+    install_header_visibility_actions(application);
 
     let notebook = create_notebook();
     let close_protection = CloseProtection::default();
@@ -632,6 +640,7 @@ fn create_window(
     window.add_controller(drop_motion.clone());
     let context = Rc::new(WindowContext {
         window: window.downgrade(),
+        header: header.header.downgrade(),
         notebook: notebook.downgrade(),
         tab_strip: header.tab_strip.downgrade(),
         tab_scroller: header.tab_scroller.downgrade(),
@@ -656,6 +665,7 @@ fn create_window(
     install_header_drop_target(&header.drag_space, &context);
     install_header_drop_target(&header.overflow_drag_space, &context);
 
+    header.header.set_visible(config.header_visible());
     window.set_titlebar(Some(&header.header));
     window.set_child(Some(&notebook));
     if initial_tab {
@@ -1388,6 +1398,9 @@ fn apply_app_config(config: &AppConfig) {
 
     for context in contexts {
         let previous = context.config.replace(config.clone());
+        if let Some(header) = context.header.upgrade() {
+            header.set_visible(config.header_visible());
+        }
         if let Some(notebook) = context.notebook.upgrade() {
             for page_number in 0..notebook.n_pages() {
                 let Some(page) = notebook.nth_page(Some(page_number)) else {
@@ -3736,6 +3749,34 @@ fn install_settings_reload_action(application: &gtk::Application) {
         reload_all_wallpapers(&config);
     });
     application.add_action(&action);
+}
+
+fn install_header_visibility_actions(application: &gtk::Application) {
+    install_header_visibility_action(application, HEADER_HIDE_ACTION, false);
+    install_header_visibility_action(application, HEADER_SHOW_ACTION, true);
+}
+
+fn install_header_visibility_action(
+    application: &gtk::Application,
+    action_name: &str,
+    visible: bool,
+) {
+    if application.lookup_action(action_name).is_some() {
+        return;
+    }
+
+    let action = gtk::gio::SimpleAction::new(action_name, None);
+    action.connect_activate(move |_, _| apply_header_visibility(visible));
+    application.add_action(&action);
+}
+
+fn apply_header_visibility(visible: bool) {
+    for context in active_window_contexts() {
+        context.config.borrow_mut().set_header_visible(visible);
+        if let Some(header) = context.header.upgrade() {
+            header.set_visible(visible);
+        }
+    }
 }
 
 fn reload_wallpaper(wallpaper: &WallpaperAsset, preparation: WallpaperPreparation) {

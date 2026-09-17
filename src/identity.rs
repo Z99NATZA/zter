@@ -19,6 +19,8 @@ pub(crate) const SETTINGS_DIRECTORY: &str = "zter-devel";
 pub(crate) const SETTINGS_DIRECTORY: &str = "zter";
 
 pub(crate) const SETTINGS_RELOAD_ACTION: &str = "settings-reload";
+pub(crate) const HEADER_HIDE_ACTION: &str = "header-hide";
+pub(crate) const HEADER_SHOW_ACTION: &str = "header-show";
 
 #[cfg(test)]
 mod tests {

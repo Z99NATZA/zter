@@ -22,6 +22,7 @@ pub struct AppConfig {
     shell: String,
     working_directory: String,
     background_image: Option<BackgroundImageSource>,
+    header_visible: bool,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -57,6 +58,7 @@ impl AppConfig {
             shell,
             working_directory,
             background_image,
+            header_visible: settings.header_visible(),
             theme: settings.theme(),
             font_family: settings.font_family().to_owned(),
             font_size: settings.font_size(),
@@ -77,6 +79,14 @@ impl AppConfig {
 
     pub fn background_image(&self) -> Option<&BackgroundImageSource> {
         self.background_image.as_ref()
+    }
+
+    pub fn header_visible(&self) -> bool {
+        self.header_visible
+    }
+
+    pub(crate) fn set_header_visible(&mut self, visible: bool) {
+        self.header_visible = visible;
     }
 
     pub fn theme(&self) -> Theme {
@@ -296,6 +306,7 @@ mod tests {
         assert_eq!(config.scrollback_lines(), 10_000);
         assert_eq!(config.background_image_opacity(), 0.1);
         assert_eq!(config.window_opacity(), 1.0);
+        assert!(config.header_visible());
     }
 
     #[test]
@@ -308,6 +319,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn hidden_header_setting_is_exposed_to_the_ui() {
+        let mut value = serde_json::to_value(Settings::defaults()).unwrap();
+        value["header_visible"] = serde_json::Value::Bool(false);
+        let settings = serde_json::from_value(value).unwrap();
+        let config = AppConfig::from_values(settings, None, PathBuf::from("/tmp"), None).unwrap();
+
+        assert!(!config.header_visible());
+    }
+
     fn customized_settings(
         shell: serde_json::Value,
         background_image: serde_json::Value,
@@ -316,6 +337,7 @@ mod tests {
             "schema_version": 3,
             "shell": shell,
             "background_image": background_image,
+            "header_visible": true,
             "theme": "one-half-dark",
             "font_family": "Monospace",
             "font_size": 12.0,
