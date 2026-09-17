@@ -4,7 +4,10 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::settings::{Settings, SettingsError, TerminalPadding, Theme};
+use crate::{
+    key_bindings::KeyBindings,
+    settings::{Settings, SettingsError, TerminalPadding, Theme},
+};
 
 const FALLBACK_SHELL: &str = "/bin/sh";
 pub(crate) const DEFAULT_BACKGROUND_IMAGE_SETTING: &str = "builtin";
@@ -23,6 +26,7 @@ pub struct AppConfig {
     working_directory: String,
     background_image: Option<BackgroundImageSource>,
     header_visible: bool,
+    key_bindings: KeyBindings,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -59,6 +63,7 @@ impl AppConfig {
             working_directory,
             background_image,
             header_visible: settings.header_visible(),
+            key_bindings: settings.key_bindings().clone(),
             theme: settings.theme(),
             font_family: settings.font_family().to_owned(),
             font_size: settings.font_size(),
@@ -87,6 +92,10 @@ impl AppConfig {
 
     pub(crate) fn set_header_visible(&mut self, visible: bool) {
         self.header_visible = visible;
+    }
+
+    pub(crate) fn key_bindings(&self) -> &KeyBindings {
+        &self.key_bindings
     }
 
     pub fn theme(&self) -> Theme {
@@ -333,11 +342,13 @@ mod tests {
         shell: serde_json::Value,
         background_image: serde_json::Value,
     ) -> Settings {
+        let key_bindings = serde_json::to_value(Settings::defaults().key_bindings()).unwrap();
         serde_json::from_value(serde_json::json!({
             "schema_version": 3,
             "shell": shell,
             "background_image": background_image,
             "header_visible": true,
+            "key_bindings": key_bindings,
             "theme": "one-half-dark",
             "font_family": "Monospace",
             "font_size": 12.0,

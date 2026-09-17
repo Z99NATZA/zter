@@ -108,6 +108,49 @@ separate development profile. A running profile-matched application updates all
 of its current windows immediately, and windows opened afterward use the saved
 state. Standalone instances read the saved state when they next start.
 
+## Key Bindings
+
+Keyboard actions are configured in the `key_bindings` object. Each action maps
+to an ordered array of bindings, so one action can have multiple shortcuts. An
+empty array disables that action, while a missing action uses its embedded
+default. Key bindings are edited in `settings.json`; the settings window does
+not provide a key-binding editor. Changes apply when the application next
+starts.
+
+```json
+"key_bindings": {
+  "new_tab": [
+    { "key": "t", "modifiers": ["control"], "match": "logical" }
+  ],
+  "copy": [
+    { "key": "c", "modifiers": ["control"], "match": "physical" }
+  ]
+}
+```
+
+`key` uses a GDK key name such as `t`, `Page_Up`, `equal`, or `0`.
+`modifiers` accepts `control`, `shift`, `alt`, `super`, `meta`, and `hyper`; an
+empty or omitted array binds the key without a modifier. `match` accepts
+`logical` or `physical` and defaults to `logical` when omitted. Logical matching
+uses the character produced by the active keyboard layout. Physical matching
+uses the hardware key position resolved from `key`; the default Copy and Paste
+bindings therefore continue to work across keyboard layouts. A physical
+binding does not match when its key is unavailable on the active display.
+
+The supported actions are `new_tab`, `previous_tab`, `next_tab`, `copy`,
+`paste`, `zoom_in`, `zoom_out`, and `zoom_reset`. One key and modifier
+combination cannot be assigned to more than one action. `Ctrl+D`, `Ctrl+Z`, and
+`Ctrl+Shift+Z` remain reserved for terminal process protection. `Ctrl+C` may be
+assigned only to Copy because it also retains terminal interrupt handling.
+Mouse-wheel zoom and hyperlink activation are gestures and are not key
+bindings.
+
+An invalid key name, modifier, match mode, conflict, reserved binding, or
+unknown action uses the complete embedded `key_bindings` defaults without
+discarding other valid settings or overwriting the source file. The Copy and
+Paste context menu shows the first configured binding for each action; no hint
+is shown when that action is disabled.
+
 ## Keys
 
 Every settings file contains every supported key.
@@ -118,6 +161,7 @@ Every settings file contains every supported key.
 | `shell` | string or `null` | `null` | Shell executable. `null` or an empty string uses `$SHELL`, then `/bin/sh` if the environment value is missing or empty. |
 | `background_image` | string or `null` | `"builtin"` | `"builtin"` selects the default image embedded in zter, another non-empty string selects a local image path, and `null` or an empty string disables the image layer. |
 | `header_visible` | boolean | `true` | Shows the terminal tab and window-control header. `zter header hide` sets it to `false`; `zter header show` sets it to `true`. |
+| `key_bindings` | object | See [Key Bindings](#key-bindings) | Configures keyboard shortcuts for application actions. |
 | `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |

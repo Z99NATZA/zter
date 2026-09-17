@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::identity::SETTINGS_DIRECTORY;
+use crate::{
+    identity::SETTINGS_DIRECTORY,
+    key_bindings::{KeyBindings, normalize_key_bindings},
+};
 
 const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -70,6 +73,7 @@ pub struct Settings {
     shell: Option<String>,
     background_image: Option<PathBuf>,
     header_visible: bool,
+    key_bindings: KeyBindings,
     theme: Theme,
     font_family: String,
     font_size: f64,
@@ -243,6 +247,10 @@ impl Settings {
 
     pub fn header_visible(&self) -> bool {
         self.header_visible
+    }
+
+    pub(crate) fn key_bindings(&self) -> &KeyBindings {
+        &self.key_bindings
     }
 
     pub fn theme(&self) -> Theme {
@@ -484,7 +492,7 @@ fn resolve_user_settings(
     let mut resolved = default_settings.clone();
     for key in default_settings.keys() {
         match user_settings.get(key) {
-            Some(value) => match normalize_setting(key, value) {
+            Some(value) => match normalize_setting(key, value, &default_settings[key]) {
                 Some(value) => {
                     resolved.insert(key.clone(), value);
                 }
@@ -541,7 +549,7 @@ fn migrate_legacy_settings(
     );
 }
 
-fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
+fn normalize_setting(key: &str, value: &Value, default: &Value) -> Option<Value> {
     match key {
         "schema_version" => (value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)))
             .then(|| Value::from(CURRENT_SCHEMA_VERSION)),
@@ -552,6 +560,7 @@ fn normalize_setting(key: &str, value: &Value) -> Option<Value> {
             _ => None,
         },
         "header_visible" => value.as_bool().map(Value::from),
+        "key_bindings" => normalize_key_bindings(value, default),
         "theme" => serde_json::from_value::<Theme>(value.clone())
             .ok()
             .map(|_| value.clone()),
@@ -624,6 +633,9 @@ impl Settings {
         }
         if self.font_family.trim().is_empty() {
             return Err(invalid(path, "font_family must not be empty"));
+        }
+        if let Err(reason) = self.key_bindings.validate() {
+            return Err(invalid(path, &format!("invalid key_bindings: {reason}")));
         }
         if !self.font_size.is_finite() || !(MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&self.font_size)
         {
@@ -760,6 +772,7 @@ mod tests {
                 "font_family",
                 "font_size",
                 "header_visible",
+                "key_bindings",
                 "padding_bottom",
                 "padding_left",
                 "padding_right",
@@ -799,7 +812,43 @@ mod tests {
 
         assert_eq!(settings.font_size(), 16.0);
         assert_eq!(saved["font_size"], 16.0);
-        assert_eq!(saved.as_object().unwrap().len(), 14);
+        assert_eq!(saved.as_object().unwrap().len(), 15);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn partial_key_bindings_override_only_named_actions() {
+        let directory = test_directory("partial-key-bindings");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let mut value = project_settings_value().unwrap();
+        value["key_bindings"] = serde_json::json!({"new_tab": []});
+        fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+        let resolved = serde_json::to_value(settings.key_bindings()).unwrap();
+        let defaults = project_settings_value().unwrap();
+
+        assert_eq!(resolved["new_tab"], serde_json::json!([]));
+        assert_eq!(resolved["copy"], defaults["key_bindings"]["copy"]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_key_bindings_use_defaults_without_overwriting_the_file() {
+        let directory = test_directory("invalid-key-bindings");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        let mut value = project_settings_value().unwrap();
+        value["key_bindings"]["new_tab"] =
+            serde_json::json!([{"key": "d", "modifiers": ["control"]}]);
+        let source = format!("{}\n", serde_json::to_string_pretty(&value).unwrap());
+        fs::write(&path, &source).unwrap();
+
+        let settings = Settings::load_or_create_at(&path).unwrap();
+
+        assert_eq!(settings.key_bindings(), Settings::defaults().key_bindings());
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1091,7 +1140,9 @@ mod tests {
     fn settings_update_saves_and_reloads_every_editable_value() {
         let directory = test_directory("save-update");
         let path = directory.join("settings.json");
-        let mut settings = Settings::defaults();
+        let mut value = project_settings_value().unwrap();
+        value["key_bindings"]["new_tab"] = serde_json::json!([]);
+        let mut settings = settings_from_value(value, project_settings_path()).unwrap();
         settings.apply_update(SettingsUpdate {
             shell: Some(" /bin/fish ".to_owned()),
             background_image: Some(PathBuf::from("/tmp/wallpaper.png")),
@@ -1121,6 +1172,10 @@ mod tests {
         assert_eq!(reloaded.background_image_opacity(), 0.25);
         assert_eq!(reloaded.window_opacity(), 0.85);
         assert!(reloaded.header_visible());
+        assert_eq!(
+            serde_json::to_value(reloaded.key_bindings()).unwrap()["new_tab"],
+            serde_json::json!([])
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

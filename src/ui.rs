@@ -20,6 +20,7 @@ use crate::{
     identity::{
         APPLICATION_NAME, HEADER_HIDE_ACTION, HEADER_SHOW_ACTION, ICON_NAME, SETTINGS_RELOAD_ACTION,
     },
+    key_bindings::{KeyAction, RuntimeKeyBindings},
     settings::{
         MAX_BACKGROUND_IMAGE_OPACITY, MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES,
         MAX_WINDOW_OPACITY, MIN_FONT_SIZE, MIN_WINDOW_OPACITY, Settings, SettingsUpdate,
@@ -67,13 +68,6 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TabShortcut {
-    New,
-    Previous,
-    Next,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct TabScrollState {
     overflow: bool,
     backward: bool,
@@ -85,18 +79,6 @@ struct TabScrollState {
 struct TabDragPayload(String);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ClipboardShortcut {
-    Copy,
-    Paste,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ClipboardShortcutKeycodes {
-    copy: Vec<u32>,
-    paste: Vec<u32>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClipboardPasteRoute {
     PasteText,
     PassThrough,
@@ -105,12 +87,12 @@ enum ClipboardPasteRoute {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClipboardCopyRoute {
     CopySelection,
-    ConfirmInterrupt,
     PassThrough,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ForegroundProcessShortcut {
+    ConfirmInterrupt,
     ConfirmEndOfInput,
     ConfirmSuspend,
     Suppress,
@@ -280,6 +262,7 @@ struct WindowContext {
     tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
     drop_motion: gtk::glib::WeakRef<gtk::DropControllerMotion>,
     config: RefCell<AppConfig>,
+    key_bindings: RefCell<RuntimeKeyBindings>,
     wallpaper: WallpaperAsset,
     close_protection: CloseProtection,
 }
@@ -646,6 +629,10 @@ fn create_window(
         tab_scroller: header.tab_scroller.downgrade(),
         drop_motion: drop_motion.downgrade(),
         config: RefCell::new(config.clone()),
+        key_bindings: RefCell::new(RuntimeKeyBindings::new(
+            config.key_bindings(),
+            &gtk::prelude::WidgetExt::display(&window),
+        )),
         wallpaper,
         close_protection: close_protection.clone(),
     });
@@ -653,7 +640,7 @@ fn create_window(
     install_new_tab_button(&header.inline_new_tab, &context);
     install_new_tab_button(&header.pinned_new_tab, &context);
     install_settings_button(&header.settings, &context);
-    install_tab_shortcuts(&context);
+    install_key_bindings(&context);
     install_tab_switch_handler(
         &window,
         &notebook,
@@ -1398,6 +1385,12 @@ fn apply_app_config(config: &AppConfig) {
 
     for context in contexts {
         let previous = context.config.replace(config.clone());
+        if let Some(window) = context.window.upgrade() {
+            context.key_bindings.replace(RuntimeKeyBindings::new(
+                config.key_bindings(),
+                &gtk::prelude::WidgetExt::display(&window),
+            ));
+        }
         if let Some(header) = context.header.upgrade() {
             header.set_visible(config.header_visible());
         }
@@ -1557,34 +1550,90 @@ fn install_tab_strip_scrolling(scroller: &gtk::ScrolledWindow) {
     scroller.add_controller(controller);
 }
 
-fn install_tab_shortcuts(context: &Rc<WindowContext>) {
+fn install_key_bindings(context: &Rc<WindowContext>) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
 
     let context_weak = Rc::downgrade(context);
-    controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let Some(shortcut) = tab_shortcut(key, modifiers) else {
-            return gtk::glib::Propagation::Proceed;
-        };
+    controller.connect_key_pressed(move |_, key, keycode, modifiers| {
         let Some(context) = context_weak.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
-        let Some(notebook) = context.notebook.upgrade() else {
+        let action = context
+            .key_bindings
+            .borrow()
+            .action_for_event(key, keycode, modifiers);
+        let Some(action) = action else {
             return gtk::glib::Propagation::Proceed;
         };
-
-        match shortcut {
-            TabShortcut::New => add_terminal_tab(&context),
-            TabShortcut::Previous => notebook.prev_page(),
-            TabShortcut::Next => notebook.next_page(),
-        }
-
-        gtk::glib::Propagation::Stop
+        dispatch_key_action(action, &context)
     });
 
     if let Some(window) = context.window.upgrade() {
         window.add_controller(controller);
     }
+}
+
+fn dispatch_key_action(action: KeyAction, context: &Rc<WindowContext>) -> gtk::glib::Propagation {
+    match action {
+        KeyAction::NewTab => add_terminal_tab(context),
+        KeyAction::PreviousTab | KeyAction::NextTab => {
+            let Some(notebook) = context.notebook.upgrade() else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            match action {
+                KeyAction::PreviousTab => notebook.prev_page(),
+                KeyAction::NextTab => notebook.next_page(),
+                _ => unreachable!(),
+            }
+        }
+        KeyAction::Copy => {
+            let Some((terminal, _)) = active_terminal(context) else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            if clipboard_copy_route(terminal.has_selection()) == ClipboardCopyRoute::PassThrough {
+                return gtk::glib::Propagation::Proceed;
+            }
+            terminal.copy_clipboard_format(vte4::Format::Text);
+        }
+        KeyAction::Paste => {
+            let Some((terminal, _)) = active_terminal(context) else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            if clipboard_paste_route(
+                terminal
+                    .clipboard()
+                    .formats()
+                    .contains_type(gtk::glib::Type::STRING),
+            ) == ClipboardPasteRoute::PassThrough
+            {
+                return gtk::glib::Propagation::Proceed;
+            }
+            terminal.paste_clipboard();
+        }
+        KeyAction::ZoomIn | KeyAction::ZoomOut | KeyAction::ZoomReset => {
+            let Some((terminal, runtime)) = active_terminal(context) else {
+                return gtk::glib::Propagation::Proceed;
+            };
+            let zoom = match action {
+                KeyAction::ZoomIn => TerminalZoom::In,
+                KeyAction::ZoomOut => TerminalZoom::Out,
+                KeyAction::ZoomReset => TerminalZoom::Reset,
+                _ => unreachable!(),
+            };
+            TerminalZoomControl::new(&terminal, runtime.zoom.clone()).request(zoom);
+        }
+    }
+
+    gtk::glib::Propagation::Stop
+}
+
+fn active_terminal(context: &WindowContext) -> Option<(vte4::Terminal, Rc<TabRuntime>)> {
+    let notebook = context.notebook.upgrade()?;
+    let page = notebook.nth_page(notebook.current_page())?;
+    let terminal = find_terminal(&page)?;
+    let runtime = tab_runtime(page.widget_name().as_str())?;
+    Some((terminal, runtime))
 }
 
 fn install_tab_switch_handler(
@@ -2992,25 +3041,6 @@ fn find_terminal(widget: &gtk::Widget) -> Option<vte4::Terminal> {
     None
 }
 
-fn tab_shortcut(key: gtk::gdk::Key, modifiers: gtk::gdk::ModifierType) -> Option<TabShortcut> {
-    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-    let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
-    if !control || shift {
-        return None;
-    }
-
-    let system_modifiers = gtk::gdk::ModifierType::ALT_MASK
-        | gtk::gdk::ModifierType::SUPER_MASK
-        | gtk::gdk::ModifierType::HYPER_MASK
-        | gtk::gdk::ModifierType::META_MASK;
-    match key.to_lower() {
-        gtk::gdk::Key::t if !modifiers.intersects(system_modifiers) => Some(TabShortcut::New),
-        gtk::gdk::Key::Page_Up => Some(TabShortcut::Previous),
-        gtk::gdk::Key::Page_Down => Some(TabShortcut::Next),
-        _ => None,
-    }
-}
-
 fn default_tab_title(shell: &str) -> String {
     let shell_name = Path::new(shell)
         .file_name()
@@ -3093,8 +3123,7 @@ fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Termin
     )));
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
     install_hyperlink_activation(&terminal, runtime);
-    install_clipboard_shortcuts(&terminal, runtime);
-    install_clipboard_context_menu(&terminal);
+    install_clipboard_context_menu(&terminal, runtime, config.key_bindings());
     theme::apply_to(&terminal, config.theme());
 
     terminal
@@ -3103,11 +3132,14 @@ fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Termin
 fn install_foreground_process_key_protection(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let interrupt_keycodes = keycodes_for_keyval(&terminal.display(), gtk::gdk::Key::c);
 
     let terminal_weak = terminal.downgrade();
     let runtime = runtime.clone();
-    controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let Some(shortcut) = foreground_process_shortcut(key, modifiers) else {
+    controller.connect_key_pressed(move |_, key, keycode, modifiers| {
+        let Some(shortcut) =
+            foreground_process_shortcut(key, keycode, modifiers, &interrupt_keycodes)
+        else {
             return gtk::glib::Propagation::Proceed;
         };
         let Some(terminal) = terminal_weak.upgrade() else {
@@ -3118,6 +3150,7 @@ fn install_foreground_process_key_protection(terminal: &vte4::Terminal, runtime:
         }
 
         let control_sequence = match shortcut {
+            ForegroundProcessShortcut::ConfirmInterrupt => TERMINAL_INTERRUPT,
             ForegroundProcessShortcut::ConfirmEndOfInput => TERMINAL_END_OF_INPUT,
             ForegroundProcessShortcut::ConfirmSuspend => TERMINAL_SUSPEND,
             ForegroundProcessShortcut::Suppress => return gtk::glib::Propagation::Stop,
@@ -3150,7 +3183,9 @@ fn install_foreground_process_key_protection(terminal: &vte4::Terminal, runtime:
 
 fn foreground_process_shortcut(
     key: gtk::gdk::Key,
+    keycode: u32,
     modifiers: gtk::gdk::ModifierType,
+    interrupt_keycodes: &[u32],
 ) -> Option<ForegroundProcessShortcut> {
     let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
     let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
@@ -3164,119 +3199,14 @@ fn foreground_process_shortcut(
     }
 
     match key.to_lower() {
+        gtk::gdk::Key::c if !shift => Some(ForegroundProcessShortcut::ConfirmInterrupt),
         gtk::gdk::Key::d if !shift => Some(ForegroundProcessShortcut::ConfirmEndOfInput),
         gtk::gdk::Key::z if shift => Some(ForegroundProcessShortcut::Suppress),
         gtk::gdk::Key::z => Some(ForegroundProcessShortcut::ConfirmSuspend),
+        _ if !shift && interrupt_keycodes.contains(&keycode) => {
+            Some(ForegroundProcessShortcut::ConfirmInterrupt)
+        }
         _ => None,
-    }
-}
-
-fn terminal_font(family: &str, size: f64) -> gtk::pango::FontDescription {
-    let mut font = gtk::pango::FontDescription::new();
-    font.set_family(family);
-    font.set_size((size * f64::from(gtk::pango::SCALE)).round() as i32);
-    font
-}
-
-fn terminal_font_scale(font_size: f64) -> f64 {
-    font_size / TERMINAL_FONT_SCALE_BASE_SIZE
-}
-
-fn install_clipboard_shortcuts(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
-    let controller = gtk::EventControllerKey::new();
-    controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-    let keycodes = ClipboardShortcutKeycodes::from_display(&terminal.display());
-
-    let terminal_weak = terminal.downgrade();
-    let runtime = runtime.clone();
-    controller.connect_key_pressed(move |_, key, keycode, modifiers| {
-        let Some(terminal) = terminal_weak.upgrade() else {
-            return gtk::glib::Propagation::Proceed;
-        };
-
-        match clipboard_shortcut(key, keycode, modifiers, &keycodes) {
-            Some(ClipboardShortcut::Copy) => match clipboard_copy_route(
-                terminal.has_selection(),
-                tab_terminal_has_running_foreground_process(&terminal, &runtime),
-            ) {
-                ClipboardCopyRoute::CopySelection => {
-                    terminal.copy_clipboard_format(vte4::Format::Text)
-                }
-                ClipboardCopyRoute::ConfirmInterrupt => {
-                    let location = runtime.location();
-                    let Some(window) = location.window.upgrade() else {
-                        return gtk::glib::Propagation::Stop;
-                    };
-                    let terminal_weak = terminal.downgrade();
-                    let runtime_for_confirm = runtime.clone();
-                    show_close_confirmation(
-                        &window,
-                        &location.close_protection,
-                        "A process is still running. Close?",
-                        move || {
-                            let Some(terminal) = terminal_weak.upgrade() else {
-                                return;
-                            };
-                            if tab_terminal_has_running_foreground_process(
-                                &terminal,
-                                &runtime_for_confirm,
-                            ) {
-                                terminal.feed_child(TERMINAL_INTERRUPT);
-                            }
-                        },
-                    );
-                }
-                ClipboardCopyRoute::PassThrough => {
-                    return gtk::glib::Propagation::Proceed;
-                }
-            },
-            None => return gtk::glib::Propagation::Proceed,
-            Some(ClipboardShortcut::Paste) => {
-                let clipboard = terminal.clipboard();
-                match clipboard_paste_route(
-                    clipboard.formats().contains_type(gtk::glib::Type::STRING),
-                ) {
-                    ClipboardPasteRoute::PasteText => terminal.paste_clipboard(),
-                    ClipboardPasteRoute::PassThrough => {
-                        return gtk::glib::Propagation::Proceed;
-                    }
-                }
-            }
-        }
-
-        gtk::glib::Propagation::Stop
-    });
-
-    terminal.add_controller(controller);
-}
-
-fn tab_terminal_has_running_foreground_process(
-    terminal: &vte4::Terminal,
-    runtime: &TabRuntime,
-) -> bool {
-    let Some(shell_pid) = runtime.shell_pid.get() else {
-        return false;
-    };
-
-    terminal_has_running_foreground_process(terminal, shell_pid)
-}
-
-impl ClipboardShortcutKeycodes {
-    fn from_display(display: &gtk::gdk::Display) -> Self {
-        Self {
-            copy: keycodes_for_keyval(display, gtk::gdk::Key::c),
-            paste: keycodes_for_keyval(display, gtk::gdk::Key::v),
-        }
-    }
-
-    fn shortcut_for_keycode(&self, keycode: u32) -> Option<ClipboardShortcut> {
-        if self.copy.contains(&keycode) {
-            Some(ClipboardShortcut::Copy)
-        } else if self.paste.contains(&keycode) {
-            Some(ClipboardShortcut::Paste)
-        } else {
-            None
-        }
     }
 }
 
@@ -3290,30 +3220,31 @@ fn keycodes_for_keyval(display: &gtk::gdk::Display, key: gtk::gdk::Key) -> Vec<u
     keycodes
 }
 
-fn clipboard_shortcut(
-    key: gtk::gdk::Key,
-    keycode: u32,
-    modifiers: gtk::gdk::ModifierType,
-    keycodes: &ClipboardShortcutKeycodes,
-) -> Option<ClipboardShortcut> {
-    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-    let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
-    if !control || shift {
-        return None;
-    }
-
-    match key.to_lower() {
-        gtk::gdk::Key::c => Some(ClipboardShortcut::Copy),
-        gtk::gdk::Key::v => Some(ClipboardShortcut::Paste),
-        _ => keycodes.shortcut_for_keycode(keycode),
-    }
+fn terminal_font(family: &str, size: f64) -> gtk::pango::FontDescription {
+    let mut font = gtk::pango::FontDescription::new();
+    font.set_family(family);
+    font.set_size((size * f64::from(gtk::pango::SCALE)).round() as i32);
+    font
 }
 
-fn clipboard_copy_route(has_selection: bool, has_foreground_process: bool) -> ClipboardCopyRoute {
+fn terminal_font_scale(font_size: f64) -> f64 {
+    font_size / TERMINAL_FONT_SCALE_BASE_SIZE
+}
+
+fn tab_terminal_has_running_foreground_process(
+    terminal: &vte4::Terminal,
+    runtime: &TabRuntime,
+) -> bool {
+    let Some(shell_pid) = runtime.shell_pid.get() else {
+        return false;
+    };
+
+    terminal_has_running_foreground_process(terminal, shell_pid)
+}
+
+fn clipboard_copy_route(has_selection: bool) -> ClipboardCopyRoute {
     if has_selection {
         ClipboardCopyRoute::CopySelection
-    } else if has_foreground_process {
-        ClipboardCopyRoute::ConfirmInterrupt
     } else {
         ClipboardCopyRoute::PassThrough
     }
@@ -3367,11 +3298,17 @@ fn is_control_hyperlink_click(modifiers: gtk::gdk::ModifierType) -> bool {
     control && !modifiers.intersects(other_modifiers)
 }
 
-fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
+fn install_clipboard_context_menu(
+    terminal: &vte4::Terminal,
+    runtime: &Rc<TabRuntime>,
+    key_bindings: &crate::key_bindings::KeyBindings,
+) {
     let popover = create_context_menu(terminal);
     let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let copy_button = context_menu_button("Copy", Some("Ctrl+C"));
-    let paste_button = context_menu_button("Paste", Some("Ctrl+V"));
+    let copy_shortcut = key_bindings.primary_label(KeyAction::Copy);
+    let paste_shortcut = key_bindings.primary_label(KeyAction::Paste);
+    let copy_button = context_menu_button("Copy", copy_shortcut.as_deref());
+    let paste_button = context_menu_button("Paste", paste_shortcut.as_deref());
     menu.append(&copy_button);
     menu.append(&paste_button);
     popover.set_child(Some(&menu));
@@ -3403,11 +3340,18 @@ fn install_clipboard_context_menu(terminal: &vte4::Terminal) {
     click.set_propagation_phase(gtk::PropagationPhase::Capture);
     let terminal_weak = terminal.downgrade();
     let popover_weak = popover.downgrade();
+    let runtime = runtime.clone();
     click.connect_pressed(move |gesture, _, x, y| {
         let (Some(terminal), Some(popover)) = (terminal_weak.upgrade(), popover_weak.upgrade())
         else {
             return;
         };
+        let location = runtime.location();
+        let config = location.config.borrow();
+        let copy_shortcut = config.key_bindings().primary_label(KeyAction::Copy);
+        let paste_shortcut = config.key_bindings().primary_label(KeyAction::Paste);
+        set_context_menu_shortcut(&copy_button, copy_shortcut.as_deref());
+        set_context_menu_shortcut(&paste_button, paste_shortcut.as_deref());
         copy_button.set_sensitive(terminal.has_selection());
         popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
         popover.popup();
@@ -3439,17 +3383,35 @@ fn context_menu_button(label: &str, shortcut: Option<&str>) -> gtk::Button {
     label.set_hexpand(true);
     row.append(&label);
 
-    if let Some(shortcut) = shortcut {
-        let shortcut = gtk::Label::new(Some(shortcut));
-        shortcut.add_css_class("zter-context-menu-shortcut");
-        shortcut.set_halign(gtk::Align::End);
-        row.append(&shortcut);
-    }
+    let shortcut_label = gtk::Label::new(shortcut);
+    shortcut_label.add_css_class("zter-context-menu-shortcut");
+    shortcut_label.set_halign(gtk::Align::End);
+    shortcut_label.set_visible(shortcut.is_some());
+    row.append(&shortcut_label);
 
     let button = gtk::Button::new();
     button.add_css_class("zter-context-menu-item");
     button.set_child(Some(&row));
     button
+}
+
+fn set_context_menu_shortcut(button: &gtk::Button, shortcut: Option<&str>) {
+    let Some(row) = button.child().and_downcast::<gtk::Box>() else {
+        return;
+    };
+    let mut child = row.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        let Ok(label) = widget.downcast::<gtk::Label>() else {
+            continue;
+        };
+        if !label.has_css_class("zter-context-menu-shortcut") {
+            continue;
+        }
+        label.set_label(shortcut.unwrap_or_default());
+        label.set_visible(shortcut.is_some());
+        return;
+    }
 }
 
 fn create_content<F>(
@@ -3548,18 +3510,6 @@ where
 fn install_terminal_zoom(terminal: &vte4::Terminal, state: Rc<RefCell<TerminalZoomState>>) {
     let control = TerminalZoomControl::new(terminal, state);
 
-    let key_controller = gtk::EventControllerKey::new();
-    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-    let control_for_key = control.clone();
-    key_controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let Some(zoom) = terminal_zoom_shortcut(key, modifiers) else {
-            return gtk::glib::Propagation::Proceed;
-        };
-        control_for_key.request(zoom);
-        gtk::glib::Propagation::Stop
-    });
-    terminal.add_controller(key_controller);
-
     let scroll_controller = gtk::EventControllerScroll::new(
         gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
     );
@@ -3572,28 +3522,6 @@ fn install_terminal_zoom(terminal: &vte4::Terminal, state: Rc<RefCell<TerminalZo
         gtk::glib::Propagation::Stop
     });
     terminal.add_controller(scroll_controller);
-}
-
-fn terminal_zoom_shortcut(
-    key: gtk::gdk::Key,
-    modifiers: gtk::gdk::ModifierType,
-) -> Option<TerminalZoom> {
-    let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-    let system_modifiers = gtk::gdk::ModifierType::ALT_MASK
-        | gtk::gdk::ModifierType::SHIFT_MASK
-        | gtk::gdk::ModifierType::SUPER_MASK
-        | gtk::gdk::ModifierType::HYPER_MASK
-        | gtk::gdk::ModifierType::META_MASK;
-    if !control || modifiers.intersects(system_modifiers) {
-        return None;
-    }
-
-    match key {
-        gtk::gdk::Key::equal => Some(TerminalZoom::In),
-        gtk::gdk::Key::minus => Some(TerminalZoom::Out),
-        gtk::gdk::Key::_0 => Some(TerminalZoom::Reset),
-        _ => None,
-    }
 }
 
 fn terminal_zoom_scroll(modifiers: gtk::gdk::ModifierType, dy: f64) -> Option<TerminalZoom> {
@@ -4128,34 +4056,6 @@ mod tests {
     }
 
     #[test]
-    fn tab_shortcuts_cover_creation_and_navigation() {
-        let control = gtk::gdk::ModifierType::CONTROL_MASK;
-        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
-        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
-
-        assert_eq!(
-            tab_shortcut(gtk::gdk::Key::t, control),
-            Some(TabShortcut::New)
-        );
-        assert_eq!(
-            tab_shortcut(gtk::gdk::Key::T, control),
-            Some(TabShortcut::New)
-        );
-        assert_eq!(tab_shortcut(gtk::gdk::Key::t, control_shift), None);
-        assert_eq!(tab_shortcut(gtk::gdk::Key::t, control_alt), None);
-        assert_eq!(tab_shortcut(gtk::gdk::Key::w, control_shift), None);
-        assert_eq!(
-            tab_shortcut(gtk::gdk::Key::Page_Up, control),
-            Some(TabShortcut::Previous)
-        );
-        assert_eq!(
-            tab_shortcut(gtk::gdk::Key::Page_Down, control),
-            Some(TabShortcut::Next)
-        );
-        assert_eq!(tab_shortcut(gtk::gdk::Key::Page_Up, control_shift), None);
-    }
-
-    #[test]
     fn tab_scroll_controls_follow_hidden_content_directions() {
         assert_eq!(
             tab_scroll_state(0.0, 0.0, 400.0, 400.0),
@@ -4234,48 +4134,6 @@ mod tests {
         assert!(tab_close_requires_confirmation(1, true));
         assert!(tab_close_requires_confirmation(2, false));
         assert!(tab_close_requires_confirmation(2, true));
-    }
-
-    #[test]
-    fn terminal_zoom_shortcuts_cover_plain_equal_minus_and_reset() {
-        let control = gtk::gdk::ModifierType::CONTROL_MASK;
-        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
-        let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
-
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::equal, control),
-            Some(TerminalZoom::In)
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::minus, control),
-            Some(TerminalZoom::Out)
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::_0, control),
-            Some(TerminalZoom::Reset)
-        );
-        assert_eq!(terminal_zoom_shortcut(gtk::gdk::Key::KP_Add, control), None);
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::KP_Subtract, control),
-            None
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::equal, control_alt),
-            None
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::equal, gtk::gdk::ModifierType::empty()),
-            None
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::equal, control_shift),
-            None
-        );
-        assert_eq!(
-            terminal_zoom_shortcut(gtk::gdk::Key::minus, control_shift),
-            None
-        );
-        assert_eq!(terminal_zoom_shortcut(gtk::gdk::Key::_0, control_alt), None);
     }
 
     #[test]
@@ -4477,68 +4335,6 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_shortcuts_use_control_without_shift() {
-        let control = gtk::gdk::ModifierType::CONTROL_MASK;
-        let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
-        let keycodes = ClipboardShortcutKeycodes {
-            copy: vec![54],
-            paste: vec![55],
-        };
-
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::c, 0, control, &keycodes),
-            Some(ClipboardShortcut::Copy)
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::v, 0, control, &keycodes),
-            Some(ClipboardShortcut::Paste)
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::c, 54, control_shift, &keycodes),
-            None
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::v, 55, control_shift, &keycodes),
-            None
-        );
-        assert_eq!(
-            clipboard_shortcut(
-                gtk::gdk::Key::c,
-                54,
-                gtk::gdk::ModifierType::empty(),
-                &keycodes
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn clipboard_shortcuts_match_physical_keys_across_layouts() {
-        let control = gtk::gdk::ModifierType::CONTROL_MASK;
-        let keycodes = ClipboardShortcutKeycodes {
-            copy: vec![54],
-            paste: vec![55],
-        };
-
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::Thai_saraae, 54, control, &keycodes),
-            Some(ClipboardShortcut::Copy)
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::Thai_oang, 55, control, &keycodes),
-            Some(ClipboardShortcut::Paste)
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::Thai_saraae, 55, control, &keycodes),
-            Some(ClipboardShortcut::Paste)
-        );
-        assert_eq!(
-            clipboard_shortcut(gtk::gdk::Key::Thai_oang, 56, control, &keycodes),
-            None
-        );
-    }
-
-    #[test]
     fn hyperlink_activation_requires_plain_control() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
@@ -4551,60 +4347,53 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_copy_route_confirms_only_foreground_interrupts_without_selection() {
+    fn clipboard_copy_passes_through_without_a_selection() {
         assert_eq!(
-            clipboard_copy_route(true, true),
+            clipboard_copy_route(true),
             ClipboardCopyRoute::CopySelection
         );
-        assert_eq!(
-            clipboard_copy_route(true, false),
-            ClipboardCopyRoute::CopySelection
-        );
-        assert_eq!(
-            clipboard_copy_route(false, true),
-            ClipboardCopyRoute::ConfirmInterrupt
-        );
-        assert_eq!(
-            clipboard_copy_route(false, false),
-            ClipboardCopyRoute::PassThrough
-        );
+        assert_eq!(clipboard_copy_route(false), ClipboardCopyRoute::PassThrough);
     }
 
     #[test]
-    fn foreground_process_shortcuts_route_control_d_and_control_z() {
+    fn foreground_process_shortcuts_route_control_c_d_and_z() {
         let control = gtk::gdk::ModifierType::CONTROL_MASK;
         let control_shift = control | gtk::gdk::ModifierType::SHIFT_MASK;
         let control_alt = control | gtk::gdk::ModifierType::ALT_MASK;
+        let shortcut =
+            |key, keycode, modifiers| foreground_process_shortcut(key, keycode, modifiers, &[54]);
 
         assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::d, control),
+            shortcut(gtk::gdk::Key::c, 54, control),
+            Some(ForegroundProcessShortcut::ConfirmInterrupt)
+        );
+        assert_eq!(
+            shortcut(gtk::gdk::Key::Thai_saraae, 54, control),
+            Some(ForegroundProcessShortcut::ConfirmInterrupt)
+        );
+        assert_eq!(
+            shortcut(gtk::gdk::Key::d, 40, control),
             Some(ForegroundProcessShortcut::ConfirmEndOfInput)
         );
         assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::D, control),
+            shortcut(gtk::gdk::Key::D, 40, control),
             Some(ForegroundProcessShortcut::ConfirmEndOfInput)
         );
+        assert_eq!(shortcut(gtk::gdk::Key::d, 40, control_shift), None);
         assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::d, control_shift),
-            None
-        );
-        assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::z, control),
+            shortcut(gtk::gdk::Key::z, 52, control),
             Some(ForegroundProcessShortcut::ConfirmSuspend)
         );
         assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::Z, control_shift),
+            shortcut(gtk::gdk::Key::Z, 52, control_shift),
             Some(ForegroundProcessShortcut::Suppress)
         );
+        assert_eq!(shortcut(gtk::gdk::Key::z, 52, control_alt), None);
         assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::z, control_alt),
+            shortcut(gtk::gdk::Key::d, 40, gtk::gdk::ModifierType::empty()),
             None
         );
-        assert_eq!(
-            foreground_process_shortcut(gtk::gdk::Key::d, gtk::gdk::ModifierType::empty()),
-            None
-        );
-        assert_eq!(foreground_process_shortcut(gtk::gdk::Key::c, control), None);
+        assert_eq!(shortcut(gtk::gdk::Key::c, 54, control_shift), None);
     }
 
     #[test]

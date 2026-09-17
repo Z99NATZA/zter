@@ -3,6 +3,32 @@
   "shell": null,
   "background_image": "builtin",
   "header_visible": true,
+  "key_bindings": {
+    "new_tab": [
+      { "key": "t", "modifiers": ["control"], "match": "logical" }
+    ],
+    "previous_tab": [
+      { "key": "Page_Up", "modifiers": ["control"], "match": "logical" }
+    ],
+    "next_tab": [
+      { "key": "Page_Down", "modifiers": ["control"], "match": "logical" }
+    ],
+    "copy": [
+      { "key": "c", "modifiers": ["control"], "match": "physical" }
+    ],
+    "paste": [
+      { "key": "v", "modifiers": ["control"], "match": "physical" }
+    ],
+    "zoom_in": [
+      { "key": "equal", "modifiers": ["control"], "match": "logical" }
+    ],
+    "zoom_out": [
+      { "key": "minus", "modifiers": ["control"], "match": "logical" }
+    ],
+    "zoom_reset": [
+      { "key": "0", "modifiers": ["control"], "match": "logical" }
+    ]
+  },
   "theme": "one-half-dark",
   "font_family": "Monospace",
   "font_size": 12.0,

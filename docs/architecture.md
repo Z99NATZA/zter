@@ -32,6 +32,8 @@ src/main.rs
   atomic per-user persistence.
 - `src/config.rs` combines settings with environment-derived runtime values and
   validates paths used for startup.
+- `src/key_bindings.rs` owns configurable keyboard actions, validation,
+  physical or logical matching, and shortcut labels.
 - `src/theme.rs` owns terminal surface and ANSI palette colors.
 - `src/ui.rs` owns GTK widgets, the shared live application configuration, VTE
   behavior, background image composition, and shell spawning.

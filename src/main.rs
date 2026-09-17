@@ -1,5 +1,6 @@
 mod config;
 mod identity;
+mod key_bindings;
 mod settings;
 mod theme;
 mod ui;

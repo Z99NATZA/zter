@@ -18,10 +18,12 @@ GTK.
 ## Tabs
 
 Tabs share one titlebar row with the window controls. The pinned symbolic `+`
-button beside the tab strip and `Ctrl+T` open a new tab, and the close button
-closes the current tab. `Ctrl+PageUp` and `Ctrl+PageDown` select the previous or
-next tab. `zter header hide` hides this row in every window of the running
-profile-matched application and saves that state for later windows;
+button beside the tab strip and the configured `new_tab` binding open a new
+tab, and the close button closes the current tab. The configured `previous_tab`
+and `next_tab` bindings select adjacent tabs. Their defaults are `Ctrl+T`,
+`Ctrl+PageUp`, and `Ctrl+PageDown`. `zter header hide` hides this row in every
+window of the running profile-matched application and saves that state for
+later windows;
 `zter header show` restores it. Standalone instances adopt the saved state on
 their next start. Tabs can be reordered within a window or moved between zter windows in
 the same process by dragging them. Dropping on the left or right half of an
@@ -102,17 +104,20 @@ terminal surface.
 ## Terminal Surface
 
 The terminal uses the configured font family, font size, scrollback line count,
-and theme. `Ctrl+=`, `Ctrl+-`, and Control-modified mouse or touchpad scrolling
-change the active tab's font scale in one-point steps from `6` through `72`
-points. `Ctrl+0` resets the active tab to 100% at the configured font size.
-Runtime zoom does not resize the active tab's PTY grid. It lasts until `Ctrl+0`,
-a settings save, or that tab closes; it does not change other tabs or the
-settings file, and new tabs start at 100%. Ordinary scrolling retains its
-terminal history behavior. Prompt redraws produced by the running shell remain
-outside zter's control. The terminal scrolls to input on a keystroke, hides the
-pointer while typing, and recognizes OSC 8 hyperlinks. Control-primary-clicking
-a recognized hyperlink opens its URI with the system-default handler. Other
-primary clicks retain their terminal behavior.
+and theme. The configured `zoom_in` and `zoom_out` bindings and fixed
+Control-modified mouse or touchpad scrolling change the active tab's font scale
+in one-point steps from `6` through `72` points. Their defaults are `Ctrl+=` and
+`Ctrl+-`. The configured `zoom_reset` binding defaults to `Ctrl+0` and resets
+the active tab to 100% at the configured font size.
+Runtime zoom does not resize the active tab's PTY grid. It lasts until the
+configured `zoom_reset` binding, a settings save, or that tab closes; it does
+not change other tabs or the settings file, and new tabs start at 100%.
+Ordinary scrolling retains its terminal history behavior. Prompt redraws
+produced by the running shell remain outside zter's control. The terminal
+scrolls to input on a keystroke, hides the pointer while typing, and recognizes
+OSC 8 hyperlinks. Control-primary-clicking a recognized hyperlink opens its URI
+with the system-default handler. Other primary clicks retain their terminal
+behavior.
 
 Saving the settings window applies font, theme, padding, and scrollback changes
 to every current tab. The configured font size replaces each tab's runtime zoom,
@@ -120,15 +125,17 @@ so all current tabs reset to 100% and have the same font size immediately after
 the save. Tabs can be zoomed independently again afterward. Background image
 and opacity changes apply across current windows, while a shell change affects
 only subsequently opened tabs.
-`Ctrl+C` copies selected text from the physical `C` key across keyboard
-layouts. Without a selection, it retains the terminal interrupt behavior when
+The configured Copy binding copies selected text and defaults to `Ctrl+C` on
+the physical `C` key across keyboard layouts. Without a selection, `Ctrl+C`
+retains the terminal interrupt behavior when
 only the shell owns the terminal. When a foreground process owns the terminal,
 zter instead shows a modal with `A process is still running. Close?` and the
 actions Cancel and Close. Cancel is the default action, Escape cancels, and only
 Close sends the interrupt to the terminal child.
-`Ctrl+V` pastes clipboard text from the physical `V` key across keyboard
-layouts; when the clipboard offers no text, zter passes the key to the terminal
-child so its application can handle non-text content such as images.
+The configured Paste binding defaults to `Ctrl+V` on the physical `V` key and
+pastes clipboard text across keyboard layouts. When the clipboard offers no
+text, zter passes the key to the terminal child so its application can handle
+non-text content such as images.
 Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
 and right-aligned shortcut hints; Copy is disabled when there is no selection.
 `Ctrl+D` retains its normal shell behavior when no other foreground process is
