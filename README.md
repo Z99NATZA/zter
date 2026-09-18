@@ -48,11 +48,5 @@ cargo run -- -s
 cargo run -- -v
 ```
 
-## Documentation
-
-- [Settings](docs/settings.md)
-- [Terminal runtime](docs/terminal-runtime.md)
-- [Desktop integration](docs/desktop-integration.md)
-
 ## LICENSE
 MIT [LICENSE](LICENSE)
