@@ -460,6 +460,7 @@ mod tests {
             _ => Vec::new(),
         });
         let control = gdk::ModifierType::CONTROL_MASK;
+        let super_key = gdk::ModifierType::SUPER_MASK;
 
         assert_eq!(
             runtime.action_for_event(gdk::Key::t, 28, control),
@@ -470,8 +471,24 @@ mod tests {
             Some(KeyAction::PreviousTab)
         );
         assert_eq!(
+            runtime.action_for_event(gdk::Key::h, 43, super_key),
+            Some(KeyAction::PreviousTab)
+        );
+        assert_eq!(
+            runtime.action_for_event(gdk::Key::H, 43, super_key),
+            Some(KeyAction::PreviousTab)
+        );
+        assert_eq!(
             runtime.action_for_event(gdk::Key::Page_Down, 117, control),
             Some(KeyAction::NextTab)
+        );
+        assert_eq!(
+            runtime.action_for_event(gdk::Key::l, 46, super_key),
+            Some(KeyAction::NextTab)
+        );
+        assert_eq!(
+            runtime.action_for_event(gdk::Key::h, 43, super_key | control),
+            None
         );
         assert_eq!(
             runtime.action_for_event(gdk::Key::Thai_saraae, 54, control),

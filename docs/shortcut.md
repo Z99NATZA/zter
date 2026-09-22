@@ -9,7 +9,9 @@ matching modes, reserved combinations, and failure handling are documented in
 | `Ctrl+C` on the physical `C` key | Copy selected text |
 | `Ctrl+V` on the physical `V` key | Paste clipboard text |
 | `Ctrl+PageUp` | Previous tab |
+| `Super+H` | Previous tab |
 | `Ctrl+PageDown` | Next tab |
+| `Super+L` | Next tab |
 | `Ctrl+T` | New tab |
 | `Ctrl+=` | Increase the active tab's font size |
 | `Ctrl+-` | Decrease the active tab's font size |

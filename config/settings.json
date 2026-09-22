@@ -8,10 +8,12 @@
       { "key": "t", "modifiers": ["control"], "match": "logical" }
     ],
     "previous_tab": [
-      { "key": "Page_Up", "modifiers": ["control"], "match": "logical" }
+      { "key": "Page_Up", "modifiers": ["control"], "match": "logical" },
+      { "key": "h", "modifiers": ["super"], "match": "logical" }
     ],
     "next_tab": [
-      { "key": "Page_Down", "modifiers": ["control"], "match": "logical" }
+      { "key": "Page_Down", "modifiers": ["control"], "match": "logical" },
+      { "key": "l", "modifiers": ["super"], "match": "logical" }
     ],
     "copy": [
       { "key": "c", "modifiers": ["control"], "match": "physical" }
