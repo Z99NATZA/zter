@@ -87,6 +87,40 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border: 1px solid {};
             border-radius: 12px;
         }}
+        window.zter-window .zter-mini-header {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+            min-height: 10px;
+        }}
+        window.zter-window .zter-mini-controls,
+        window.zter-window .zter-mini-controls windowcontrols {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            box-shadow: none;
+        }}
+        window.zter-window .zter-mini-controls {{
+            margin: 2px 6px 0 0;
+        }}
+        window.zter-window .zter-mini-controls windowcontrols button,
+        window.zter-window .zter-mini-controls button.zter-settings-button {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 999px;
+            box-shadow: none;
+            color: #ABB2BF;
+            min-height: 28px;
+            min-width: 28px;
+            margin: 0 2px;
+            padding: 0;
+        }}
+        window.zter-window .zter-mini-controls windowcontrols button:hover,
+        window.zter-window .zter-mini-controls button.zter-settings-button:hover {{
+            background-color: #444A55;
+        }}
         window.zter-window .zter-header {{
             background-color: {};
             background-image: none;

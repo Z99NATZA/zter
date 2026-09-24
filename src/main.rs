@@ -12,11 +12,12 @@ use gtk::prelude::*;
 
 use crate::config::AppConfig;
 use crate::identity::{
-    APPLICATION_ID, HEADER_HIDE_ACTION, HEADER_SHOW_ACTION, SETTINGS_RELOAD_ACTION,
+    APPLICATION_ID, HEADER_HIDE_ACTION, HEADER_MINI_ACTION, HEADER_SHOW_ACTION,
+    SETTINGS_RELOAD_ACTION,
 };
-use crate::settings::Settings;
+use crate::settings::{HeaderMode, Settings};
 
-const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <hide|show>";
+const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
 const VERSION_OUTPUT: &str = concat!("zter ", env!("CARGO_PKG_VERSION"));
 
 fn main() -> gtk::glib::ExitCode {
@@ -25,8 +26,7 @@ fn main() -> gtk::glib::ExitCode {
         Ok(Command::Run { standalone }) => run_terminal(standalone),
         Ok(Command::SettingsApply) => apply_project_settings(),
         Ok(Command::SettingsReload) => reload_running_settings(),
-        Ok(Command::HeaderHide) => set_header_visibility(false),
-        Ok(Command::HeaderShow) => set_header_visibility(true),
+        Ok(Command::HeaderMode(mode)) => set_header_mode(mode),
         Ok(Command::Version) => {
             println!("{VERSION_OUTPUT}");
             gtk::glib::ExitCode::SUCCESS
@@ -47,8 +47,7 @@ enum Command {
     Run { standalone: bool },
     SettingsApply,
     SettingsReload,
-    HeaderHide,
-    HeaderShow,
+    HeaderMode(HeaderMode),
     Version,
     Help,
 }
@@ -67,8 +66,15 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         [settings, reload] if settings == "settings" && reload == "reload" => {
             Ok(Command::SettingsReload)
         }
-        [header, hide] if header == "header" && hide == "hide" => Ok(Command::HeaderHide),
-        [header, show] if header == "header" && show == "show" => Ok(Command::HeaderShow),
+        [header, mode] if header == "header" && mode == "hide" => {
+            Ok(Command::HeaderMode(HeaderMode::Hidden))
+        }
+        [header, mode] if header == "header" && (mode == "show" || mode == "full") => {
+            Ok(Command::HeaderMode(HeaderMode::Full))
+        }
+        [header, mode] if header == "header" && mode == "mini" => {
+            Ok(Command::HeaderMode(HeaderMode::Mini))
+        }
         _ => Err("unknown command"),
     }
 }
@@ -98,11 +104,11 @@ fn reload_running_settings() -> gtk::glib::ExitCode {
     gtk::glib::ExitCode::SUCCESS
 }
 
-fn set_header_visibility(visible: bool) -> gtk::glib::ExitCode {
-    let path = match Settings::save_header_visibility(visible) {
+fn set_header_mode(mode: HeaderMode) -> gtk::glib::ExitCode {
+    let path = match Settings::save_header_mode(mode) {
         Ok(path) => path,
         Err(error) => {
-            eprintln!("zter: could not update header visibility: {error}");
+            eprintln!("zter: could not update header mode: {error}");
             return gtk::glib::ExitCode::FAILURE;
         }
     };
@@ -111,10 +117,10 @@ fn set_header_visibility(visible: bool) -> gtk::glib::ExitCode {
         gtk::gio::Application::new(Some(APPLICATION_ID), gtk::gio::ApplicationFlags::empty());
     match application.register(None::<&gtk::gio::Cancellable>) {
         Ok(()) if application.is_remote() => {
-            let action = if visible {
-                HEADER_SHOW_ACTION
-            } else {
-                HEADER_HIDE_ACTION
+            let action = match mode {
+                HeaderMode::Full => HEADER_SHOW_ACTION,
+                HeaderMode::Mini => HEADER_MINI_ACTION,
+                HeaderMode::Hidden => HEADER_HIDE_ACTION,
             };
             application.activate_action(action, None);
         }
@@ -124,8 +130,7 @@ fn set_header_visibility(visible: bool) -> gtk::glib::ExitCode {
         ),
     }
 
-    let state = if visible { "shown" } else { "hidden" };
-    println!("zter: header {state}; updated {}", path.display());
+    println!("zter: header {}; updated {}", mode.as_str(), path.display());
     gtk::glib::ExitCode::SUCCESS
 }
 
@@ -264,14 +269,31 @@ mod tests {
     fn header_hide_selects_the_hide_command() {
         let arguments = [OsString::from("header"), OsString::from("hide")];
 
-        assert_eq!(command_from_arguments(&arguments), Ok(Command::HeaderHide));
+        assert_eq!(
+            command_from_arguments(&arguments),
+            Ok(Command::HeaderMode(HeaderMode::Hidden))
+        );
     }
 
     #[test]
     fn header_show_selects_the_show_command() {
         let arguments = [OsString::from("header"), OsString::from("show")];
 
-        assert_eq!(command_from_arguments(&arguments), Ok(Command::HeaderShow));
+        assert_eq!(
+            command_from_arguments(&arguments),
+            Ok(Command::HeaderMode(HeaderMode::Full))
+        );
+    }
+
+    #[test]
+    fn header_full_and_mini_select_their_modes() {
+        for (argument, expected) in [("full", HeaderMode::Full), ("mini", HeaderMode::Mini)] {
+            let arguments = [OsString::from("header"), OsString::from(argument)];
+            assert_eq!(
+                command_from_arguments(&arguments),
+                Ok(Command::HeaderMode(expected))
+            );
+        }
     }
 
     #[test]

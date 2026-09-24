@@ -93,20 +93,24 @@ preparation failure warns and keeps the current background. If the matching
 application is not running, the command succeeds without opening a window
 because the next startup reads the current settings.
 
-## Header Visibility
+## Header Modes
 
-Hide or show the terminal header with:
+Set the terminal header mode with:
 
 ```bash
+zter header full
+zter header mini
 zter header hide
 zter header show
 ```
 
-The command atomically updates `header_visible` in the active release settings
-file. Use `cargo run -- header hide` or `cargo run -- header show` for the
-separate development profile. A running profile-matched application updates all
-of its current windows immediately, and windows opened afterward use the saved
-state. Standalone instances read the saved state when they next start.
+`show` selects `full`. The command atomically updates `header_mode` in the
+active release settings file. Use `cargo run -- header mini`, for example, for
+the separate development profile. A running profile-matched application updates
+all of its current windows immediately, and windows opened afterward use the
+saved mode. Standalone instances read the saved mode when they next start. On
+first load, schema 3 `header_visible: true` becomes `full`, and `false` becomes
+`hidden` without discarding other valid settings.
 
 ## Key Bindings
 
@@ -157,10 +161,10 @@ Every settings file contains every supported key.
 
 | Key | Type | Default | Behavior |
 | --- | --- | --- | --- |
-| `schema_version` | integer | `3` | Selects the settings schema understood by this zter version. |
+| `schema_version` | integer | `4` | Selects the settings schema understood by this zter version. |
 | `shell` | string or `null` | `null` | Shell executable. `null` or an empty string uses `$SHELL`, then `/bin/sh` if the environment value is missing or empty. |
 | `background_image` | string or `null` | `"builtin"` | `"builtin"` selects the default image embedded in zter, another non-empty string selects a local image path, and `null` or an empty string disables the image layer. |
-| `header_visible` | boolean | `true` | Shows the terminal tab and window-control header. `zter header hide` sets it to `false`; `zter header show` sets it to `true`. |
+| `header_mode` | `"full"`, `"mini"`, or `"hidden"` | `"full"` | Selects the persistent terminal header mode. `show` is an alias for `full`, and `hide` selects `hidden`. |
 | `key_bindings` | object | See [Key Bindings](#key-bindings) | Configures keyboard shortcuts for application actions. |
 | `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |

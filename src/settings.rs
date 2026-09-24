@@ -14,7 +14,7 @@ use crate::{
 };
 
 const SETTINGS_FILE: &str = "settings.json";
-const CURRENT_SCHEMA_VERSION: u32 = 3;
+const CURRENT_SCHEMA_VERSION: u32 = 4;
 const DEFAULT_PADDING: u16 = 0;
 pub(crate) const MAX_PADDING: u16 = 128;
 pub(crate) const MIN_FONT_SIZE: f64 = 6.0;
@@ -29,6 +29,24 @@ const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
     OneHalfDark,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HeaderMode {
+    Full,
+    Mini,
+    Hidden,
+}
+
+impl HeaderMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Mini => "mini",
+            Self::Hidden => "hidden",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -72,7 +90,7 @@ pub struct Settings {
     schema_version: u32,
     shell: Option<String>,
     background_image: Option<PathBuf>,
-    header_visible: bool,
+    header_mode: HeaderMode,
     key_bindings: KeyBindings,
     theme: Theme,
     font_family: String,
@@ -118,9 +136,9 @@ impl Settings {
         Self::apply_project_at(&path)
     }
 
-    pub fn save_header_visibility(visible: bool) -> Result<PathBuf, SettingsError> {
+    pub fn save_header_mode(mode: HeaderMode) -> Result<PathBuf, SettingsError> {
         let path = settings_path()?;
-        Self::save_header_visibility_at(&path, visible)?;
+        Self::save_header_mode_at(&path, mode)?;
         Ok(path)
     }
 
@@ -231,9 +249,9 @@ impl Settings {
         })
     }
 
-    fn save_header_visibility_at(path: &Path, visible: bool) -> Result<(), SettingsError> {
+    fn save_header_mode_at(path: &Path, mode: HeaderMode) -> Result<(), SettingsError> {
         let mut settings = Self::load_or_create_at(path)?;
-        settings.header_visible = visible;
+        settings.header_mode = mode;
         write_settings(path, &settings)
     }
 
@@ -245,8 +263,8 @@ impl Settings {
         self.background_image.as_deref()
     }
 
-    pub fn header_visible(&self) -> bool {
-        self.header_visible
+    pub fn header_mode(&self) -> HeaderMode {
+        self.header_mode
     }
 
     pub(crate) fn key_bindings(&self) -> &KeyBindings {
@@ -474,10 +492,22 @@ fn resolve_user_settings(
     match user_settings.get("schema_version") {
         Some(value) if matches!(value.as_u64(), Some(1 | 2)) => {
             migrate_legacy_settings(&mut user_settings, &mut has_invalid_keys);
+            migrate_header_visibility(&mut user_settings, &mut has_invalid_keys);
+            changed = true;
+        }
+        Some(value) if value.as_u64() == Some(3) => {
+            migrate_header_visibility(&mut user_settings, &mut has_invalid_keys);
+            user_settings.insert(
+                "schema_version".to_owned(),
+                Value::from(CURRENT_SCHEMA_VERSION),
+            );
             changed = true;
         }
         Some(value) if value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)) => {}
-        None => changed = true,
+        None => {
+            migrate_header_visibility(&mut user_settings, &mut has_invalid_keys);
+            changed = true;
+        }
         Some(Value::Null) => has_invalid_keys = true,
         Some(Value::String(value)) if value.trim().is_empty() => {
             has_invalid_keys = true;
@@ -549,6 +579,26 @@ fn migrate_legacy_settings(
     );
 }
 
+fn migrate_header_visibility(
+    settings: &mut serde_json::Map<String, Value>,
+    has_invalid_keys: &mut bool,
+) {
+    if !settings.contains_key("header_mode")
+        && let Some(visible) = settings.get("header_visible")
+    {
+        match visible.as_bool() {
+            Some(true) => {
+                settings.insert("header_mode".to_owned(), Value::from("full"));
+            }
+            Some(false) => {
+                settings.insert("header_mode".to_owned(), Value::from("hidden"));
+            }
+            None => *has_invalid_keys = true,
+        }
+    }
+    settings.remove("header_visible");
+}
+
 fn normalize_setting(key: &str, value: &Value, default: &Value) -> Option<Value> {
     match key {
         "schema_version" => (value.as_u64() == Some(u64::from(CURRENT_SCHEMA_VERSION)))
@@ -559,7 +609,9 @@ fn normalize_setting(key: &str, value: &Value, default: &Value) -> Option<Value>
             Value::String(_) => Some(value.clone()),
             _ => None,
         },
-        "header_visible" => value.as_bool().map(Value::from),
+        "header_mode" => serde_json::from_value::<HeaderMode>(value.clone())
+            .ok()
+            .map(|_| value.clone()),
         "key_bindings" => normalize_key_bindings(value, default),
         "theme" => serde_json::from_value::<Theme>(value.clone())
             .ok()
@@ -771,7 +823,7 @@ mod tests {
                 "background_image_opacity",
                 "font_family",
                 "font_size",
-                "header_visible",
+                "header_mode",
                 "key_bindings",
                 "padding_bottom",
                 "padding_left",
@@ -964,7 +1016,7 @@ mod tests {
         let saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
         assert_eq!(settings.background_image_opacity(), 0.2);
-        assert_eq!(saved["schema_version"], 3);
+        assert_eq!(saved["schema_version"], 4);
         assert!(saved.get("wallpaper_shade").is_none());
         assert!(saved.get("wallpaper_opacity").is_none());
         assert_eq!(saved["background_image_opacity"], 0.2);
@@ -989,7 +1041,7 @@ mod tests {
         assert_eq!(settings.background_image(), Some(Path::new("/tmp/bg.png")));
         assert_eq!(settings.background_image_opacity(), 0.25);
         assert_eq!(settings.window_opacity(), 1.0);
-        assert_eq!(saved["schema_version"], 3);
+        assert_eq!(saved["schema_version"], 4);
         assert!(saved.get("wallpaper").is_none());
         assert!(saved.get("wallpaper_opacity").is_none());
         assert_eq!(saved["background_image"], "/tmp/bg.png");
@@ -1106,7 +1158,7 @@ mod tests {
         let path = directory.join("settings.json");
         fs::create_dir_all(&directory).unwrap();
         let source =
-            PROJECT_SETTINGS_JSON.replace("\"schema_version\": 3", "\"schema_version\": 99");
+            PROJECT_SETTINGS_JSON.replace("\"schema_version\": 4", "\"schema_version\": 99");
         fs::write(&path, &source).unwrap();
 
         assert_eq!(
@@ -1171,7 +1223,7 @@ mod tests {
         assert_eq!(reloaded.scrollback_lines(), 25_000);
         assert_eq!(reloaded.background_image_opacity(), 0.25);
         assert_eq!(reloaded.window_opacity(), 0.85);
-        assert!(reloaded.header_visible());
+        assert_eq!(reloaded.header_mode(), HeaderMode::Full);
         assert_eq!(
             serde_json::to_value(reloaded.key_bindings()).unwrap()["new_tab"],
             serde_json::json!([])
@@ -1180,8 +1232,8 @@ mod tests {
     }
 
     #[test]
-    fn header_visibility_update_preserves_other_settings() {
-        let directory = test_directory("header-visibility");
+    fn header_mode_update_preserves_other_settings() {
+        let directory = test_directory("header-mode");
         let path = directory.join("settings.json");
         let mut value = project_settings_value().unwrap();
         value
@@ -1191,15 +1243,36 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
 
-        Settings::save_header_visibility_at(&path, false).unwrap();
-        let hidden = Settings::load_or_create_at(&path).unwrap();
-        assert!(!hidden.header_visible());
-        assert_eq!(hidden.font_size(), 16.0);
+        for mode in [HeaderMode::Mini, HeaderMode::Hidden, HeaderMode::Full] {
+            Settings::save_header_mode_at(&path, mode).unwrap();
+            let reloaded = Settings::load_or_create_at(&path).unwrap();
+            assert_eq!(reloaded.header_mode(), mode);
+            assert_eq!(reloaded.font_size(), 16.0);
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
 
-        Settings::save_header_visibility_at(&path, true).unwrap();
-        let shown = Settings::load_or_create_at(&path).unwrap();
-        assert!(shown.header_visible());
-        assert_eq!(shown.font_size(), 16.0);
+    #[test]
+    fn schema_three_header_visibility_migrates_without_losing_other_values() {
+        let directory = test_directory("header-migration");
+        let path = directory.join("settings.json");
+        fs::create_dir_all(&directory).unwrap();
+        for (visible, mode) in [(false, HeaderMode::Hidden), (true, HeaderMode::Full)] {
+            fs::write(
+                &path,
+                format!("{{\"schema_version\":3,\"header_visible\":{visible},\"font_size\":16.0}}"),
+            )
+            .unwrap();
+
+            let settings = Settings::load_or_create_at(&path).unwrap();
+            let saved: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+            assert_eq!(settings.header_mode(), mode);
+            assert_eq!(settings.font_size(), 16.0);
+            assert_eq!(saved["schema_version"], 4);
+            assert_eq!(saved["header_mode"], mode.as_str());
+            assert!(saved.get("header_visible").is_none());
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 

@@ -18,11 +18,12 @@ use vte4::prelude::*;
 use crate::{
     config::{AppConfig, BackgroundImageSource, DEFAULT_BACKGROUND_IMAGE_SETTING},
     identity::{
-        APPLICATION_NAME, HEADER_HIDE_ACTION, HEADER_SHOW_ACTION, ICON_NAME, SETTINGS_RELOAD_ACTION,
+        APPLICATION_NAME, HEADER_HIDE_ACTION, HEADER_MINI_ACTION, HEADER_SHOW_ACTION, ICON_NAME,
+        SETTINGS_RELOAD_ACTION,
     },
     key_bindings::{KeyAction, RuntimeKeyBindings},
     settings::{
-        MAX_BACKGROUND_IMAGE_OPACITY, MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES,
+        HeaderMode, MAX_BACKGROUND_IMAGE_OPACITY, MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES,
         MAX_WINDOW_OPACITY, MIN_FONT_SIZE, MIN_WINDOW_OPACITY, Settings, SettingsUpdate,
         TerminalPadding,
     },
@@ -47,6 +48,7 @@ const TAB_WIDTH: f64 = 220.0;
 const TAB_SCROLL_STEP: f64 = 80.0;
 const TAB_SCROLL_OVERLAY_WIDTH: f64 = 28.0;
 const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
+const MINI_HEADER_HIDE_DELAY: Duration = Duration::from_millis(400);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
 const TERMINAL_ZOOM_STEP: f64 = 1.0;
@@ -257,6 +259,12 @@ fn selected_background_image(selected: u32, path: &gtk::Entry) -> Option<PathBuf
 struct WindowContext {
     window: gtk::glib::WeakRef<gtk::ApplicationWindow>,
     header: gtk::glib::WeakRef<gtk::Box>,
+    mini_header: gtk::glib::WeakRef<gtk::WindowHandle>,
+    mini_controls: gtk::glib::WeakRef<gtk::Box>,
+    mini_pointer_inside: Cell<bool>,
+    controls_pointer_inside: Cell<bool>,
+    header_hide_source: RefCell<Option<gtk::glib::SourceId>>,
+    settings_window: RefCell<Option<gtk::glib::WeakRef<gtk::Window>>>,
     notebook: gtk::glib::WeakRef<gtk::Notebook>,
     tab_strip: gtk::glib::WeakRef<gtk::Box>,
     tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
@@ -613,17 +621,44 @@ fn create_window(
     );
     let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
     install_settings_reload_action(application);
-    install_header_visibility_actions(application);
+    install_header_mode_actions(application);
 
     let notebook = create_notebook();
     let close_protection = CloseProtection::default();
     let header = create_header();
+    let mini_header = gtk::WindowHandle::new();
+    mini_header.add_css_class("zter-mini-header");
+    mini_header.set_halign(gtk::Align::Fill);
+    mini_header.set_valign(gtk::Align::Start);
+    mini_header.set_visible(false);
+    let mini_controls = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    mini_controls.add_css_class("zter-mini-controls");
+    mini_controls.set_halign(gtk::Align::End);
+    mini_controls.set_valign(gtk::Align::Start);
+    mini_controls.set_visible(false);
+    let mini_settings = create_settings_button();
+    let mini_window_controls = gtk::WindowControls::new(gtk::PackType::End);
+    mini_window_controls.set_valign(gtk::Align::Center);
+    mini_controls.append(&mini_settings);
+    mini_controls.append(&mini_window_controls);
+    let content_overlay = gtk::Overlay::new();
+    content_overlay.set_child(Some(&notebook));
+    content_overlay.add_overlay(&mini_header);
+    content_overlay.set_measure_overlay(&mini_header, false);
+    content_overlay.add_overlay(&mini_controls);
+    content_overlay.set_measure_overlay(&mini_controls, false);
     let drop_motion = gtk::DropControllerMotion::new();
     drop_motion.set_propagation_phase(gtk::PropagationPhase::Capture);
     window.add_controller(drop_motion.clone());
     let context = Rc::new(WindowContext {
         window: window.downgrade(),
         header: header.header.downgrade(),
+        mini_header: mini_header.downgrade(),
+        mini_controls: mini_controls.downgrade(),
+        mini_pointer_inside: Cell::new(false),
+        controls_pointer_inside: Cell::new(false),
+        header_hide_source: RefCell::new(None),
+        settings_window: RefCell::new(None),
         notebook: notebook.downgrade(),
         tab_strip: header.tab_strip.downgrade(),
         tab_scroller: header.tab_scroller.downgrade(),
@@ -640,6 +675,7 @@ fn create_window(
     install_new_tab_button(&header.inline_new_tab, &context);
     install_new_tab_button(&header.pinned_new_tab, &context);
     install_settings_button(&header.settings, &context);
+    install_settings_button(&mini_settings, &context);
     install_key_bindings(&context);
     install_tab_switch_handler(
         &window,
@@ -651,10 +687,12 @@ fn create_window(
     install_window_close_protection(&window, &notebook, &close_protection);
     install_header_drop_target(&header.drag_space, &context);
     install_header_drop_target(&header.overflow_drag_space, &context);
+    install_header_drop_target(&mini_header, &context);
+    install_mini_header_hover(&mini_header, &mini_controls, &context);
 
-    header.header.set_visible(config.header_visible());
     window.set_titlebar(Some(&header.header));
-    window.set_child(Some(&notebook));
+    window.set_child(Some(&content_overlay));
+    apply_header_mode_to_window(&context, config.header_mode());
     if initial_tab {
         add_terminal_tab(&context);
         window.present();
@@ -733,13 +771,7 @@ fn create_header() -> HeaderWidgets {
     let window_controls = gtk::WindowControls::new(gtk::PackType::End);
     window_controls.set_valign(gtk::Align::Center);
 
-    let settings = gtk::Button::builder()
-        .icon_name("preferences-system-symbolic")
-        .has_frame(false)
-        .tooltip_text("Settings")
-        .build();
-    settings.add_css_class("zter-settings-button");
-    settings.set_valign(gtk::Align::Center);
+    let settings = create_settings_button();
 
     header.append(&tab_overlay);
     header.append(&pinned_new_tab);
@@ -757,6 +789,116 @@ fn create_header() -> HeaderWidgets {
         drag_space,
         overflow_drag_space,
     }
+}
+
+fn create_settings_button() -> gtk::Button {
+    let settings = gtk::Button::builder()
+        .icon_name("preferences-system-symbolic")
+        .has_frame(false)
+        .tooltip_text("Settings")
+        .build();
+    settings.add_css_class("zter-settings-button");
+    settings.set_valign(gtk::Align::Center);
+
+    settings
+}
+
+fn apply_header_mode_to_window(context: &WindowContext, mode: HeaderMode) {
+    let (Some(header), Some(mini_header), Some(mini_controls)) = (
+        context.header.upgrade(),
+        context.mini_header.upgrade(),
+        context.mini_controls.upgrade(),
+    ) else {
+        return;
+    };
+
+    if mode == HeaderMode::Mini && mini_header.is_visible() {
+        return;
+    }
+    if let Some(source) = context.header_hide_source.borrow_mut().take() {
+        source.remove();
+    }
+    context.mini_pointer_inside.set(false);
+    context.controls_pointer_inside.set(false);
+
+    header.set_visible(mode == HeaderMode::Full);
+    mini_header.set_visible(mode == HeaderMode::Mini);
+    mini_controls.set_visible(false);
+}
+
+fn install_mini_header_hover(
+    mini_header: &gtk::WindowHandle,
+    mini_controls: &gtk::Box,
+    context: &Rc<WindowContext>,
+) {
+    let mini_motion = gtk::EventControllerMotion::new();
+    let context_weak = Rc::downgrade(context);
+    mini_motion.connect_enter(move |_, _, _| {
+        if let Some(context) = context_weak.upgrade() {
+            context.mini_pointer_inside.set(true);
+            reveal_mini_controls(&context);
+        }
+    });
+    let context_weak = Rc::downgrade(context);
+    mini_motion.connect_leave(move |_| {
+        if let Some(context) = context_weak.upgrade() {
+            context.mini_pointer_inside.set(false);
+            schedule_mini_controls_hide(&context);
+        }
+    });
+    mini_header.add_controller(mini_motion);
+
+    let controls_motion = gtk::EventControllerMotion::new();
+    let context_weak = Rc::downgrade(context);
+    controls_motion.connect_enter(move |_, _, _| {
+        if let Some(context) = context_weak.upgrade() {
+            context.controls_pointer_inside.set(true);
+            reveal_mini_controls(&context);
+        }
+    });
+    let context_weak = Rc::downgrade(context);
+    controls_motion.connect_leave(move |_| {
+        if let Some(context) = context_weak.upgrade() {
+            context.controls_pointer_inside.set(false);
+            schedule_mini_controls_hide(&context);
+        }
+    });
+    mini_controls.add_controller(controls_motion);
+}
+
+fn reveal_mini_controls(context: &Rc<WindowContext>) {
+    if let Some(source) = context.header_hide_source.borrow_mut().take() {
+        source.remove();
+    }
+    if context.config.borrow().header_mode() == HeaderMode::Mini
+        && let Some(controls) = context.mini_controls.upgrade()
+    {
+        controls.set_visible(true);
+    }
+}
+
+fn schedule_mini_controls_hide(context: &Rc<WindowContext>) {
+    if let Some(source) = context.header_hide_source.borrow_mut().take() {
+        source.remove();
+    }
+    if context.config.borrow().header_mode() != HeaderMode::Mini {
+        return;
+    }
+    let context_weak = Rc::downgrade(context);
+    let source = gtk::glib::timeout_add_local_once(MINI_HEADER_HIDE_DELAY, move || {
+        let Some(context) = context_weak.upgrade() else {
+            return;
+        };
+        context.header_hide_source.borrow_mut().take();
+        if !context.mini_pointer_inside.get()
+            && !context.controls_pointer_inside.get()
+            && context.config.borrow().header_mode() == HeaderMode::Mini
+            && let Some(controls) = context.mini_controls.upgrade()
+        {
+            controls.set_visible(false);
+        }
+    });
+    context.header_hide_source.replace(Some(source));
 }
 
 fn create_new_tab_button() -> gtk::Button {
@@ -795,11 +937,12 @@ fn install_new_tab_button(button: &gtk::Button, context: &Rc<WindowContext>) {
 
 fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
     let context = Rc::downgrade(context);
-    let settings_window = Rc::new(RefCell::new(None::<gtk::glib::WeakRef<gtk::Window>>));
-    let settings_window_for_click = settings_window.clone();
-
     button.connect_clicked(move |_| {
-        if let Some(window) = settings_window_for_click
+        let Some(context) = context.upgrade() else {
+            return;
+        };
+        if let Some(window) = context
+            .settings_window
             .borrow()
             .as_ref()
             .and_then(gtk::glib::WeakRef::upgrade)
@@ -807,9 +950,6 @@ fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
             window.present();
             return;
         }
-        let Some(context) = context.upgrade() else {
-            return;
-        };
         let Some(parent) = context.window.upgrade() else {
             return;
         };
@@ -824,11 +964,13 @@ fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
         };
 
         let window = create_settings_window(&parent, settings);
-        *settings_window_for_click.borrow_mut() = Some(window.downgrade());
+        context.settings_window.replace(Some(window.downgrade()));
 
-        let settings_window_for_destroy = settings_window_for_click.clone();
+        let context_weak = Rc::downgrade(&context);
         window.connect_destroy(move |_| {
-            *settings_window_for_destroy.borrow_mut() = None;
+            if let Some(context) = context_weak.upgrade() {
+                context.settings_window.borrow_mut().take();
+            }
         });
         window.present();
     });
@@ -1391,9 +1533,7 @@ fn apply_app_config(config: &AppConfig) {
                 &gtk::prelude::WidgetExt::display(&window),
             ));
         }
-        if let Some(header) = context.header.upgrade() {
-            header.set_visible(config.header_visible());
-        }
+        apply_header_mode_to_window(&context, config.header_mode());
         if let Some(notebook) = context.notebook.upgrade() {
             for page_number in 0..notebook.n_pages() {
                 let Some(page) = notebook.nth_page(Some(page_number)) else {
@@ -3679,31 +3819,26 @@ fn install_settings_reload_action(application: &gtk::Application) {
     application.add_action(&action);
 }
 
-fn install_header_visibility_actions(application: &gtk::Application) {
-    install_header_visibility_action(application, HEADER_HIDE_ACTION, false);
-    install_header_visibility_action(application, HEADER_SHOW_ACTION, true);
+fn install_header_mode_actions(application: &gtk::Application) {
+    install_header_mode_action(application, HEADER_HIDE_ACTION, HeaderMode::Hidden);
+    install_header_mode_action(application, HEADER_SHOW_ACTION, HeaderMode::Full);
+    install_header_mode_action(application, HEADER_MINI_ACTION, HeaderMode::Mini);
 }
 
-fn install_header_visibility_action(
-    application: &gtk::Application,
-    action_name: &str,
-    visible: bool,
-) {
+fn install_header_mode_action(application: &gtk::Application, action_name: &str, mode: HeaderMode) {
     if application.lookup_action(action_name).is_some() {
         return;
     }
 
     let action = gtk::gio::SimpleAction::new(action_name, None);
-    action.connect_activate(move |_, _| apply_header_visibility(visible));
+    action.connect_activate(move |_, _| apply_header_mode(mode));
     application.add_action(&action);
 }
 
-fn apply_header_visibility(visible: bool) {
+fn apply_header_mode(mode: HeaderMode) {
     for context in active_window_contexts() {
-        context.config.borrow_mut().set_header_visible(visible);
-        if let Some(header) = context.header.upgrade() {
-            header.set_visible(visible);
-        }
+        context.config.borrow_mut().set_header_mode(mode);
+        apply_header_mode_to_window(&context, mode);
     }
 }
 

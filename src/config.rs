@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     key_bindings::KeyBindings,
-    settings::{Settings, SettingsError, TerminalPadding, Theme},
+    settings::{HeaderMode, Settings, SettingsError, TerminalPadding, Theme},
 };
 
 const FALLBACK_SHELL: &str = "/bin/sh";
@@ -25,7 +25,7 @@ pub struct AppConfig {
     shell: String,
     working_directory: String,
     background_image: Option<BackgroundImageSource>,
-    header_visible: bool,
+    header_mode: HeaderMode,
     key_bindings: KeyBindings,
     theme: Theme,
     font_family: String,
@@ -62,7 +62,7 @@ impl AppConfig {
             shell,
             working_directory,
             background_image,
-            header_visible: settings.header_visible(),
+            header_mode: settings.header_mode(),
             key_bindings: settings.key_bindings().clone(),
             theme: settings.theme(),
             font_family: settings.font_family().to_owned(),
@@ -86,12 +86,12 @@ impl AppConfig {
         self.background_image.as_ref()
     }
 
-    pub fn header_visible(&self) -> bool {
-        self.header_visible
+    pub fn header_mode(&self) -> HeaderMode {
+        self.header_mode
     }
 
-    pub(crate) fn set_header_visible(&mut self, visible: bool) {
-        self.header_visible = visible;
+    pub(crate) fn set_header_mode(&mut self, mode: HeaderMode) {
+        self.header_mode = mode;
     }
 
     pub(crate) fn key_bindings(&self) -> &KeyBindings {
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(config.scrollback_lines(), 10_000);
         assert_eq!(config.background_image_opacity(), 0.1);
         assert_eq!(config.window_opacity(), 1.0);
-        assert!(config.header_visible());
+        assert_eq!(config.header_mode(), HeaderMode::Full);
     }
 
     #[test]
@@ -331,11 +331,11 @@ mod tests {
     #[test]
     fn hidden_header_setting_is_exposed_to_the_ui() {
         let mut value = serde_json::to_value(Settings::defaults()).unwrap();
-        value["header_visible"] = serde_json::Value::Bool(false);
+        value["header_mode"] = serde_json::Value::from("hidden");
         let settings = serde_json::from_value(value).unwrap();
         let config = AppConfig::from_values(settings, None, PathBuf::from("/tmp"), None).unwrap();
 
-        assert!(!config.header_visible());
+        assert_eq!(config.header_mode(), HeaderMode::Hidden);
     }
 
     fn customized_settings(
@@ -344,10 +344,10 @@ mod tests {
     ) -> Settings {
         let key_bindings = serde_json::to_value(Settings::defaults().key_bindings()).unwrap();
         serde_json::from_value(serde_json::json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "shell": shell,
             "background_image": background_image,
-            "header_visible": true,
+            "header_mode": "full",
             "key_bindings": key_bindings,
             "theme": "one-half-dark",
             "font_family": "Monospace",
