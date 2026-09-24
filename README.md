@@ -48,5 +48,11 @@ cargo run -- -s
 cargo run -- -v
 ```
 
+## Documentation
+
+[Settings](docs/settings.md)
+
+[Shortcuts](docs/shortcut.md)
+
 ## LICENSE
 MIT [LICENSE](LICENSE)
