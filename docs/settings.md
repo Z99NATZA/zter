@@ -6,9 +6,9 @@
 | --- | --- | --- |
 | [Apply project settings](#apply-project-settings) | `cargo run -- settings apply` | `cargo run --release -- settings apply` |
 | [Reload changed background settings](#reload-running-background-settings) | `cargo run -- settings reload` | `zter settings reload` |
-| [Full header](#header-modes) | `cargo run -- header full` | `zter header full` |
-| [Mini header](#header-modes) | `cargo run -- header mini` | `zter header mini` |
-| [Hide header](#header-modes) | `cargo run -- header hide` | `zter header hide` |
+| [Full header](#header-modes) | `cargo run -- header full` | `zter hf` |
+| [Mini header](#header-modes) | `cargo run -- header mini` | `zter hm` |
+| [Hide header](#header-modes) | `cargo run -- header hide` | `zter hh` |
 | [Show header](#header-modes) | `cargo run -- header show` | `zter header show` |
 
 For the development header commands, you can also run `make header full`,
@@ -105,6 +105,9 @@ because the next startup reads the current settings.
 
 `show` selects `full`. Each header command in [Quick Use](#quick-use) atomically
 updates `header_mode` in the active profile's settings file.
+Release builds also retain the long `zter header <full|mini|hide|show>` commands.
+The short commands work with `cargo run --release --` as well as the installed
+`zter` binary. Debug builds do not accept them.
 
 A running profile-matched application updates all of its current windows
 immediately, and windows opened afterward use the saved mode. Standalone

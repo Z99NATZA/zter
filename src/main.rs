@@ -17,7 +17,10 @@ use crate::identity::{
 };
 use crate::settings::{HeaderMode, Settings};
 
+#[cfg(debug_assertions)]
 const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
+#[cfg(not(debug_assertions))]
+const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>\n       zter <hf|hm|hh>";
 const VERSION_OUTPUT: &str = concat!("zter ", env!("CARGO_PKG_VERSION"));
 
 fn main() -> gtk::glib::ExitCode {
@@ -75,6 +78,12 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         [header, mode] if header == "header" && mode == "mini" => {
             Ok(Command::HeaderMode(HeaderMode::Mini))
         }
+        #[cfg(not(debug_assertions))]
+        [alias] if alias == "hf" => Ok(Command::HeaderMode(HeaderMode::Full)),
+        #[cfg(not(debug_assertions))]
+        [alias] if alias == "hm" => Ok(Command::HeaderMode(HeaderMode::Mini)),
+        #[cfg(not(debug_assertions))]
+        [alias] if alias == "hh" => Ok(Command::HeaderMode(HeaderMode::Hidden)),
         _ => Err("unknown command"),
     }
 }
@@ -293,6 +302,34 @@ mod tests {
                 command_from_arguments(&arguments),
                 Ok(Command::HeaderMode(expected))
             );
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_header_aliases_select_their_modes() {
+        for (alias, expected) in [
+            ("hf", HeaderMode::Full),
+            ("hm", HeaderMode::Mini),
+            ("hh", HeaderMode::Hidden),
+        ] {
+            assert_eq!(
+                command_from_arguments(&[OsString::from(alias)]),
+                Ok(Command::HeaderMode(expected))
+            );
+            assert!(USAGE.contains(alias));
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_build_rejects_release_header_aliases() {
+        for alias in ["hf", "hm", "hh"] {
+            assert_eq!(
+                command_from_arguments(&[OsString::from(alias)]),
+                Err("unknown command")
+            );
+            assert!(!USAGE.contains(alias));
         }
     }
 
