@@ -7,7 +7,7 @@
 - Developed on Ubuntu
 ```
 
-![Terminal interface](docs/images/terminal-interface.png)
+![Terminal interface](docs/images/terminal-interface-1.png)
 ![Terminal interface2](docs/images/terminal-interface-2.png)
 
 ## Installation
