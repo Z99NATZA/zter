@@ -1,5 +1,24 @@
 # Settings
 
+## Quick Use
+
+| Task | Development | Release |
+| --- | --- | --- |
+| [Apply project settings](#apply-project-settings) | `cargo run -- settings apply` | `cargo run --release -- settings apply` |
+| [Reload changed background settings](#reload-running-background-settings) | `cargo run -- settings reload` | `zter settings reload` |
+| [Full header](#header-modes) | `cargo run -- header full` | `zter header full` |
+| [Mini header](#header-modes) | `cargo run -- header mini` | `zter header mini` |
+| [Hide header](#header-modes) | `cargo run -- header hide` | `zter header hide` |
+| [Show header](#header-modes) | `cargo run -- header show` | `zter header show` |
+
+For the development header commands, you can also run `make header full`,
+`make header mini`, `make header hide`, or `make header show`.
+
+Use the settings button for interactive editing; see [Settings Window](#settings-window).
+For available keys and defaults, see [Keys](#keys).
+
+## Settings Files
+
 zter keeps a complete default template at
 `config/settings.json`. The project settings are tracked by Git and embedded in
 the binary, so a clone contains every supported key and an installed binary can
@@ -17,25 +36,7 @@ and are not tracked by the project Git history.
 
 The settings button beside the window controls opens one compact modal for its
 terminal window. It edits the active debug or release profile shared by all
-zter windows in that application. An unboxed radio group selects the Default,
-Custom, or None background image mode. Custom can browse local image formats supported
-by GdkPixbuf and place the selected path in the draft. Background image opacity
-and window opacity each have a checkbox before the label. Clicking the label
-toggles the checkbox. Both opacity controls start checked. Unchecked checkbox
-and radio indicators use the settings background and border tones. Checked
-indicators, enabled slider highlights, and resting slider thumbs use the muted
-theme foreground with the main settings background for indicator marks. Hovered
-indicators use the same muted foreground for their borders. Focused indicators
-and hovered or focused slider thumbs use the theme white; no colored accent is
-used. An unchecked opacity control applies the embedded default and keeps the
-current slider value in the draft; a checked opacity control applies the slider
-value. Disabled settings controls use `0.3` opacity, and disabled slider tracks
-are gray.
-Opacity sliders show two-decimal values. The header close control uses the
-terminal window's native control style. Numeric decrement and increment
-controls keep circular `28px` background boxes inside their fields, with
-transparent resting fills and neutral `#444A55` hover fills.
-Settings controls change state without transition durations.
+zter windows in that application.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
 background image, background image opacity, and window opacity changes then
@@ -47,23 +48,34 @@ Escape, clicking Cancel, or closing the parent terminal discards unsaved edits.
 A save or runtime-configuration error is shown in the modal and retains the
 draft.
 
+An unboxed radio group selects the Default, Custom, or None background image
+mode. Custom can browse local image formats supported by GdkPixbuf and place the
+selected path in the draft. Background image opacity and window opacity each
+have a checkbox before the label; clicking the label toggles the checkbox.
+Both opacity controls start checked. An unchecked opacity control applies the
+embedded default and keeps the current slider value in the draft; a checked
+opacity control applies the slider value. Opacity sliders show two-decimal
+values.
+
+Unchecked checkbox and radio indicators use the settings background and border
+tones. Checked indicators, enabled slider highlights, and resting slider thumbs
+use the muted theme foreground with the main settings background for indicator
+marks. Hovered indicators use the same muted foreground for their borders.
+Focused indicators and hovered or focused slider thumbs use theme white; no
+colored accent is used. Disabled settings controls use `0.3` opacity, and
+disabled slider tracks are gray. The header close control uses the terminal
+window's native control style. Numeric decrement and increment controls keep
+circular `28px` background boxes inside their fields, with transparent resting
+fills and neutral `#444A55` hover fills. Settings controls change state without
+transition durations.
+
 ## Apply Project Settings
 
-After editing `config/settings.json`, apply all project values to the per-user
-file with:
+After editing `config/settings.json`, use the appropriate `settings apply`
+command in [Quick Use](#quick-use) to copy all project values to the development
+or release per-user file. The command validates the project settings before
+changing the per-user file.
 
-```bash
-cargo run -- settings apply
-```
-
-This command uses the debug profile and therefore updates the development
-settings. Apply the current project settings to the release namespace with:
-
-```bash
-cargo run --release -- settings apply
-```
-
-The command validates the project settings before changing the per-user file.
 If the per-user file exists, zter first saves its exact previous contents as
 `settings.json.bak` in the same directory, then atomically replaces
 `settings.json`. The command can therefore replace malformed per-user settings
@@ -78,13 +90,9 @@ the command applies those values.
 
 After changing the release settings or a referenced local image, ask a running
 installed application to reload its background image source, background image
-opacity, and window opacity with:
+opacity, and window opacity with `settings reload`. Use the development command
+in [Quick Use](#quick-use) for the separate development application.
 
-```bash
-zter settings reload
-```
-
-Use `cargo run -- settings reload` for the separate development application.
 The command prepares the replacement background on a temporary worker thread
 and updates every current tab together; tabs opened later share the replacement
 texture. This command reloads only background image and opacity settings; the
@@ -95,22 +103,14 @@ because the next startup reads the current settings.
 
 ## Header Modes
 
-Set the terminal header mode with:
+`show` selects `full`. Each header command in [Quick Use](#quick-use) atomically
+updates `header_mode` in the active profile's settings file.
 
-```bash
-zter header full
-zter header mini
-zter header hide
-zter header show
-```
-
-`show` selects `full`. The command atomically updates `header_mode` in the
-active release settings file. Use `cargo run -- header mini`, for example, for
-the separate development profile. A running profile-matched application updates
-all of its current windows immediately, and windows opened afterward use the
-saved mode. Standalone instances read the saved mode when they next start. On
-first load, schema 3 `header_visible: true` becomes `full`, and `false` becomes
-`hidden` without discarding other valid settings.
+A running profile-matched application updates all of its current windows
+immediately, and windows opened afterward use the saved mode. Standalone
+instances read the saved mode when they next start. On first load, schema 3
+`header_visible: true` becomes `full`, and `false` becomes `hidden` without
+discarding other valid settings.
 
 ## Key Bindings
 

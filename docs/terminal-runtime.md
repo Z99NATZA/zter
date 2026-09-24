@@ -22,11 +22,15 @@ symbolic `+` button beside the tab strip and the configured `new_tab` binding
 open a new tab, and the close button closes the current tab. The configured
 `previous_tab` and `next_tab` bindings select adjacent tabs. Their defaults are `Ctrl+T`,
 `Ctrl+PageUp` or `Super+H`, and `Ctrl+PageDown` or `Super+L`.
-`zter header mini` keeps the same terminal area as hidden mode. A transparent
-`10px` target at the top edge moves the window and accepts dropped tabs.
-Hovering over it shows only the settings and window-control icons at the upper
-right over the terminal. They hide `400ms` after the pointer moves away, without
-resizing the terminal grid. The tab row remains hidden in mini mode.
+`zter header mini` keeps the same terminal area as hidden mode. An invisible
+`10px` target at the top edge moves the window and accepts dropped tabs. Hovering
+over it gives the bar a subtle tint and shows settings and window-control icons
+at the upper right. Each icon and its click target fit within the `10px` bar,
+with `10px` gaps between buttons. The buttons add no hover or active decoration.
+The bar changes color without animation. The controls hide `400ms` after the
+pointer moves away, and the bar
+returns to the terminal color. The terminal grid does not resize. The tab row
+remains hidden in mini mode.
 `zter header hide` removes both the drag target and icons; `zter header full` or
 `zter header show` restores the persistent full row. These commands change all
 windows of the running profile-matched application and save the mode for later

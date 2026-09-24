@@ -93,33 +93,32 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border-width: 0;
             box-shadow: none;
             min-height: 10px;
+            transition: none;
         }}
-        window.zter-window .zter-mini-controls,
-        window.zter-window .zter-mini-controls windowcontrols {{
-            background-color: transparent;
-            background-image: none;
-            border-width: 0;
-            box-shadow: none;
+        window.zter-window .zter-mini-header.zter-mini-header-active {{
+            background-color: rgba(171, 178, 191, 0.12);
         }}
         window.zter-window .zter-mini-controls {{
-            margin: 2px 6px 0 0;
-        }}
-        window.zter-window .zter-mini-controls windowcontrols button,
-        window.zter-window .zter-mini-controls button.zter-settings-button {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
-            border-radius: 999px;
             box-shadow: none;
-            color: #ABB2BF;
-            min-height: 28px;
-            min-width: 28px;
-            margin: 0 2px;
-            padding: 0;
+            margin: 0 6px 0 0;
         }}
-        window.zter-window .zter-mini-controls windowcontrols button:hover,
-        window.zter-window .zter-mini-controls button.zter-settings-button:hover {{
-            background-color: #444A55;
+        window.zter-window .zter-mini-controls button.zter-mini-control,
+        window.zter-window .zter-mini-controls button.zter-mini-control:hover,
+        window.zter-window .zter-mini-controls button.zter-mini-control:active {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 0;
+            box-shadow: none;
+            color: #DCDFE4;
+            min-height: 10px;
+            min-width: 10px;
+            margin: 0;
+            padding: 0;
+            transition: none;
         }}
         window.zter-window .zter-header {{
             background-color: {};

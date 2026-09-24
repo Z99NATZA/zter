@@ -631,16 +631,19 @@ fn create_window(
     mini_header.set_halign(gtk::Align::Fill);
     mini_header.set_valign(gtk::Align::Start);
     mini_header.set_visible(false);
-    let mini_controls = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let mini_controls = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     mini_controls.add_css_class("zter-mini-controls");
     mini_controls.set_halign(gtk::Align::End);
     mini_controls.set_valign(gtk::Align::Start);
     mini_controls.set_visible(false);
-    let mini_settings = create_settings_button();
-    let mini_window_controls = gtk::WindowControls::new(gtk::PackType::End);
-    mini_window_controls.set_valign(gtk::Align::Center);
+    let mini_settings = create_mini_control_button("preferences-system-symbolic", "Settings");
+    let mini_minimize = create_mini_control_button("window-minimize-symbolic", "Minimize");
+    let mini_maximize = create_mini_control_button("window-maximize-symbolic", "Maximize");
+    let mini_close = create_mini_control_button("window-close-symbolic", "Close");
     mini_controls.append(&mini_settings);
-    mini_controls.append(&mini_window_controls);
+    mini_controls.append(&mini_minimize);
+    mini_controls.append(&mini_maximize);
+    mini_controls.append(&mini_close);
     let content_overlay = gtk::Overlay::new();
     content_overlay.set_child(Some(&notebook));
     content_overlay.add_overlay(&mini_header);
@@ -676,6 +679,7 @@ fn create_window(
     install_new_tab_button(&header.pinned_new_tab, &context);
     install_settings_button(&header.settings, &context);
     install_settings_button(&mini_settings, &context);
+    install_mini_window_controls(&window, &mini_minimize, &mini_maximize, &mini_close);
     install_key_bindings(&context);
     install_tab_switch_handler(
         &window,
@@ -803,6 +807,70 @@ fn create_settings_button() -> gtk::Button {
     settings
 }
 
+fn create_mini_control_button(icon_name: &str, label: &str) -> gtk::Button {
+    let image = gtk::Image::from_icon_name(icon_name);
+    image.set_pixel_size(8);
+    image.set_halign(gtk::Align::Center);
+    image.set_valign(gtk::Align::Center);
+
+    let button = gtk::Button::builder()
+        .has_frame(false)
+        .tooltip_text(label)
+        .build();
+    button.add_css_class("zter-mini-control");
+    button.set_child(Some(&image));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    button
+}
+
+fn install_mini_window_controls(
+    window: &gtk::ApplicationWindow,
+    minimize: &gtk::Button,
+    maximize: &gtk::Button,
+    close: &gtk::Button,
+) {
+    let window_weak = window.downgrade();
+    minimize.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            window.minimize();
+        }
+    });
+
+    let window_weak = window.downgrade();
+    maximize.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            if window.is_maximized() {
+                window.unmaximize();
+            } else {
+                window.maximize();
+            }
+        }
+    });
+    let maximize_weak = maximize.downgrade();
+    window.connect_maximized_notify(move |window| {
+        let Some(button) = maximize_weak.upgrade() else {
+            return;
+        };
+        let (icon_name, label) = if window.is_maximized() {
+            ("window-restore-symbolic", "Restore")
+        } else {
+            ("window-maximize-symbolic", "Maximize")
+        };
+        if let Some(image) = button.child().and_downcast::<gtk::Image>() {
+            image.set_icon_name(Some(icon_name));
+        }
+        button.set_tooltip_text(Some(label));
+        button.update_property(&[gtk::accessible::Property::Label(label)]);
+    });
+
+    let window_weak = window.downgrade();
+    close.connect_clicked(move |_| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+}
+
 fn apply_header_mode_to_window(context: &WindowContext, mode: HeaderMode) {
     let (Some(header), Some(mini_header), Some(mini_controls)) = (
         context.header.upgrade(),
@@ -821,6 +889,7 @@ fn apply_header_mode_to_window(context: &WindowContext, mode: HeaderMode) {
     context.mini_pointer_inside.set(false);
     context.controls_pointer_inside.set(false);
 
+    mini_header.remove_css_class("zter-mini-header-active");
     header.set_visible(mode == HeaderMode::Full);
     mini_header.set_visible(mode == HeaderMode::Mini);
     mini_controls.set_visible(false);
@@ -870,10 +939,13 @@ fn reveal_mini_controls(context: &Rc<WindowContext>) {
     if let Some(source) = context.header_hide_source.borrow_mut().take() {
         source.remove();
     }
-    if context.config.borrow().header_mode() == HeaderMode::Mini
-        && let Some(controls) = context.mini_controls.upgrade()
-    {
-        controls.set_visible(true);
+    if context.config.borrow().header_mode() == HeaderMode::Mini {
+        if let Some(header) = context.mini_header.upgrade() {
+            header.add_css_class("zter-mini-header-active");
+        }
+        if let Some(controls) = context.mini_controls.upgrade() {
+            controls.set_visible(true);
+        }
     }
 }
 
@@ -893,9 +965,13 @@ fn schedule_mini_controls_hide(context: &Rc<WindowContext>) {
         if !context.mini_pointer_inside.get()
             && !context.controls_pointer_inside.get()
             && context.config.borrow().header_mode() == HeaderMode::Mini
-            && let Some(controls) = context.mini_controls.upgrade()
         {
-            controls.set_visible(false);
+            if let Some(header) = context.mini_header.upgrade() {
+                header.remove_css_class("zter-mini-header-active");
+            }
+            if let Some(controls) = context.mini_controls.upgrade() {
+                controls.set_visible(false);
+            }
         }
     });
     context.header_hide_source.replace(Some(source));
