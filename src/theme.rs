@@ -25,6 +25,26 @@ struct ThemePalette {
     ansi: [Rgb; 16],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SettingsPalette {
+    surface: Rgb,
+    header: Rgb,
+    sidebar: Rgb,
+    page: Rgb,
+    field: Rgb,
+    border: Rgb,
+    subtle_border: Rgb,
+    nav_hover: Rgb,
+    nav_selected: Rgb,
+    action: Rgb,
+    action_hover: Rgb,
+    track: Rgb,
+    disabled_track: Rgb,
+    foreground: Rgb,
+    muted_foreground: Rgb,
+    error: Rgb,
+}
+
 const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
@@ -191,6 +211,27 @@ fn themed_ansi(background: Rgb, foreground: Rgb, muted_foreground: Rgb, accent: 
         Rgb(0x7f, 0xd7, 0xe5),
         Rgb(0xff, 0xff, 0xff),
     ]
+}
+
+fn settings_palette(palette: ThemePalette) -> SettingsPalette {
+    SettingsPalette {
+        surface: palette.background.mix(palette.header_background, 64),
+        header: palette.header_background.mix(palette.foreground, 5),
+        sidebar: palette.header_background.mix(palette.background, 25),
+        page: palette.background.mix(palette.header_background, 32),
+        field: palette.background.mix(palette.header_background, 16),
+        border: palette.selection.mix(palette.muted_foreground, 18),
+        subtle_border: palette.selection.mix(palette.background, 25),
+        nav_hover: palette.tab_hover.mix(palette.muted_foreground, 10),
+        nav_selected: palette.selection.mix(palette.muted_foreground, 30),
+        action: palette.header_background.mix(palette.tab_hover, 55),
+        action_hover: palette.tab_hover.mix(palette.header_button_hover, 45),
+        track: palette.header_background.mix(palette.background, 25),
+        disabled_track: palette.tab_close_hover.mix(palette.header_button_hover, 25),
+        foreground: palette.foreground,
+        muted_foreground: palette.muted_foreground,
+        error: palette.error,
+    }
 }
 
 pub fn apply_to(terminal: &vte4::Terminal, theme: Theme) {
@@ -613,6 +654,7 @@ fn settings_window_css() -> String {
 
 fn settings_window_css_for(theme: Theme) -> String {
     let palette = theme.palette();
+    let settings = settings_palette(palette);
     format!(
         "\
         window.zter-settings-window {{
@@ -890,6 +932,8 @@ fn settings_window_css_for(theme: Theme) -> String {
             background-color: {};
         }}
         window.zter-settings-window .zter-settings-actions {{
+            background-color: {};
+            background-image: none;
             border-top: 1px solid {};
             padding: 12px 16px;
         }}
@@ -931,65 +975,66 @@ fn settings_window_css_for(theme: Theme) -> String {
         window.zter-window .zter-header button.zter-settings-button:hover {{
             background-color: {};
         }}",
-        palette.surface.css(),
-        palette.border.css(),
-        palette.header_background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.header_background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.foreground.css(),
-        palette.tab_hover.css(),
-        palette.selection.css(),
-        palette.foreground.css(),
-        palette.surface.css(),
-        palette.foreground.css(),
-        palette.border.css(),
-        palette.surface.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
-        palette.background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
+        settings.surface.css(),
+        settings.subtle_border.css(),
+        settings.header.css(),
+        settings.subtle_border.css(),
+        settings.foreground.css(),
+        settings.sidebar.css(),
+        settings.subtle_border.css(),
+        settings.foreground.css(),
+        settings.muted_foreground.css(),
+        settings.nav_hover.css(),
+        settings.nav_selected.css(),
+        settings.foreground.css(),
+        settings.page.css(),
+        settings.foreground.css(),
+        settings.subtle_border.css(),
+        settings.page.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
+        settings.field.css(),
+        settings.border.css(),
+        settings.foreground.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
         palette.selection_foreground.css(),
-        palette.foreground.css(),
-        palette.foreground.css(),
-        palette.background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
-        palette.muted_foreground.css(),
+        settings.foreground.css(),
+        settings.muted_foreground.css(),
+        settings.field.css(),
+        settings.border.css(),
+        settings.foreground.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
+        settings.muted_foreground.css(),
         palette.selection_foreground.css(),
-        palette.foreground.css(),
-        palette.background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.header_background.css(),
-        palette.muted_foreground.css(),
-        palette.tab_close_hover.css(),
-        palette.muted_foreground.css(),
-        palette.tab_close_hover.css(),
-        palette.foreground.css(),
-        palette.foreground.css(),
-        palette.tab_close_hover.css(),
-        palette.foreground.css(),
-        palette.muted_foreground.css(),
-        palette.foreground.css(),
-        palette.foreground.css(),
-        palette.foreground.css(),
-        palette.header_button_hover.css(),
-        palette.border.css(),
-        palette.error.css(),
-        palette.header_background.css(),
-        palette.border.css(),
-        palette.foreground.css(),
-        palette.tab_hover.css(),
+        settings.foreground.css(),
+        settings.field.css(),
+        settings.border.css(),
+        settings.foreground.css(),
+        settings.track.css(),
+        settings.muted_foreground.css(),
+        settings.disabled_track.css(),
+        settings.muted_foreground.css(),
+        settings.disabled_track.css(),
+        settings.foreground.css(),
+        settings.foreground.css(),
+        settings.disabled_track.css(),
+        settings.foreground.css(),
+        settings.muted_foreground.css(),
+        settings.foreground.css(),
+        settings.foreground.css(),
+        settings.foreground.css(),
+        settings.action_hover.css(),
+        settings.page.css(),
+        settings.subtle_border.css(),
+        settings.error.css(),
+        settings.action.css(),
+        settings.border.css(),
+        settings.foreground.css(),
+        settings.action_hover.css(),
         palette.header_button_hover.css()
     )
 }
@@ -1006,6 +1051,23 @@ fn rgba(Rgb(red, green, blue): Rgb) -> gdk::RGBA {
 impl Rgb {
     fn css(self) -> String {
         format!("#{:02X}{:02X}{:02X}", self.0, self.1, self.2)
+    }
+
+    fn mix(self, other: Self, other_percent: u8) -> Self {
+        let other_percent = u16::from(other_percent);
+        let self_percent = 100 - other_percent;
+        let mix_component = |self_component: u8, other_component: u8| {
+            ((u16::from(self_component) * self_percent
+                + u16::from(other_component) * other_percent
+                + 50)
+                / 100) as u8
+        };
+
+        Self(
+            mix_component(self.0, other.0),
+            mix_component(self.1, other.1),
+            mix_component(self.2, other.2),
+        )
     }
 
     #[cfg(test)]
@@ -1379,7 +1441,7 @@ mod tests {
             .unwrap();
         let (focus_rule, _) = focus_rule.split_once('}').unwrap();
 
-        assert!(input_rule.contains("border: 1px solid #3E4451"));
+        assert!(input_rule.contains("border: 1px solid #4F5563"));
         assert!(input_rule.contains("box-shadow: none"));
         assert!(input_rule.contains("min-height: 36px"));
         assert!(focus_rule.contains("outline-width: 0"));
@@ -1429,10 +1491,10 @@ mod tests {
         let (checked_rule, _) = checked_rule.split_once('}').unwrap();
 
         assert!(sidebar_rule.contains("min-width: 144px"));
-        assert!(sidebar_rule.contains("border-right: 1px solid #3E4451"));
+        assert!(sidebar_rule.contains("border-right: 1px solid #393E4A"));
         assert!(nav_rule.contains("border-radius: 7px"));
         assert!(check_rule.contains("opacity: 0"));
-        assert!(checked_rule.contains("background-color: #3E4451"));
+        assert!(checked_rule.contains("background-color: #5B616F"));
     }
 
     #[test]
@@ -1459,8 +1521,8 @@ mod tests {
         assert!(checkbox_rule.contains("box-shadow: none"));
         assert!(checkbox_rule.contains("min-height: 18px"));
         assert!(label_rule.contains("font-size: 12px"));
-        assert!(check_rule.contains("background-color: #282C34"));
-        assert!(check_rule.contains("border: 1px solid #3E4451"));
+        assert!(check_rule.contains("background-color: #292E36"));
+        assert!(check_rule.contains("border: 1px solid #4F5563"));
         assert!(check_rule.contains("box-shadow: none"));
         assert!(check_rule.contains("min-height: 14px"));
         assert!(check_rule.contains("min-width: 14px"));
@@ -1481,9 +1543,9 @@ mod tests {
             .unwrap();
         let (checked_rule, _) = checked_rule.split_once('}').unwrap();
 
-        assert!(radio_rule.contains("background-color: #282C34"));
+        assert!(radio_rule.contains("background-color: #292E36"));
         assert!(radio_rule.contains("background-image: none"));
-        assert!(radio_rule.contains("border: 1px solid #3E4451"));
+        assert!(radio_rule.contains("border: 1px solid #4F5563"));
         assert!(radio_rule.contains("box-shadow: none"));
         assert!(radio_rule.contains("min-height: 14px"));
         assert!(radio_rule.contains("min-width: 14px"));
@@ -1517,13 +1579,13 @@ mod tests {
             .unwrap();
         let (disabled_control_rule, _) = disabled_control_rule.split_once('}').unwrap();
 
-        assert!(trough_rule.contains("background-color: #303643"));
+        assert!(trough_rule.contains("background-color: #2E343F"));
         assert!(trough_rule.contains("box-shadow: none"));
         assert!(highlight_rule.contains("background-color: #9DA5B4"));
-        assert!(disabled_track_rule.contains("background-color: #5C6370"));
+        assert!(disabled_track_rule.contains("background-color: #565D69"));
         assert!(disabled_control_rule.contains("opacity: 0.3"));
         assert!(slider_rule.contains("background-color: #9DA5B4"));
-        assert!(slider_rule.contains("border: 1px solid #5C6370"));
+        assert!(slider_rule.contains("border: 1px solid #565D69"));
         assert!(slider_rule.contains("box-shadow: none"));
     }
 
@@ -1570,9 +1632,9 @@ mod tests {
             .unwrap();
         let (title_rule, _) = title_rule.split_once('}').unwrap();
 
-        assert!(group_rule.contains("border: 1px solid #3E4451"));
+        assert!(group_rule.contains("border: 1px solid #393E4A"));
         assert!(group_rule.contains("box-shadow: none"));
-        assert!(title_rule.contains("background-color: #282C34"));
+        assert!(title_rule.contains("background-color: #2B2F39"));
         assert!(title_rule.contains("margin-left: 0"));
         assert!(title_rule.contains("padding: 0 4px 0 0"));
     }
@@ -1610,7 +1672,7 @@ mod tests {
         assert!(button_rule.contains("min-width: 28px"));
         assert!(button_rule.contains("margin: 4px 2px"));
         assert!(!button_rule.contains("transition:"));
-        assert!(hover_rule.contains("background-color: #444A55"));
+        assert!(hover_rule.contains("background-color: #3C424E"));
     }
 
     #[test]
@@ -1640,10 +1702,11 @@ mod tests {
             .unwrap();
         let (button_rule, _) = button_rule.split_once('}').unwrap();
 
-        assert!(actions_rule.contains("border-top: 1px solid #3E4451"));
+        assert!(actions_rule.contains("background-color: #2B2F39"));
+        assert!(actions_rule.contains("border-top: 1px solid #393E4A"));
         assert!(actions_rule.contains("padding: 12px 16px"));
-        assert!(button_rule.contains("background-color: #303643"));
-        assert!(button_rule.contains("border: 1px solid #3E4451"));
+        assert!(button_rule.contains("background-color: #333946"));
+        assert!(button_rule.contains("border: 1px solid #4F5563"));
         assert!(button_rule.contains("color: #DCDFE4"));
         assert!(button_rule.contains("min-height: 32px"));
         assert!(button_rule.contains("box-shadow: none"));

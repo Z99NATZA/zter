@@ -59,17 +59,18 @@ checked. An unchecked opacity control applies the embedded default and keeps
 the current slider value in the draft; a checked opacity control applies the
 slider value. Opacity sliders show two-decimal values.
 
-Unchecked checkbox and radio indicators use the current theme background and
-border roles. Checked indicators, enabled slider highlights, and resting slider
-thumbs use the theme's muted foreground role with the main settings background
-for indicator marks. Hovered indicators use the same muted foreground for their
-borders. Focused indicators and hovered or focused slider thumbs use the theme
-foreground. Disabled settings controls use `0.3` opacity, and disabled slider
-tracks use the stronger hover role. The header close control uses the terminal
-window's native control style. Numeric decrement and increment controls keep
-circular `28px` background boxes inside their fields, with transparent resting
-fills and theme hover fills. Settings controls change state without transition
-durations.
+The settings window derives softer dark surfaces, fields, dividers, and selected
+navigation fills from the current theme palette. Unchecked checkbox and radio
+indicators use the derived field and border roles. Checked indicators, enabled
+slider highlights, and resting slider thumbs use the theme's muted foreground
+role with the theme background for indicator marks. Hovered indicators use the
+same muted foreground for their borders. Focused indicators and hovered or
+focused slider thumbs use the theme foreground. Disabled settings controls use
+`0.3` opacity, and disabled slider tracks use a softened disabled-track role.
+The header close control uses the terminal window's native control style.
+Numeric decrement and increment controls keep circular `28px` background boxes
+inside their fields, with transparent resting fills and derived hover fills.
+Settings controls change state without transition durations.
 
 ## Apply Project Settings
 
