@@ -32,6 +32,7 @@ cargo fmt --check
   is necessary.
 - Add borders only between meaningful content or interaction regions. Do not
   outline every nested surface or use borders as decoration.
-- App-owned chrome and controls use only neutral One Half Dark tones and theme
-  white; do not introduce colored accents for selected or active states.
-  Reserve red for errors that require immediate attention.
+- App-owned chrome and controls use semantic theme roles instead of fixed hex
+  colors. Active, selected, hover, border, and muted states derive from the
+  configured theme palette. Reserve red for errors that require immediate
+  attention.

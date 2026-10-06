@@ -48,26 +48,26 @@ Escape, clicking Cancel, or closing the parent terminal discards unsaved edits.
 A save or runtime-configuration error is shown in the modal and retains the
 draft.
 
-An unboxed radio group selects the Default, Custom, or None background image
-mode. Custom can browse local image formats supported by GdkPixbuf and place the
-selected path in the draft. Background image opacity and window opacity each
-have a checkbox before the label; clicking the label toggles the checkbox.
-Both opacity controls start checked. An unchecked opacity control applies the
-embedded default and keeps the current slider value in the draft; a checked
-opacity control applies the slider value. Opacity sliders show two-decimal
-values.
+A dropdown selects the theme. An unboxed radio group selects the Default,
+Custom, or None background image mode. Custom can browse local image formats
+supported by GdkPixbuf and place the selected path in the draft. Background
+image opacity and window opacity each have a checkbox before the label; clicking
+the label toggles the checkbox. Both opacity controls start checked. An
+unchecked opacity control applies the embedded default and keeps the current
+slider value in the draft; a checked opacity control applies the slider value.
+Opacity sliders show two-decimal values.
 
-Unchecked checkbox and radio indicators use the settings background and border
-tones. Checked indicators, enabled slider highlights, and resting slider thumbs
-use the muted theme foreground with the main settings background for indicator
-marks. Hovered indicators use the same muted foreground for their borders.
-Focused indicators and hovered or focused slider thumbs use theme white; no
-colored accent is used. Disabled settings controls use `0.3` opacity, and
-disabled slider tracks are gray. The header close control uses the terminal
+Unchecked checkbox and radio indicators use the current theme background and
+border roles. Checked indicators, enabled slider highlights, and resting slider
+thumbs use the theme's muted foreground role with the main settings background
+for indicator marks. Hovered indicators use the same muted foreground for their
+borders. Focused indicators and hovered or focused slider thumbs use the theme
+foreground. Disabled settings controls use `0.3` opacity, and disabled slider
+tracks use the stronger hover role. The header close control uses the terminal
 window's native control style. Numeric decrement and increment controls keep
 circular `28px` background boxes inside their fields, with transparent resting
-fills and neutral `#444A55` hover fills. Settings controls change state without
-transition durations.
+fills and theme hover fills. Settings controls change state without transition
+durations.
 
 ## Apply Project Settings
 
@@ -169,7 +169,7 @@ Every settings file contains every supported key.
 | `background_image` | string or `null` | `"builtin"` | `"builtin"` selects the default image embedded in zter, another non-empty string selects a local image path, and `null` or an empty string disables the image layer. |
 | `header_mode` | `"full"`, `"mini"`, or `"hidden"` | `"full"` | Selects the persistent terminal header mode. `show` is an alias for `full`, and `hide` selects `hidden`. |
 | `key_bindings` | object | See [Key Bindings](#key-bindings) | Configures keyboard shortcuts for application actions. |
-| `theme` | string | `"one-half-dark"` | Terminal and ANSI color theme. One Half Dark is the supported theme. |
+| `theme` | `"one-half-dark"`, `"purple"`, `"white-mist"`, `"white-sky"`, `"forest-calm"`, `"one-half-gray"`, `"red"`, or `"mauve"` | `"one-half-dark"` | Terminal, ANSI, chrome, dialog, menu, and settings color theme. |
 | `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |
 | `padding_top` | integer | `16` | Inner terminal padding above the content in pixels, from `0` through `128`. |
@@ -198,7 +198,7 @@ default. Unknown keys are ignored. Individual invalid or unknown keys are
 handled silently and do not prevent the terminal from opening or discard other
 valid values.
 
-zter migrates schema versions `1` and `2` to schema version `3`. The `wallpaper`
+zter migrates schema versions `1` and `2` to schema version `4`. The `wallpaper`
 key becomes `background_image`, `wallpaper_opacity` becomes
 `background_image_opacity`, and schema `1` still replaces `wallpaper_shade`
 with the inverse opacity capped at the supported maximum of `0.6`.

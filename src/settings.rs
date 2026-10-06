@@ -29,6 +29,55 @@ const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
     OneHalfDark,
+    Purple,
+    WhiteMist,
+    WhiteSky,
+    ForestCalm,
+    OneHalfGray,
+    Red,
+    Mauve,
+}
+
+impl Theme {
+    pub const ALL: [Self; 8] = [
+        Self::OneHalfDark,
+        Self::Purple,
+        Self::WhiteMist,
+        Self::WhiteSky,
+        Self::ForestCalm,
+        Self::OneHalfGray,
+        Self::Red,
+        Self::Mauve,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OneHalfDark => "One Half Dark",
+            Self::Purple => "Purple",
+            Self::WhiteMist => "White Mist",
+            Self::WhiteSky => "White Sky",
+            Self::ForestCalm => "Forest Calm",
+            Self::OneHalfGray => "One Half Gray",
+            Self::Red => "Red",
+            Self::Mauve => "Mauve",
+        }
+    }
+
+    pub(crate) fn selected_index(self) -> u32 {
+        Self::ALL
+            .iter()
+            .position(|theme| *theme == self)
+            .and_then(|index| u32::try_from(index).ok())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn from_selected_index(index: u32) -> Self {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| Self::ALL.get(index))
+            .copied()
+            .unwrap_or(Self::OneHalfDark)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -112,6 +161,7 @@ pub struct Settings {
 pub(crate) struct SettingsUpdate {
     pub shell: Option<String>,
     pub background_image: Option<PathBuf>,
+    pub theme: Theme,
     pub font_family: String,
     pub font_size: f64,
     pub terminal_padding: TerminalPadding,
@@ -157,6 +207,7 @@ impl Settings {
         self.background_image = update
             .background_image
             .filter(|background_image| !background_image.as_os_str().is_empty());
+        self.theme = update.theme;
         self.font_family = nonempty_or(update.font_family, defaults.font_family);
         self.font_size = ranged_or(
             update.font_size,
@@ -1002,6 +1053,32 @@ mod tests {
     }
 
     #[test]
+    fn supported_theme_values_are_loaded_from_settings() {
+        let expected = [
+            ("one-half-dark", Theme::OneHalfDark),
+            ("purple", Theme::Purple),
+            ("white-mist", Theme::WhiteMist),
+            ("white-sky", Theme::WhiteSky),
+            ("forest-calm", Theme::ForestCalm),
+            ("one-half-gray", Theme::OneHalfGray),
+            ("red", Theme::Red),
+            ("mauve", Theme::Mauve),
+        ];
+
+        for (value, theme) in expected {
+            let mut settings = project_settings_value().unwrap();
+            settings["theme"] = Value::from(value);
+
+            assert_eq!(
+                settings_from_value(settings, project_settings_path())
+                    .unwrap()
+                    .theme(),
+                theme
+            );
+        }
+    }
+
+    #[test]
     fn schema_one_shade_migrates_to_equivalent_background_image_opacity() {
         let directory = test_directory("shade-migration");
         let path = directory.join("settings.json");
@@ -1198,6 +1275,7 @@ mod tests {
         settings.apply_update(SettingsUpdate {
             shell: Some(" /bin/fish ".to_owned()),
             background_image: Some(PathBuf::from("/tmp/wallpaper.png")),
+            theme: Theme::ForestCalm,
             font_family: "JetBrains Mono".to_owned(),
             font_size: 16.0,
             terminal_padding: TerminalPadding::new(1, 2, 3, 4),
@@ -1214,6 +1292,7 @@ mod tests {
             reloaded.background_image(),
             Some(Path::new("/tmp/wallpaper.png"))
         );
+        assert_eq!(reloaded.theme(), Theme::ForestCalm);
         assert_eq!(reloaded.font_family(), "JetBrains Mono");
         assert_eq!(reloaded.font_size(), 16.0);
         assert_eq!(
@@ -1283,6 +1362,7 @@ mod tests {
         settings.apply_update(SettingsUpdate {
             shell: Some("  ".to_owned()),
             background_image: Some(PathBuf::new()),
+            theme: Theme::Mauve,
             font_family: "  ".to_owned(),
             font_size: f64::NAN,
             terminal_padding: TerminalPadding::new(MAX_PADDING + 1, 2, 3, 4),
@@ -1293,6 +1373,7 @@ mod tests {
 
         assert_eq!(settings.shell(), None);
         assert_eq!(settings.background_image(), None);
+        assert_eq!(settings.theme(), Theme::Mauve);
         assert_eq!(settings.font_family(), defaults.font_family());
         assert_eq!(settings.font_size(), defaults.font_size());
         assert_eq!(

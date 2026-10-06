@@ -25,7 +25,7 @@ use crate::{
     settings::{
         HeaderMode, MAX_BACKGROUND_IMAGE_OPACITY, MAX_FONT_SIZE, MAX_PADDING, MAX_SCROLLBACK_LINES,
         MAX_WINDOW_OPACITY, MIN_FONT_SIZE, MIN_WINDOW_OPACITY, Settings, SettingsUpdate,
-        TerminalPadding,
+        TerminalPadding, Theme,
     },
     theme,
 };
@@ -188,6 +188,7 @@ struct HeaderWidgets {
 #[derive(Clone)]
 struct SettingsControls {
     shell: gtk::Entry,
+    theme: gtk::DropDown,
     font_family: gtk::Entry,
     font_size: gtk::SpinButton,
     padding: [gtk::SpinButton; 4],
@@ -216,6 +217,7 @@ impl SettingsControls {
                 selected_background_image_mode(&self.background_image_mode),
                 &self.background_image_path,
             ),
+            theme: Theme::from_selected_index(self.theme.selected()),
             font_family: self.font_family.text().to_string(),
             font_size: self.font_size.value(),
             terminal_padding: TerminalPadding::new(
@@ -617,6 +619,7 @@ fn create_window(
     window.add_css_class("zter-window");
     theme::install_display_styles(
         &gtk::prelude::WidgetExt::display(&window),
+        config.theme(),
         config.terminal_padding(),
     );
     let wallpaper = prepare_wallpaper_asset(config, &gtk::prelude::WidgetExt::display(&window));
@@ -1107,10 +1110,10 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     let font_size = settings_spin(settings.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
     form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
 
-    let theme = gtk::Label::builder()
-        .label("One Half Dark")
-        .xalign(0.0)
-        .build();
+    let theme_labels: Vec<&str> = Theme::ALL.iter().map(|theme| theme.label()).collect();
+    let theme = gtk::DropDown::from_strings(&theme_labels);
+    theme.set_selected(settings.theme().selected_index());
+    theme.set_hexpand(true);
     theme.add_css_class("zter-settings-value");
     form.attach(&settings_field("Theme", &theme), 0, 2, 1, 1);
 
@@ -1308,6 +1311,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
 
     let controls = SettingsControls {
         shell,
+        theme,
         font_family,
         font_size,
         padding: padding_controls,
@@ -1598,7 +1602,7 @@ fn apply_app_config(config: &AppConfig) {
         .find_map(|context| context.window.upgrade())
         .map(|window| gtk::prelude::WidgetExt::display(&window))
     {
-        theme::install_display_styles(&display, config.terminal_padding());
+        theme::install_display_styles(&display, config.theme(), config.terminal_padding());
     }
 
     for context in contexts {

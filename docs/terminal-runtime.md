@@ -64,8 +64,8 @@ the default action, Escape cancels, and only Close confirms. The modal uses a
 uniform `12px` corner radius, while Close uses a restrained red accent. A child
 shell exit still removes its tab immediately without showing the modal.
 
-Secondary-clicking a tab opens the same compact neutral popover used by the
-terminal Copy and Paste menu, with `Close to left` and `Close to right`. An
+Secondary-clicking a tab opens the same compact theme-colored popover used by
+the terminal Copy and Paste menu, with `Close to left` and `Close to right`. An
 action is disabled when its side is empty, and the anchor tab is never included.
 One idle target closes immediately. One target with a foreground process uses
 the existing tab-close confirmation; closing multiple targets always uses one
@@ -146,7 +146,7 @@ The configured Paste binding defaults to `Ctrl+V` on the physical `V` key and
 pastes clipboard text across keyboard layouts. When the clipboard offers no
 text, zter passes the key to the terminal child so its application can handle
 non-text content such as images.
-Secondary-click opens a compact One Half Dark menu with Copy and Paste actions
+Secondary-click opens a compact theme-colored menu with Copy and Paste actions
 and right-aligned shortcut hints; Copy is disabled when there is no selection.
 `Ctrl+D` retains its normal shell behavior when no other foreground process is
 running. While a foreground process owns the terminal, zter instead shows the
@@ -164,7 +164,7 @@ not participate in viewport measurement, so appearing or disappearing does not
 change the terminal grid or reflow text.
 Selected cells swap their existing foreground and background colors, so the
 highlight adapts to colored terminal output instead of using one fixed color.
-The composition layer paints the One Half Dark background and optional
+The composition layer paints the configured theme background and optional
 background image while VTE remains transparent. `window_opacity` applies only
 to this lower composition layer, so terminal text, the cursor, selection, tabs,
 the titlebar, and modals remain opaque.
@@ -177,32 +177,34 @@ its latest grid. Font zoom instead applies immediately through VTE's native font
 scale and does not enter the deferred window-resize path.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
-`#3E4451` border and `12px` rounded corners. The lower composition layer is
-clipped to the same radius. The terminal content surface uses a top border of
-the same color as the only header/content divider. Its top, right, bottom, and
-left inner padding are independently configurable from `0px` through `128px`
-and default to `16px`. The GTK titlebar's theme border is disabled so it does not
+theme border and `12px` rounded corners. The lower composition layer is clipped
+to the same radius. The terminal content surface uses a top border of the same
+color as the only header/content divider. Its top, right, bottom, and left
+inner padding are independently configurable from `0px` through `128px` and
+default to `16px`. The GTK titlebar's theme border is disabled so it does not
 create a second dark line. The background image does not add borders or shrink
 with terminal padding. Window-manager or compositor decoration remains
 system-owned and may include an outer window shadow beyond the app border.
 
-The unified header and inactive tabs use `#303643`, tab hover uses `#353B48`,
-and the active tab uses `#3E4451`. Active state is communicated by this neutral
-fill change only. Outside valid drag-destination feedback, tabs have no
-app-owned border, outline, or shadow. Header hover transitions last `180ms`.
-The settings and new-tab controls use the neutral `#444A55` hover fill. Every
-tab-close button is a circular `20px` control and uses the stronger neutral
-`#5C6370` hover fill. The destination outline does not alter tab or titlebar
-allocation, and the source tab does not highlight itself. Native window controls
-use compact spacing and do not receive an additional app-owned hover fill. The
-new-tab button and the first native window control retain a minimum `40px`
-draggable gap while tabs overflow.
+The unified header, inactive tabs, hover fills, active tabs, borders, drop
+targets, menus, settings controls, and dialogs derive their colors from the
+configured theme's semantic roles. Outside valid drag-destination feedback,
+tabs have no app-owned border, outline, or shadow. Header hover transitions
+last `180ms`. Every tab-close button is a circular `20px` control and uses the
+theme's stronger hover role. The destination outline does not alter tab or
+titlebar allocation, and the source tab does not highlight itself. Native
+window controls use compact spacing and do not receive an additional app-owned
+hover fill. The new-tab button and the first native window control retain a
+minimum `40px` draggable gap while tabs overflow.
 
 ## Theme Palette
 
-The terminal uses One Half Dark colors. Ordinary surfaces and interaction states
-use neutral or blue colors; red is reserved for the normal and bright ANSI red
-slots used by terminal programs for error semantics.
+Theme colors are assigned to semantic roles before they are used by terminal
+and GTK styling. `one-half-dark` preserves the original One Half Dark terminal
+palette. The other themes use zter-oriented dark terminal backgrounds with
+theme-specific accent, foreground, muted foreground, border, hover, cursor,
+selection, and ANSI roles. Red is reserved for error affordances and for the
+normal and bright ANSI red slots used by terminal programs for error semantics.
 
 | Role       | Normal    | Bright    |
 | ---------- | --------- | --------- |
@@ -215,8 +217,8 @@ slots used by terminal programs for error semantics.
 | Cyan       | `#56B6C2` | `#56B6C2` |
 | White      | `#DCDFE4` | `#FFFFFF` |
 
-Foreground is `#DCDFE4`, the terminal background is `#282C34`, the cursor is
-`#61AFEF`, selection is `#3E4451`, and the header background is `#303643`.
+The supported theme keys are `one-half-dark`, `purple`, `white-mist`,
+`white-sky`, `forest-calm`, `one-half-gray`, `red`, and `mauve`.
 
 ## Background Image
 
@@ -231,7 +233,7 @@ cannot load, zter keeps the prepared theme background.
 
 Before presenting the window, zter decodes the selected image, reduces images
 larger than the pixels needed to cover the connected display, and applies the
-One Half Dark background, Screen blend mode, `background_image_opacity`, and
+theme background, Screen blend mode, `background_image_opacity`, and
 `window_opacity`. When the image layer is disabled, zter prepares a solid
 theme background texture instead of doing image work. The result is one texture
 shared by every tab. GTK scales that unchanged texture to cover each terminal

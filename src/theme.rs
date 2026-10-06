@@ -6,6 +6,25 @@ use crate::settings::{TerminalPadding, Theme};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rgb(u8, u8, u8);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ThemePalette {
+    background: Rgb,
+    foreground: Rgb,
+    muted_foreground: Rgb,
+    surface: Rgb,
+    header_background: Rgb,
+    tab_hover: Rgb,
+    header_button_hover: Rgb,
+    tab_close_hover: Rgb,
+    tab_drop_target: Rgb,
+    cursor: Rgb,
+    selection: Rgb,
+    selection_foreground: Rgb,
+    border: Rgb,
+    error: Rgb,
+    ansi: [Rgb; 16],
+}
+
 const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
 const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
 const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
@@ -15,6 +34,8 @@ const TAB_CLOSE_HOVER: Rgb = Rgb(0x5c, 0x63, 0x70);
 const TAB_DROP_TARGET: Rgb = Rgb(0xff, 0xff, 0xff);
 const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
 const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
+const MUTED_FOREGROUND: Rgb = Rgb(0x9d, 0xa5, 0xb4);
+const ERROR: Rgb = Rgb(0xe0, 0x6c, 0x75);
 const TRANSPARENT_BACKGROUND_CLASS: &str = "zter-transparent-background";
 
 const ANSI_PALETTE: [Rgb; 16] = [
@@ -36,18 +57,152 @@ const ANSI_PALETTE: [Rgb; 16] = [
     Rgb(0xff, 0xff, 0xff), // bright white
 ];
 
-pub fn apply_to(terminal: &vte4::Terminal, theme: Theme) {
-    match theme {
-        Theme::OneHalfDark => apply_one_half_dark(terminal),
+impl Theme {
+    fn palette(self) -> ThemePalette {
+        match self {
+            Self::OneHalfDark => ThemePalette {
+                background: BACKGROUND,
+                foreground: FOREGROUND,
+                muted_foreground: MUTED_FOREGROUND,
+                surface: BACKGROUND,
+                header_background: HEADER_BACKGROUND,
+                tab_hover: TAB_HOVER,
+                header_button_hover: HEADER_BUTTON_HOVER,
+                tab_close_hover: TAB_CLOSE_HOVER,
+                tab_drop_target: TAB_DROP_TARGET,
+                cursor: CURSOR,
+                selection: SELECTION,
+                selection_foreground: BACKGROUND,
+                border: SELECTION,
+                error: ERROR,
+                ansi: ANSI_PALETTE,
+            },
+            Self::Purple => zter_palette(
+                Rgb(0x8f, 0x5f, 0x8a),
+                Rgb(0x2b, 0x22, 0x2d),
+                Rgb(0x39, 0x2b, 0x3a),
+                Rgb(0x4a, 0x37, 0x4b),
+                Rgb(0x5d, 0x45, 0x5b),
+                Rgb(0xe9, 0xdd, 0xe9),
+                Rgb(0xbd, 0x9b, 0xba),
+            ),
+            Self::WhiteMist => zter_palette(
+                Rgb(0x65, 0x95, 0xb1),
+                Rgb(0x20, 0x2b, 0x33),
+                Rgb(0x2b, 0x3c, 0x47),
+                Rgb(0x37, 0x4d, 0x5b),
+                Rgb(0x45, 0x61, 0x72),
+                Rgb(0xe6, 0xf1, 0xf5),
+                Rgb(0xa9, 0xc8, 0xd8),
+            ),
+            Self::WhiteSky => zter_palette(
+                Rgb(0x6b, 0xa4, 0xf4),
+                Rgb(0x1c, 0x2d, 0x40),
+                Rgb(0x27, 0x3c, 0x56),
+                Rgb(0x32, 0x4e, 0x70),
+                Rgb(0x40, 0x62, 0x8c),
+                Rgb(0xe7, 0xf2, 0xff),
+                Rgb(0xa8, 0xcb, 0xf8),
+            ),
+            Self::ForestCalm => zter_palette(
+                Rgb(0x67, 0xa1, 0x8d),
+                Rgb(0x1e, 0x30, 0x2a),
+                Rgb(0x29, 0x40, 0x37),
+                Rgb(0x35, 0x53, 0x48),
+                Rgb(0x43, 0x68, 0x5a),
+                Rgb(0xe4, 0xf1, 0xeb),
+                Rgb(0xa7, 0xca, 0xbb),
+            ),
+            Self::OneHalfGray => zter_palette(
+                Rgb(0x91, 0x9a, 0xa6),
+                Rgb(0x24, 0x29, 0x30),
+                Rgb(0x31, 0x38, 0x41),
+                Rgb(0x3f, 0x47, 0x52),
+                Rgb(0x51, 0x5b, 0x67),
+                Rgb(0xe8, 0xeb, 0xee),
+                Rgb(0xb7, 0xc0, 0xca),
+            ),
+            Self::Red => zter_palette(
+                Rgb(0xc9, 0x5e, 0x78),
+                Rgb(0x35, 0x23, 0x2b),
+                Rgb(0x47, 0x2d, 0x37),
+                Rgb(0x5b, 0x38, 0x46),
+                Rgb(0x70, 0x47, 0x55),
+                Rgb(0xf4, 0xe3, 0xe8),
+                Rgb(0xd5, 0xa0, 0xae),
+            ),
+            Self::Mauve => zter_palette(
+                Rgb(0xc7, 0x6a, 0x8c),
+                Rgb(0x35, 0x25, 0x2e),
+                Rgb(0x47, 0x30, 0x3b),
+                Rgb(0x5b, 0x3d, 0x4b),
+                Rgb(0x70, 0x4d, 0x5d),
+                Rgb(0xf3, 0xe5, 0xea),
+                Rgb(0xd8, 0xa8, 0xb8),
+            ),
+        }
     }
 }
 
-fn apply_one_half_dark(terminal: &vte4::Terminal) {
-    let foreground = rgba(FOREGROUND);
-    let background = rgba(BACKGROUND);
-    let cursor = rgba(CURSOR);
-    let cursor_foreground = rgba(BACKGROUND);
-    let palette: Vec<gdk::RGBA> = ANSI_PALETTE.into_iter().map(rgba).collect();
+fn zter_palette(
+    accent: Rgb,
+    background: Rgb,
+    header_background: Rgb,
+    tab_hover: Rgb,
+    tab_close_hover: Rgb,
+    foreground: Rgb,
+    muted_foreground: Rgb,
+) -> ThemePalette {
+    ThemePalette {
+        background,
+        foreground,
+        muted_foreground,
+        surface: background,
+        header_background,
+        tab_hover,
+        header_button_hover: tab_hover,
+        tab_close_hover,
+        tab_drop_target: accent,
+        cursor: accent,
+        selection: tab_hover,
+        selection_foreground: foreground,
+        border: tab_hover,
+        error: ERROR,
+        ansi: themed_ansi(background, foreground, muted_foreground, accent),
+    }
+}
+
+fn themed_ansi(background: Rgb, foreground: Rgb, muted_foreground: Rgb, accent: Rgb) -> [Rgb; 16] {
+    [
+        background,
+        ERROR,
+        Rgb(0x8f, 0xc0, 0x7a),
+        Rgb(0xd7, 0xb4, 0x69),
+        accent,
+        Rgb(0xc5, 0x86, 0xc0),
+        Rgb(0x6f, 0xc8, 0xd8),
+        foreground,
+        muted_foreground,
+        ERROR,
+        Rgb(0x9d, 0xc9, 0x80),
+        Rgb(0xe4, 0xc0, 0x78),
+        accent,
+        Rgb(0xd0, 0x99, 0xcb),
+        Rgb(0x7f, 0xd7, 0xe5),
+        Rgb(0xff, 0xff, 0xff),
+    ]
+}
+
+pub fn apply_to(terminal: &vte4::Terminal, theme: Theme) {
+    apply_palette(terminal, theme.palette());
+}
+
+fn apply_palette(terminal: &vte4::Terminal, theme: ThemePalette) {
+    let foreground = rgba(theme.foreground);
+    let background = rgba(theme.background);
+    let cursor = rgba(theme.cursor);
+    let cursor_foreground = rgba(theme.background);
+    let palette: Vec<gdk::RGBA> = theme.ansi.into_iter().map(rgba).collect();
     let palette: Vec<&gdk::RGBA> = palette.iter().collect();
 
     terminal.set_colors(Some(&foreground), Some(&background), &palette);
@@ -60,14 +215,16 @@ fn apply_one_half_dark(terminal: &vte4::Terminal) {
 }
 
 pub fn background_color(theme: Theme) -> gdk::RGBA {
-    match theme {
-        Theme::OneHalfDark => rgba(BACKGROUND),
-    }
+    rgba(theme.palette().background)
 }
 
-pub fn install_display_styles(display: &gdk::Display, terminal_padding: TerminalPadding) {
+pub fn install_display_styles(
+    display: &gdk::Display,
+    theme: Theme,
+    terminal_padding: TerminalPadding,
+) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(&application_css(terminal_padding));
+    provider.load_from_data(&application_css_for(theme, terminal_padding));
     gtk::style_context_add_provider_for_display(
         display,
         &provider,
@@ -76,7 +233,12 @@ pub fn install_display_styles(display: &gdk::Display, terminal_padding: Terminal
 }
 
 fn application_css(terminal_padding: TerminalPadding) -> String {
-    let tab_drop_target = TAB_DROP_TARGET.css();
+    application_css_for(Theme::OneHalfDark, terminal_padding)
+}
+
+fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> String {
+    let palette = theme.palette();
+    let tab_drop_target = palette.tab_drop_target.css();
     let mut css = format!(
         "\
         window.zter-window {{
@@ -113,7 +275,7 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             border-width: 0;
             border-radius: 0;
             box-shadow: none;
-            color: #DCDFE4;
+            color: {};
             min-height: 10px;
             min-width: 10px;
             margin: 0;
@@ -405,46 +567,52 @@ fn application_css(terminal_padding: TerminalPadding) -> String {
             background-image: none;
             border-radius: 0 0 12px 12px;
         }}",
-        FOREGROUND.css(),
-        SELECTION.css(),
-        HEADER_BACKGROUND.css(),
-        FOREGROUND.css(),
-        TAB_DROP_TARGET.css(),
-        HEADER_BACKGROUND.css(),
-        TAB_HOVER.css(),
-        SELECTION.css(),
-        TAB_DROP_TARGET.css(),
-        BACKGROUND.css(),
-        TAB_CLOSE_HOVER.css(),
-        HEADER_BUTTON_HOVER.css(),
-        HEADER_BACKGROUND.css(),
-        HEADER_BUTTON_HOVER.css(),
-        HEADER_BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        SELECTION.css(),
-        Rgb(0x9d, 0xa5, 0xb4).css(),
-        HEADER_BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        TAB_HOVER.css(),
-        BACKGROUND.css(),
-        Rgb(0xe0, 0x6c, 0x75).css(),
-        SELECTION.css(),
+        palette.foreground.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.header_background.css(),
+        palette.foreground.css(),
+        palette.tab_drop_target.css(),
+        palette.header_background.css(),
+        palette.tab_hover.css(),
+        palette.selection.css(),
+        palette.tab_drop_target.css(),
+        palette.background.css(),
+        palette.tab_close_hover.css(),
+        palette.header_button_hover.css(),
+        palette.header_background.css(),
+        palette.header_button_hover.css(),
+        palette.header_background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.selection.css(),
+        palette.muted_foreground.css(),
+        palette.header_background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.tab_hover.css(),
+        palette.background.css(),
+        palette.error.css(),
+        palette.border.css(),
         terminal_padding.top(),
         terminal_padding.right(),
         terminal_padding.bottom(),
         terminal_padding.left(),
-        Rgb(0x5c, 0x63, 0x70).css()
+        palette.tab_close_hover.css()
     );
-    css.push_str(&settings_window_css());
+    css.push_str(&settings_window_css_for(theme));
     css
 }
 
 fn settings_window_css() -> String {
+    settings_window_css_for(Theme::OneHalfDark)
+}
+
+fn settings_window_css_for(theme: Theme) -> String {
+    let palette = theme.palette();
     format!(
         "\
         window.zter-settings-window {{
@@ -529,44 +697,44 @@ fn settings_window_css() -> String {
             min-width: 14px;
         }}
         window.zter-settings-window checkbutton.zter-settings-checkbox:hover check {{
-            border-color: #9DA5B4;
+            border-color: {};
         }}
         window.zter-settings-window checkbutton.zter-settings-checkbox:checked check {{
             background-color: {};
-            border-color: #9DA5B4;
-            color: #282C34;
+            border-color: {};
+            color: {};
         }}
         window.zter-settings-window checkbutton.zter-settings-checkbox:focus check {{
-            border-color: #DCDFE4;
+            border-color: {};
         }}
         window.zter-settings-window checkbutton.zter-settings-radio {{
             background-color: transparent;
             background-image: none;
             box-shadow: none;
-            color: #DCDFE4;
+            color: {};
             margin: 0;
             padding: 0;
         }}
         window.zter-settings-window checkbutton.zter-settings-radio radio {{
-            background-color: #282C34;
+            background-color: {};
             background-image: none;
-            border: 1px solid #3E4451;
+            border: 1px solid {};
             box-shadow: none;
-            color: #DCDFE4;
+            color: {};
             min-height: 14px;
             min-width: 14px;
         }}
         window.zter-settings-window checkbutton.zter-settings-radio:hover radio {{
-            border-color: #9DA5B4;
+            border-color: {};
         }}
         window.zter-settings-window checkbutton.zter-settings-radio:checked radio {{
-            background-color: #9DA5B4;
+            background-color: {};
             background-image: none;
-            border-color: #9DA5B4;
-            color: #282C34;
+            border-color: {};
+            color: {};
         }}
         window.zter-settings-window checkbutton.zter-settings-radio:focus radio {{
-            border-color: #DCDFE4;
+            border-color: {};
         }}
         window.zter-settings-window .zter-settings-field > entry,
         window.zter-settings-window .zter-settings-field > spinbutton,
@@ -582,7 +750,7 @@ fn settings_window_css() -> String {
             padding: 0 10px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale trough {{
-            background-color: #303643;
+            background-color: {};
             background-image: none;
             border-width: 0;
             border-radius: 999px;
@@ -590,19 +758,19 @@ fn settings_window_css() -> String {
             min-height: 6px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
-            background-color: #9DA5B4;
+            background-color: {};
             background-image: none;
             border-radius: 999px;
             box-shadow: none;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled trough,
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled highlight {{
-            background-color: #5C6370;
+            background-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale slider {{
-            background-color: #9DA5B4;
+            background-color: {};
             background-image: none;
-            border: 1px solid #5C6370;
+            border: 1px solid {};
             border-radius: 999px;
             box-shadow: none;
             min-height: 14px;
@@ -610,20 +778,20 @@ fn settings_window_css() -> String {
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:hover slider,
         window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
-            background-color: #DCDFE4;
+            background-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
-            border-color: #DCDFE4;
+            border-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled slider {{
-            background-color: #5C6370;
+            background-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale value {{
-            color: #DCDFE4;
+            color: {};
             min-width: 34px;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled value {{
-            color: #9DA5B4;
+            color: {};
         }}
         window.zter-settings-window .zter-settings-field > entry:disabled,
         window.zter-settings-window .zter-settings-field > spinbutton:disabled,
@@ -707,34 +875,57 @@ fn settings_window_css() -> String {
         window.zter-window .zter-header button.zter-settings-button:hover {{
             background-color: {};
         }}",
-        BACKGROUND.css(),
-        SELECTION.css(),
-        HEADER_BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        SELECTION.css(),
-        BACKGROUND.css(),
-        Rgb(0x9d, 0xa5, 0xb4).css(),
-        Rgb(0x9d, 0xa5, 0xb4).css(),
-        Rgb(0x9d, 0xa5, 0xb4).css(),
-        BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        Rgb(0x9d, 0xa5, 0xb4).css(),
-        BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        FOREGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        HEADER_BUTTON_HOVER.css(),
-        SELECTION.css(),
-        Rgb(0xe0, 0x6c, 0x75).css(),
-        HEADER_BACKGROUND.css(),
-        SELECTION.css(),
-        FOREGROUND.css(),
-        TAB_HOVER.css(),
-        HEADER_BUTTON_HOVER.css()
+        palette.surface.css(),
+        palette.border.css(),
+        palette.header_background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.border.css(),
+        palette.surface.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.selection_foreground.css(),
+        palette.foreground.css(),
+        palette.foreground.css(),
+        palette.background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.muted_foreground.css(),
+        palette.selection_foreground.css(),
+        palette.foreground.css(),
+        palette.background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.header_background.css(),
+        palette.muted_foreground.css(),
+        palette.tab_close_hover.css(),
+        palette.muted_foreground.css(),
+        palette.tab_close_hover.css(),
+        palette.foreground.css(),
+        palette.foreground.css(),
+        palette.tab_close_hover.css(),
+        palette.foreground.css(),
+        palette.muted_foreground.css(),
+        palette.foreground.css(),
+        palette.foreground.css(),
+        palette.foreground.css(),
+        palette.header_button_hover.css(),
+        palette.border.css(),
+        palette.error.css(),
+        palette.header_background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.tab_hover.css(),
+        palette.header_button_hover.css()
     )
 }
 
@@ -751,6 +942,20 @@ impl Rgb {
     fn css(self) -> String {
         format!("#{:02X}{:02X}{:02X}", self.0, self.1, self.2)
     }
+
+    #[cfg(test)]
+    fn luminance(self) -> f64 {
+        let component = |value: u8| {
+            let value = f64::from(value) / 255.0;
+            if value <= 0.03928 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+
+        0.2126 * component(self.0) + 0.7152 * component(self.1) + 0.0722 * component(self.2)
+    }
 }
 
 #[cfg(test)]
@@ -760,6 +965,44 @@ mod tests {
     #[test]
     fn one_half_dark_palette_has_sixteen_ansi_colors() {
         assert_eq!(ANSI_PALETTE.len(), 16);
+    }
+
+    #[test]
+    fn every_supported_theme_has_sixteen_ansi_colors() {
+        for theme in Theme::ALL {
+            assert_eq!(theme.palette().ansi.len(), 16);
+        }
+    }
+
+    #[test]
+    fn non_default_theme_css_uses_semantic_palette_roles() {
+        let css = application_css_for(Theme::ForestCalm, TerminalPadding::default());
+        let palette = Theme::ForestCalm.palette();
+
+        assert!(css.contains(&format!(
+            "background-color: {}",
+            palette.header_background.css()
+        )));
+        assert!(css.contains(&format!("background-color: {}", palette.tab_hover.css())));
+        assert!(css.contains(&format!(
+            "outline: 1px solid {}",
+            palette.tab_drop_target.css()
+        )));
+        assert!(css.contains(&format!("color: {}", palette.foreground.css())));
+        assert!(css.contains(&format!("border: 1px solid {}", palette.border.css())));
+        assert!(!css.contains("background-color: #303643"));
+    }
+
+    #[test]
+    fn non_default_theme_uses_a_dark_terminal_background() {
+        for theme in Theme::ALL
+            .into_iter()
+            .filter(|theme| *theme != Theme::OneHalfDark)
+        {
+            let background = theme.palette().background;
+
+            assert!(background.luminance() < 0.08);
+        }
     }
 
     #[test]
