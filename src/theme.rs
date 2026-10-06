@@ -883,7 +883,7 @@ fn settings_window_css_for(theme: Theme) -> String {
             opacity: 1;
         }}
         window.zter-settings-window frame.zter-settings-group {{
-            background-color: {};
+            background-color: transparent;
             background-image: none;
             border-width: 0;
             border-radius: 11px;
@@ -891,10 +891,10 @@ fn settings_window_css_for(theme: Theme) -> String {
             padding: 2px 12px 12px;
         }}
         window.zter-settings-window frame.zter-settings-group > label {{
-            background-color: {};
+            background-color: transparent;
             color: {};
             margin-left: 0;
-            padding: 0 4px 0 0;
+            padding: 0 0 0 0;
         }}
         window.zter-settings-window .zter-settings-padding {{
             margin-top: 6px;
@@ -980,7 +980,7 @@ fn settings_window_css_for(theme: Theme) -> String {
         window.zter-settings-window .zter-settings-field > .zter-settings-value {{
             background-color: {};
             background-image: none;
-            border: 1px solid {};
+            border: 1px solid transparent;
             border-radius: 7px;
             box-shadow: none;
             color: {};
@@ -1051,9 +1051,18 @@ fn settings_window_css_for(theme: Theme) -> String {
             padding: 0;
         }}
         window.zter-settings-window .zter-settings-field > entry:focus,
+        window.zter-settings-window .zter-settings-field > entry:focus-within,
+        window.zter-settings-window .zter-settings-field > entry:focus-visible,
         window.zter-settings-window .zter-settings-field > spinbutton:focus,
-        window.zter-settings-window .zter-settings-field spinbutton entry:focus {{
+        window.zter-settings-window .zter-settings-field > spinbutton:focus-within,
+        window.zter-settings-window .zter-settings-field > spinbutton:focus-visible {{
             border-color: {};
+            box-shadow: none;
+            outline-width: 0;
+        }}
+        window.zter-settings-window .zter-settings-field spinbutton entry:focus,
+        window.zter-settings-window .zter-settings-field spinbutton entry:focus-within,
+        window.zter-settings-window .zter-settings-field spinbutton entry:focus-visible {{
             box-shadow: none;
             outline-width: 0;
         }}
@@ -1141,8 +1150,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         Theme::Red.palette().cursor.css(),
         Theme::Mauve.palette().cursor.css(),
         palette.cursor.css(),
-        settings.list_row.css(),
-        settings.page.css(),
         settings.muted_foreground.css(),
         settings.muted_foreground.css(),
         settings.muted_foreground.css(),
@@ -1164,7 +1171,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.selected_foreground.css(),
         settings.foreground.css(),
         settings.field.css(),
-        settings.border.css(),
         settings.foreground.css(),
         settings.track.css(),
         settings.muted_foreground.css(),
@@ -1177,7 +1183,7 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.foreground.css(),
         settings.muted_foreground.css(),
         settings.foreground.css(),
-        settings.foreground.css(),
+        palette.cursor.css(),
         settings.foreground.css(),
         settings.action_hover.css(),
         settings.page.css(),
@@ -1582,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_fields_use_a_border_without_input_focus_rings() {
+    fn settings_fields_show_their_border_only_on_focus_without_focus_rings() {
         let css = application_css(TerminalPadding::default());
         let (_, input_rule) = css
             .split_once("window.zter-settings-window .zter-settings-field > entry,")
@@ -1594,9 +1600,12 @@ mod tests {
         let (focus_rule, _) = focus_rule.split_once('}').unwrap();
 
         assert!(input_rule.contains("background-color: #EAF4FF"));
-        assert!(input_rule.contains("border: 1px solid #D1E7FA"));
+        assert!(input_rule.contains("border: 1px solid transparent"));
         assert!(input_rule.contains("box-shadow: none"));
         assert!(input_rule.contains("min-height: 36px"));
+        assert!(focus_rule.contains(".zter-settings-field > entry:focus-within"));
+        assert!(focus_rule.contains(".zter-settings-field > spinbutton:focus-within"));
+        assert!(focus_rule.contains("border-color: #61AFEF"));
         assert!(focus_rule.contains("outline-width: 0"));
         assert!(focus_rule.contains("box-shadow: none"));
     }
@@ -1792,7 +1801,7 @@ mod tests {
     }
 
     #[test]
-    fn padding_group_uses_a_neutral_border_and_integrated_title() {
+    fn padding_group_stays_clear_so_padding_inputs_read_as_separate_fields() {
         let css = application_css(TerminalPadding::default());
         let (_, group_rule) = css
             .split_once("window.zter-settings-window frame.zter-settings-group {")
@@ -1803,12 +1812,12 @@ mod tests {
             .unwrap();
         let (title_rule, _) = title_rule.split_once('}').unwrap();
 
-        assert!(group_rule.contains("background-color: #EAF4FF"));
+        assert!(group_rule.contains("background-color: transparent"));
         assert!(group_rule.contains("border-width: 0"));
         assert!(group_rule.contains("box-shadow: none"));
-        assert!(title_rule.contains("background-color: #FAFCFD"));
+        assert!(title_rule.contains("background-color: transparent"));
         assert!(title_rule.contains("margin-left: 0"));
-        assert!(title_rule.contains("padding: 0 4px 0 0"));
+        assert!(title_rule.contains("padding: 0 0 0 0"));
     }
 
     #[test]

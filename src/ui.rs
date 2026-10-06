@@ -1390,6 +1390,16 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     overlay.add_overlay(&header);
     window.set_child(Some(&overlay));
 
+    let clear_focus_on_click = gtk::GestureClick::new();
+    clear_focus_on_click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let window_weak = window.downgrade();
+    clear_focus_on_click.connect_pressed(move |_, _, _, _| {
+        if let Some(window) = window_weak.upgrade() {
+            gtk::prelude::GtkWindowExt::set_focus(&window, None::<&gtk::Widget>);
+        }
+    });
+    window.add_controller(clear_focus_on_click);
+
     let window_weak = window.downgrade();
     cancel.connect_clicked(move |_| {
         if let Some(window) = window_weak.upgrade() {

@@ -64,14 +64,17 @@ two-decimal values.
 
 The settings window uses a white panel surface, a rounded tinted sidebar,
 `40px` navigation rows, and `46px` theme rows derived from the current theme
-palette. Unchecked checkbox and radio indicators use the derived field and
-border roles. Checked indicators, enabled slider highlights, and resting slider
-thumbs use the theme's muted foreground role with white indicator marks.
-Hovered indicators use the same muted foreground for their borders. Focused
-indicators and hovered or focused slider thumbs use the theme foreground.
-Disabled settings controls use `0.3` opacity, and disabled slider tracks use a
-softened disabled-track role. The header close control uses a derived control
-fill and hover fill.
+palette. Text inputs and spin buttons keep transparent resting borders and show
+the theme primary accent border only while focused. Clicking elsewhere in the
+settings window clears input focus. The Padding group keeps a clear background
+so Top, Right, Bottom, and Left remain visually separate input fields. Unchecked
+checkbox and radio indicators use the derived field and border roles. Checked
+indicators, enabled slider highlights, and resting slider thumbs use the theme's
+muted foreground role with white indicator marks. Hovered indicators use the
+same muted foreground for their borders. Focused indicators and hovered or
+focused slider thumbs use the theme foreground. Disabled settings controls use
+`0.3` opacity, and disabled slider tracks use a softened disabled-track role.
+The header close control uses a derived control fill and hover fill.
 Numeric decrement and increment controls keep circular `28px` background boxes
 inside their fields, with transparent resting fills and derived hover fills.
 Settings controls change state without transition durations.
