@@ -36,6 +36,8 @@ struct SettingsPalette {
     subtle_border: Rgb,
     nav_hover: Rgb,
     nav_selected: Rgb,
+    list_row: Rgb,
+    list_selected: Rgb,
     action: Rgb,
     action_hover: Rgb,
     track: Rgb,
@@ -224,6 +226,8 @@ fn settings_palette(palette: ThemePalette) -> SettingsPalette {
         subtle_border: palette.selection.mix(palette.background, 25),
         nav_hover: palette.tab_hover.mix(palette.muted_foreground, 10),
         nav_selected: palette.selection.mix(palette.muted_foreground, 30),
+        list_row: palette.background.mix(palette.header_background, 24),
+        list_selected: palette.selection.mix(palette.muted_foreground, 34),
         action: palette.header_background.mix(palette.tab_hover, 55),
         action_hover: palette.tab_hover.mix(palette.header_button_hover, 45),
         track: palette.header_background.mix(palette.background, 25),
@@ -699,7 +703,7 @@ fn settings_window_css_for(theme: Theme) -> String {
             min-height: 32px;
             padding: 0 8px;
         }}
-        window.zter-settings-window checkbutton.zter-settings-nav {{
+        window.zter-settings-window button.zter-settings-nav {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
@@ -710,18 +714,15 @@ fn settings_window_css_for(theme: Theme) -> String {
             min-height: 34px;
             padding: 0 10px;
         }}
-        window.zter-settings-window checkbutton.zter-settings-nav check {{
-            margin: 0;
-            min-height: 0;
-            min-width: 0;
-            opacity: 0;
-        }}
-        window.zter-settings-window checkbutton.zter-settings-nav:hover {{
+        window.zter-settings-window button.zter-settings-nav:hover {{
             background-color: {};
         }}
-        window.zter-settings-window checkbutton.zter-settings-nav:checked {{
+        window.zter-settings-window button.zter-settings-nav:checked {{
             background-color: {};
             color: {};
+        }}
+        window.zter-settings-window .zter-settings-nav-label {{
+            text-align: left;
         }}
         window.zter-settings-window .zter-settings-pages {{
             background-color: {};
@@ -740,6 +741,65 @@ fn settings_window_css_for(theme: Theme) -> String {
         }}
         window.zter-settings-window .zter-settings-form {{
             padding: 0;
+        }}
+        window.zter-settings-window .zter-settings-theme-list {{
+            background-color: transparent;
+            background-image: none;
+        }}
+        window.zter-settings-window button.zter-settings-theme-option {{
+            background-color: {};
+            background-image: none;
+            border-width: 0;
+            border-radius: 7px;
+            box-shadow: none;
+            color: {};
+            min-height: 44px;
+            padding: 0 12px;
+        }}
+        window.zter-settings-window button.zter-settings-theme-option:hover {{
+            background-color: {};
+        }}
+        window.zter-settings-window button.zter-settings-theme-option:checked {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-settings-theme-option-row {{
+            min-height: 44px;
+        }}
+        window.zter-settings-window .zter-settings-theme-swatch {{
+            border-radius: 6px;
+            min-height: 22px;
+            min-width: 22px;
+        }}
+        window.zter-settings-window .zter-theme-swatch-one-half-dark {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-purple {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-white-mist {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-white-sky {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-forest-calm {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-one-half-gray {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-red {{
+            background-color: {};
+        }}
+        window.zter-settings-window .zter-theme-swatch-mauve {{
+            background-color: {};
+        }}
+        window.zter-settings-window image.zter-settings-theme-check {{
+            color: {};
+            opacity: 0;
+        }}
+        window.zter-settings-window button.zter-settings-theme-option:checked image.zter-settings-theme-check {{
+            opacity: 1;
         }}
         window.zter-settings-window frame.zter-settings-group {{
             background-color: transparent;
@@ -988,6 +1048,19 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.nav_selected.css(),
         settings.foreground.css(),
         settings.page.css(),
+        settings.foreground.css(),
+        settings.list_row.css(),
+        settings.foreground.css(),
+        settings.nav_hover.css(),
+        settings.list_selected.css(),
+        Theme::OneHalfDark.palette().cursor.css(),
+        Theme::Purple.palette().cursor.css(),
+        Theme::WhiteMist.palette().cursor.css(),
+        Theme::WhiteSky.palette().cursor.css(),
+        Theme::ForestCalm.palette().cursor.css(),
+        Theme::OneHalfGray.palette().cursor.css(),
+        Theme::Red.palette().cursor.css(),
+        Theme::Mauve.palette().cursor.css(),
         settings.foreground.css(),
         settings.subtle_border.css(),
         settings.page.css(),
@@ -1478,23 +1551,25 @@ mod tests {
             .unwrap();
         let (sidebar_rule, _) = sidebar_rule.split_once('}').unwrap();
         let (_, nav_rule) = css
-            .split_once("window.zter-settings-window checkbutton.zter-settings-nav {")
+            .split_once("window.zter-settings-window button.zter-settings-nav {")
             .unwrap();
         let (nav_rule, _) = nav_rule.split_once('}').unwrap();
-        let (_, check_rule) = css
-            .split_once("window.zter-settings-window checkbutton.zter-settings-nav check {")
-            .unwrap();
-        let (check_rule, _) = check_rule.split_once('}').unwrap();
         let (_, checked_rule) = css
-            .split_once("window.zter-settings-window checkbutton.zter-settings-nav:checked {")
+            .split_once("window.zter-settings-window button.zter-settings-nav:checked {")
             .unwrap();
         let (checked_rule, _) = checked_rule.split_once('}').unwrap();
+        let (_, label_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-nav-label {")
+            .unwrap();
+        let (label_rule, _) = label_rule.split_once('}').unwrap();
 
         assert!(sidebar_rule.contains("min-width: 144px"));
         assert!(sidebar_rule.contains("border-right: 1px solid #393E4A"));
         assert!(nav_rule.contains("border-radius: 7px"));
-        assert!(check_rule.contains("opacity: 0"));
         assert!(checked_rule.contains("background-color: #5B616F"));
+        assert!(label_rule.contains("text-align: left"));
+        assert!(!css.contains("zter-settings-nav check"));
+        assert!(!css.contains("zter-settings-nav radio"));
     }
 
     #[test]
@@ -1614,10 +1689,24 @@ mod tests {
     }
 
     #[test]
-    fn settings_selection_controls_do_not_use_the_blue_terminal_accent() {
+    fn settings_theme_swatches_use_accents_without_changing_selection_controls() {
         let css = settings_window_css();
 
-        assert!(!css.contains(&CURSOR.css()));
+        assert!(css.contains(
+            "window.zter-settings-window .zter-theme-swatch-one-half-dark {\n            background-color: #61AFEF"
+        ));
+        assert!(css.contains(
+            "window.zter-settings-window button.zter-settings-theme-option:checked image.zter-settings-theme-check {\n            opacity: 1"
+        ));
+        assert!(!css.contains(
+            "checkbutton.zter-settings-checkbox:checked check {\n            background-color: #61AFEF"
+        ));
+        assert!(!css.contains(
+            "checkbutton.zter-settings-radio:checked radio {\n            background-color: #61AFEF"
+        ));
+        assert!(!css.contains(
+            "scale.zter-settings-opacity-scale highlight {\n            background-color: #61AFEF"
+        ));
     }
 
     #[test]

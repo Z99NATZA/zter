@@ -190,7 +190,7 @@ struct HeaderWidgets {
 #[derive(Clone)]
 struct SettingsControls {
     shell: gtk::Entry,
-    theme: gtk::DropDown,
+    theme: Vec<gtk::ToggleButton>,
     font_family: gtk::Entry,
     font_size: gtk::SpinButton,
     padding: [gtk::SpinButton; 4],
@@ -219,7 +219,7 @@ impl SettingsControls {
                 selected_background_image_mode(&self.background_image_mode),
                 &self.background_image_path,
             ),
-            theme: Theme::from_selected_index(self.theme.selected()),
+            theme: selected_theme(&self.theme),
             font_family: self.font_family.text().to_string(),
             font_size: self.font_size.value(),
             terminal_padding: TerminalPadding::new(
@@ -1112,7 +1112,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     let terminal_form = settings_form();
     terminal_page.append(&terminal_form);
 
-    let appearance_page = settings_page("Appearance");
+    let appearance_page = settings_page("Themes");
     let appearance_form = settings_form();
     appearance_page.append(&appearance_form);
 
@@ -1129,23 +1129,14 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         .placeholder_text("Use the environment shell")
         .hexpand(true)
         .build();
-    terminal_form.attach(&settings_field("Shell", &shell), 0, 0, 2, 1);
-
     let font_family = gtk::Entry::builder()
         .text(settings.font_family())
         .hexpand(true)
         .build();
-    terminal_form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
 
     let font_size = settings_spin(settings.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
-    terminal_form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
 
-    let theme_labels: Vec<&str> = Theme::ALL.iter().map(|theme| theme.label()).collect();
-    let theme = gtk::DropDown::from_strings(&theme_labels);
-    theme.set_selected(settings.theme().selected_index());
-    theme.set_hexpand(true);
-    theme.add_css_class("zter-settings-value");
-    appearance_form.attach(&settings_field("Theme", &theme), 0, 0, 2, 1);
+    let (theme, theme_list) = settings_theme_list(settings.theme());
 
     let scrollback = settings_spin(
         settings.scrollback_lines() as f64,
@@ -1154,16 +1145,9 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         1_000.0,
         0,
     );
-    terminal_form.attach(
-        &settings_field("Scrollback (lines)", &scrollback),
-        2,
-        0,
-        1,
-        1,
-    );
 
     let padding = settings.terminal_padding();
-    let padding_inputs = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let padding_inputs = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     padding_inputs.add_css_class("zter-settings-padding");
     let padding_controls = [
         settings_spin(
@@ -1209,18 +1193,10 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         .child(&padding_inputs)
         .build();
     padding_group.add_css_class("zter-settings-group");
-    terminal_form.attach(&padding_group, 0, 3, 2, 1);
 
     let (background_image_mode, background_image_mode_control) = settings_radio_group(
         ["Default", "Custom", "None"],
         background_image_mode_setting(settings.background_image()),
-    );
-    background_form.attach(
-        &settings_field("Background image", &background_image_mode_control),
-        0,
-        0,
-        2,
-        1,
     );
 
     let background_image_path = gtk::Entry::builder()
@@ -1242,13 +1218,6 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         };
         open_background_image_dialog(&window, background_image_path);
     });
-    background_form.attach(
-        &settings_field("Custom background image", &background_image_path),
-        0,
-        1,
-        2,
-        1,
-    );
 
     let background_image_opacity = settings_scale(
         settings.background_image_opacity(),
@@ -1260,17 +1229,6 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     let background_image_opacity_enabled = settings_checkbox(
         OPACITY_CONTROLS_ENABLED_BY_DEFAULT,
         "Use custom background image opacity",
-    );
-    background_form.attach(
-        &settings_field_with_checkbox(
-            "Background image opacity (0 - 0.60)",
-            &background_image_opacity_enabled,
-            &background_image_opacity,
-        ),
-        0,
-        2,
-        2,
-        1,
     );
 
     let window_opacity = settings_scale(
@@ -1284,17 +1242,52 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         OPACITY_CONTROLS_ENABLED_BY_DEFAULT,
         "Use custom window opacity",
     );
-    window_form.attach(
-        &settings_field_with_checkbox(
-            "Window opacity (0.60 - 1.00)",
-            &window_opacity_enabled,
-            &window_opacity,
-        ),
-        0,
-        0,
-        2,
-        1,
-    );
+
+    let terminal_core_section = settings_section();
+    let terminal_shell_row = settings_row();
+    terminal_shell_row.append(&settings_field("Shell", &shell));
+    terminal_shell_row.append(&settings_field("Scrollback (lines)", &scrollback));
+    terminal_core_section.append(&terminal_shell_row);
+    let terminal_font_row = settings_row();
+    terminal_font_row.append(&settings_field("Font family", &font_family));
+    terminal_font_row.append(&settings_field("Font size", &font_size));
+    terminal_core_section.append(&terminal_font_row);
+    terminal_form.append(&terminal_core_section);
+
+    let terminal_padding_section = settings_section();
+    terminal_padding_section.append(&padding_group);
+    terminal_form.append(&terminal_padding_section);
+
+    let appearance_theme_section = settings_section();
+    appearance_theme_section.append(&theme_list);
+    appearance_form.append(&appearance_theme_section);
+
+    let background_source_section = settings_section();
+    background_source_section.append(&settings_field(
+        "Background image",
+        &background_image_mode_control,
+    ));
+    background_source_section.append(&settings_field(
+        "Custom background image",
+        &background_image_path,
+    ));
+    background_form.append(&background_source_section);
+
+    let background_opacity_section = settings_section();
+    background_opacity_section.append(&settings_field_with_checkbox(
+        "Background image opacity (0 - 0.60)",
+        &background_image_opacity_enabled,
+        &background_image_opacity,
+    ));
+    background_form.append(&background_opacity_section);
+
+    let window_opacity_section = settings_section();
+    window_opacity_section.append(&settings_field_with_checkbox(
+        "Window opacity (0.60 - 1.00)",
+        &window_opacity_enabled,
+        &window_opacity,
+    ));
+    window_form.append(&window_opacity_section);
     sync_background_image_controls(
         &background_image_mode,
         &background_image_path,
@@ -1347,7 +1340,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         &pages,
         [
             ("Terminal", "terminal"),
-            ("Appearance", "appearance"),
+            ("Themes", "appearance"),
             ("Background", "background"),
             ("Window", "window"),
         ],
@@ -1467,13 +1460,24 @@ fn settings_page(title: &str) -> gtk::Box {
     page
 }
 
-fn settings_form() -> gtk::Grid {
-    let form = gtk::Grid::builder()
-        .column_spacing(12)
-        .row_spacing(12)
-        .build();
+fn settings_form() -> gtk::Box {
+    let form = gtk::Box::new(gtk::Orientation::Vertical, 16);
     form.add_css_class("zter-settings-form");
     form
+}
+
+fn settings_section() -> gtk::Box {
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    section.add_css_class("zter-settings-section");
+    section.set_hexpand(true);
+    section
+}
+
+fn settings_row() -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("zter-settings-row");
+    row.set_hexpand(true);
+    row
 }
 
 fn append_settings_navigation(
@@ -1483,9 +1487,18 @@ fn append_settings_navigation(
 ) {
     let mut first_button = None;
     for (index, (label, page_name)) in items.into_iter().enumerate() {
-        let button = gtk::CheckButton::with_label(label);
+        let button = gtk::ToggleButton::new();
         button.add_css_class("zter-settings-nav");
         button.set_halign(gtk::Align::Fill);
+
+        let label = gtk::Label::builder()
+            .label(label)
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        label.add_css_class("zter-settings-nav-label");
+        button.set_child(Some(&label));
+
         if let Some(first_button) = first_button.as_ref() {
             button.set_group(Some(first_button));
         }
@@ -1501,6 +1514,80 @@ fn append_settings_navigation(
             }
         });
         sidebar.append(&button);
+    }
+}
+
+fn settings_theme_list(selected: Theme) -> (Vec<gtk::ToggleButton>, gtk::Box) {
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    list.add_css_class("zter-settings-theme-list");
+    list.set_hexpand(true);
+
+    let mut buttons = Vec::new();
+    let mut first_button = None;
+    for theme in Theme::ALL {
+        let button = gtk::ToggleButton::new();
+        button.add_css_class("zter-settings-theme-option");
+        button.set_halign(gtk::Align::Fill);
+        if let Some(first_button) = first_button.as_ref() {
+            button.set_group(Some(first_button));
+        }
+        if first_button.is_none() {
+            first_button = Some(button.clone());
+        }
+        button.set_active(theme == selected);
+
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.add_css_class("zter-settings-theme-option-row");
+        row.set_hexpand(true);
+        row.set_valign(gtk::Align::Center);
+
+        let swatch = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        swatch.add_css_class("zter-settings-theme-swatch");
+        swatch.add_css_class(theme_swatch_class(theme));
+        swatch.set_size_request(22, 22);
+        swatch.set_valign(gtk::Align::Center);
+
+        let label = gtk::Label::builder()
+            .label(theme.label())
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        label.add_css_class("zter-settings-theme-label");
+
+        let selected = gtk::Image::from_icon_name("object-select-symbolic");
+        selected.add_css_class("zter-settings-theme-check");
+        selected.set_valign(gtk::Align::Center);
+
+        row.append(&swatch);
+        row.append(&label);
+        row.append(&selected);
+        button.set_child(Some(&row));
+        list.append(&button);
+        buttons.push(button);
+    }
+
+    (buttons, list)
+}
+
+fn selected_theme(buttons: &[gtk::ToggleButton]) -> Theme {
+    buttons
+        .iter()
+        .position(gtk::ToggleButton::is_active)
+        .and_then(|index| u32::try_from(index).ok())
+        .map(Theme::from_selected_index)
+        .unwrap_or(Theme::OneHalfDark)
+}
+
+fn theme_swatch_class(theme: Theme) -> &'static str {
+    match theme {
+        Theme::OneHalfDark => "zter-theme-swatch-one-half-dark",
+        Theme::Purple => "zter-theme-swatch-purple",
+        Theme::WhiteMist => "zter-theme-swatch-white-mist",
+        Theme::WhiteSky => "zter-theme-swatch-white-sky",
+        Theme::ForestCalm => "zter-theme-swatch-forest-calm",
+        Theme::OneHalfGray => "zter-theme-swatch-one-half-gray",
+        Theme::Red => "zter-theme-swatch-red",
+        Theme::Mauve => "zter-theme-swatch-mauve",
     }
 }
 
@@ -1523,7 +1610,7 @@ fn settings_field_with_heading(
     heading: &impl IsA<gtk::Widget>,
     control: &impl IsA<gtk::Widget>,
 ) -> gtk::Box {
-    let field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let field = gtk::Box::new(gtk::Orientation::Vertical, 8);
     field.add_css_class("zter-settings-field");
     field.set_hexpand(true);
 

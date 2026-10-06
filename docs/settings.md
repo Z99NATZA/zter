@@ -49,8 +49,10 @@ window, pressing Escape, or clicking Cancel discards unsaved edits. A save or
 runtime-configuration error is shown in the settings window and retains the
 draft.
 
-The settings window uses sidebar sections for Terminal, Appearance, Background,
-and Window controls. A dropdown selects the theme. An unboxed radio group
+The settings window uses text-only sidebar sections for Terminal, Themes,
+Background, and Window controls. Controls in the same group use `8px` row gaps,
+and separate groups use `16px` gaps. The Themes page presents every supported
+theme as a selectable row with a swatch and selected mark. An unboxed radio group
 selects the Default, Custom, or None background image mode. Custom can browse
 local image formats supported by GdkPixbuf and place the selected path in the
 draft. Background image opacity and window opacity each have a checkbox before

@@ -63,14 +63,6 @@ impl Theme {
         }
     }
 
-    pub(crate) fn selected_index(self) -> u32 {
-        Self::ALL
-            .iter()
-            .position(|theme| *theme == self)
-            .and_then(|index| u32::try_from(index).ok())
-            .unwrap_or_default()
-    }
-
     pub(crate) fn from_selected_index(index: u32) -> Self {
         usize::try_from(index)
             .ok()
