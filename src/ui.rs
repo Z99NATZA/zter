@@ -1071,6 +1071,7 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     if let Some(application) = parent.application() {
         window.set_application(Some(&application));
     }
+    window.set_transient_for(Some(parent));
     window.add_css_class("zter-settings-window");
 
     let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1079,25 +1080,23 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     header.add_css_class("zter-settings-header");
+    header.set_halign(gtk::Align::Fill);
+    header.set_valign(gtk::Align::Start);
 
     let handle = gtk::WindowHandle::new();
     handle.set_hexpand(true);
-    let title = gtk::Label::builder().label("Settings").xalign(0.0).build();
-    title.add_css_class("zter-settings-title");
-    handle.set_child(Some(&title));
 
     let window_controls = gtk::WindowControls::new(gtk::PackType::End);
     window_controls.set_decoration_layout(Some(":close"));
     window_controls.set_valign(gtk::Align::Center);
     header.append(&handle);
     header.append(&window_controls);
-    surface.append(&header);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     body.add_css_class("zter-settings-body");
     body.set_vexpand(true);
 
-    let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 5);
     sidebar.add_css_class("zter-settings-sidebar");
     let sidebar_title = gtk::Label::builder().label("Settings").xalign(0.0).build();
     sidebar_title.add_css_class("zter-settings-sidebar-title");
@@ -1386,7 +1385,10 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     actions.append(&ok);
     surface.append(&actions);
 
-    window.set_child(Some(&surface));
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&surface));
+    overlay.add_overlay(&header);
+    window.set_child(Some(&overlay));
 
     let window_weak = window.downgrade();
     cancel.connect_clicked(move |_| {

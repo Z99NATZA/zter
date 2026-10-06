@@ -49,27 +49,29 @@ window, pressing Escape, or clicking Cancel discards unsaved edits. A save or
 runtime-configuration error is shown in the settings window and retains the
 draft.
 
-The settings window uses text-only sidebar sections for Terminal, Themes,
-Background, and Window controls. Controls in the same group use `8px` row gaps,
-and separate groups use `16px` gaps. The Themes page presents every supported
-theme as a selectable row with a swatch and selected mark. An unboxed radio group
-selects the Default, Custom, or None background image mode. Custom can browse
-local image formats supported by GdkPixbuf and place the selected path in the
-draft. Background image opacity and window opacity each have a checkbox before
-the label; clicking the label toggles the checkbox. Both opacity controls start
-checked. An unchecked opacity control applies the embedded default and keeps
-the current slider value in the draft; a checked opacity control applies the
-slider value. Opacity sliders show two-decimal values.
+The settings window uses one visible Settings heading in the sidebar, followed
+by text-only sections for Terminal, Themes, Background, and Window controls.
+Controls in the same group use `8px` row gaps, and separate groups use `16px`
+gaps. The Themes page presents every supported theme as a selectable row with a
+swatch and selected mark. An unboxed radio group selects the Default, Custom, or
+None background image mode. Custom can browse local image formats supported by
+GdkPixbuf and place the selected path in the draft. Background image opacity and
+window opacity each have a checkbox before the label; clicking the label toggles
+the checkbox. Both opacity controls start checked. An unchecked opacity control
+applies the embedded default and keeps the current slider value in the draft; a
+checked opacity control applies the slider value. Opacity sliders show
+two-decimal values.
 
-The settings window derives softer dark surfaces, fields, dividers, and selected
-navigation fills from the current theme palette. Unchecked checkbox and radio
-indicators use the derived field and border roles. Checked indicators, enabled
-slider highlights, and resting slider thumbs use the theme's muted foreground
-role with the theme background for indicator marks. Hovered indicators use the
-same muted foreground for their borders. Focused indicators and hovered or
-focused slider thumbs use the theme foreground. Disabled settings controls use
-`0.3` opacity, and disabled slider tracks use a softened disabled-track role.
-The header close control uses the terminal window's native control style.
+The settings window uses a white panel surface, a rounded tinted sidebar,
+`40px` navigation rows, and `46px` theme rows derived from the current theme
+palette. Unchecked checkbox and radio indicators use the derived field and
+border roles. Checked indicators, enabled slider highlights, and resting slider
+thumbs use the theme's muted foreground role with white indicator marks.
+Hovered indicators use the same muted foreground for their borders. Focused
+indicators and hovered or focused slider thumbs use the theme foreground.
+Disabled settings controls use `0.3` opacity, and disabled slider tracks use a
+softened disabled-track role. The header close control uses a derived control
+fill and hover fill.
 Numeric decrement and increment controls keep circular `28px` background boxes
 inside their fields, with transparent resting fills and derived hover fills.
 Settings controls change state without transition durations.
