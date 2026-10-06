@@ -640,8 +640,64 @@ fn settings_window_css_for(theme: Theme) -> String {
             font-weight: 600;
             padding-left: 16px;
         }}
+        window.zter-settings-window .zter-settings-body {{
+            min-height: 420px;
+        }}
+        window.zter-settings-window .zter-settings-sidebar {{
+            background-color: {};
+            background-image: none;
+            border-right: 1px solid {};
+            box-shadow: none;
+            min-width: 144px;
+            padding: 16px 12px;
+        }}
+        window.zter-settings-window .zter-settings-sidebar-title {{
+            color: {};
+            font-weight: 700;
+            min-height: 32px;
+            padding: 0 8px;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-nav {{
+            background-color: transparent;
+            background-image: none;
+            border-width: 0;
+            border-radius: 7px;
+            box-shadow: none;
+            color: {};
+            margin: 0;
+            min-height: 34px;
+            padding: 0 10px;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-nav check {{
+            margin: 0;
+            min-height: 0;
+            min-width: 0;
+            opacity: 0;
+        }}
+        window.zter-settings-window checkbutton.zter-settings-nav:hover {{
+            background-color: {};
+        }}
+        window.zter-settings-window checkbutton.zter-settings-nav:checked {{
+            background-color: {};
+            color: {};
+        }}
+        window.zter-settings-window .zter-settings-pages {{
+            background-color: {};
+            background-image: none;
+            padding: 18px 18px 16px;
+        }}
+        window.zter-settings-window .zter-settings-page {{
+            background-color: transparent;
+            background-image: none;
+        }}
+        window.zter-settings-window .zter-settings-page-title {{
+            color: {};
+            font-size: 18px;
+            font-weight: 700;
+            min-height: 28px;
+        }}
         window.zter-settings-window .zter-settings-form {{
-            padding: 16px;
+            padding: 0;
         }}
         window.zter-settings-window frame.zter-settings-group {{
             background-color: transparent;
@@ -879,6 +935,15 @@ fn settings_window_css_for(theme: Theme) -> String {
         palette.border.css(),
         palette.header_background.css(),
         palette.border.css(),
+        palette.foreground.css(),
+        palette.header_background.css(),
+        palette.border.css(),
+        palette.foreground.css(),
+        palette.foreground.css(),
+        palette.tab_hover.css(),
+        palette.selection.css(),
+        palette.foreground.css(),
+        palette.surface.css(),
         palette.foreground.css(),
         palette.border.css(),
         palette.surface.css(),
@@ -1324,6 +1389,10 @@ mod tests {
     #[test]
     fn settings_form_uses_comfortable_spacing() {
         let css = application_css(TerminalPadding::default());
+        let (_, pages_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-pages {")
+            .unwrap();
+        let (pages_rule, _) = pages_rule.split_once('}').unwrap();
         let (_, form_rule) = css
             .split_once("window.zter-settings-window .zter-settings-form {")
             .unwrap();
@@ -1333,9 +1402,37 @@ mod tests {
             .unwrap();
         let (label_rule, _) = label_rule.split_once('}').unwrap();
 
-        assert!(form_rule.contains("padding: 16px"));
+        assert!(pages_rule.contains("padding: 18px 18px 16px"));
+        assert!(form_rule.contains("padding: 0"));
         assert!(label_rule.contains("font-size: 12px"));
         assert!(label_rule.contains("min-height: 18px"));
+    }
+
+    #[test]
+    fn settings_sidebar_navigation_uses_selected_section_fill_without_indicators() {
+        let css = application_css(TerminalPadding::default());
+        let (_, sidebar_rule) = css
+            .split_once("window.zter-settings-window .zter-settings-sidebar {")
+            .unwrap();
+        let (sidebar_rule, _) = sidebar_rule.split_once('}').unwrap();
+        let (_, nav_rule) = css
+            .split_once("window.zter-settings-window checkbutton.zter-settings-nav {")
+            .unwrap();
+        let (nav_rule, _) = nav_rule.split_once('}').unwrap();
+        let (_, check_rule) = css
+            .split_once("window.zter-settings-window checkbutton.zter-settings-nav check {")
+            .unwrap();
+        let (check_rule, _) = check_rule.split_once('}').unwrap();
+        let (_, checked_rule) = css
+            .split_once("window.zter-settings-window checkbutton.zter-settings-nav:checked {")
+            .unwrap();
+        let (checked_rule, _) = checked_rule.split_once('}').unwrap();
+
+        assert!(sidebar_rule.contains("min-width: 144px"));
+        assert!(sidebar_rule.contains("border-right: 1px solid #3E4451"));
+        assert!(nav_rule.contains("border-radius: 7px"));
+        assert!(check_rule.contains("opacity: 0"));
+        assert!(checked_rule.contains("background-color: #3E4451"));
     }
 
     #[test]

@@ -32,7 +32,8 @@ use crate::{
 
 const DEFAULT_WIDTH: i32 = 960;
 const DEFAULT_HEIGHT: i32 = 600;
-const SETTINGS_WIDTH: i32 = 520;
+const SETTINGS_WIDTH: i32 = 660;
+const SETTINGS_HEIGHT: i32 = 510;
 const WALLPAPER_BLEND_OPERATOR: gtk::cairo::Operator = gtk::cairo::Operator::Screen;
 const BUNDLED_WALLPAPER: &[u8] = include_bytes!("../data/wallpapers/zter-wallpaper.png");
 const BACKGROUND_IMAGE_MODE_DEFAULT: u32 = 0;
@@ -66,6 +67,7 @@ static NEXT_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
     static TAB_RUNTIMES: RefCell<HashMap<String, Weak<TabRuntime>>> = RefCell::new(HashMap::new());
+    static SETTINGS_WINDOW: RefCell<Option<gtk::glib::WeakRef<gtk::Window>>> = const { RefCell::new(None) };
     static WINDOW_CONTEXTS: RefCell<Vec<Weak<WindowContext>>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -266,7 +268,6 @@ struct WindowContext {
     mini_pointer_inside: Cell<bool>,
     controls_pointer_inside: Cell<bool>,
     header_hide_source: RefCell<Option<gtk::glib::SourceId>>,
-    settings_window: RefCell<Option<gtk::glib::WeakRef<gtk::Window>>>,
     notebook: gtk::glib::WeakRef<gtk::Notebook>,
     tab_strip: gtk::glib::WeakRef<gtk::Box>,
     tab_scroller: gtk::glib::WeakRef<gtk::ScrolledWindow>,
@@ -664,7 +665,6 @@ fn create_window(
         mini_pointer_inside: Cell::new(false),
         controls_pointer_inside: Cell::new(false),
         header_hide_source: RefCell::new(None),
-        settings_window: RefCell::new(None),
         notebook: notebook.downgrade(),
         tab_strip: header.tab_strip.downgrade(),
         tab_scroller: header.tab_scroller.downgrade(),
@@ -1020,12 +1020,7 @@ fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
         let Some(context) = context.upgrade() else {
             return;
         };
-        if let Some(window) = context
-            .settings_window
-            .borrow()
-            .as_ref()
-            .and_then(gtk::glib::WeakRef::upgrade)
-        {
+        if let Some(window) = active_settings_window() {
             window.present();
             return;
         }
@@ -1043,29 +1038,39 @@ fn install_settings_button(button: &gtk::Button, context: &Rc<WindowContext>) {
         };
 
         let window = create_settings_window(&parent, settings);
-        context.settings_window.replace(Some(window.downgrade()));
-
-        let context_weak = Rc::downgrade(&context);
+        SETTINGS_WINDOW.with(|settings_window| {
+            settings_window.replace(Some(window.downgrade()));
+        });
         window.connect_destroy(move |_| {
-            if let Some(context) = context_weak.upgrade() {
-                context.settings_window.borrow_mut().take();
-            }
+            SETTINGS_WINDOW.with(|settings_window| {
+                settings_window.borrow_mut().take();
+            });
         });
         window.present();
     });
+}
+
+fn active_settings_window() -> Option<gtk::Window> {
+    SETTINGS_WINDOW.with(|settings_window| {
+        settings_window
+            .borrow()
+            .as_ref()
+            .and_then(gtk::glib::WeakRef::upgrade)
+    })
 }
 
 fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -> gtk::Window {
     let defaults = Settings::defaults();
     let window = gtk::Window::builder()
         .title("Settings")
-        .transient_for(parent)
-        .modal(true)
         .decorated(false)
         .resizable(false)
-        .destroy_with_parent(true)
         .default_width(SETTINGS_WIDTH)
+        .default_height(SETTINGS_HEIGHT)
         .build();
+    if let Some(application) = parent.application() {
+        window.set_application(Some(&application));
+    }
     window.add_css_class("zter-settings-window");
 
     let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1088,34 +1093,59 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     header.append(&window_controls);
     surface.append(&header);
 
-    let form = gtk::Grid::builder()
-        .column_spacing(12)
-        .row_spacing(12)
-        .build();
-    form.add_css_class("zter-settings-form");
+    let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    body.add_css_class("zter-settings-body");
+    body.set_vexpand(true);
+
+    let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    sidebar.add_css_class("zter-settings-sidebar");
+    let sidebar_title = gtk::Label::builder().label("Settings").xalign(0.0).build();
+    sidebar_title.add_css_class("zter-settings-sidebar-title");
+    sidebar.append(&sidebar_title);
+
+    let pages = gtk::Stack::new();
+    pages.add_css_class("zter-settings-pages");
+    pages.set_hexpand(true);
+    pages.set_vexpand(true);
+
+    let terminal_page = settings_page("Terminal");
+    let terminal_form = settings_form();
+    terminal_page.append(&terminal_form);
+
+    let appearance_page = settings_page("Appearance");
+    let appearance_form = settings_form();
+    appearance_page.append(&appearance_form);
+
+    let background_page = settings_page("Background");
+    let background_form = settings_form();
+    background_page.append(&background_form);
+
+    let window_page = settings_page("Window");
+    let window_form = settings_form();
+    window_page.append(&window_form);
 
     let shell = gtk::Entry::builder()
         .text(settings.shell().unwrap_or_default())
         .placeholder_text("Use the environment shell")
         .hexpand(true)
         .build();
-    form.attach(&settings_field("Shell", &shell), 0, 0, 2, 1);
+    terminal_form.attach(&settings_field("Shell", &shell), 0, 0, 2, 1);
 
     let font_family = gtk::Entry::builder()
         .text(settings.font_family())
         .hexpand(true)
         .build();
-    form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
+    terminal_form.attach(&settings_field("Font family", &font_family), 0, 1, 1, 1);
 
     let font_size = settings_spin(settings.font_size(), MIN_FONT_SIZE, MAX_FONT_SIZE, 1.0, 0);
-    form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
+    terminal_form.attach(&settings_field("Font size", &font_size), 1, 1, 1, 1);
 
     let theme_labels: Vec<&str> = Theme::ALL.iter().map(|theme| theme.label()).collect();
     let theme = gtk::DropDown::from_strings(&theme_labels);
     theme.set_selected(settings.theme().selected_index());
     theme.set_hexpand(true);
     theme.add_css_class("zter-settings-value");
-    form.attach(&settings_field("Theme", &theme), 0, 2, 1, 1);
+    appearance_form.attach(&settings_field("Theme", &theme), 0, 0, 2, 1);
 
     let scrollback = settings_spin(
         settings.scrollback_lines() as f64,
@@ -1124,10 +1154,10 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         1_000.0,
         0,
     );
-    form.attach(
+    terminal_form.attach(
         &settings_field("Scrollback (lines)", &scrollback),
-        1,
         2,
+        0,
         1,
         1,
     );
@@ -1179,16 +1209,16 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         .child(&padding_inputs)
         .build();
     padding_group.add_css_class("zter-settings-group");
-    form.attach(&padding_group, 0, 3, 2, 1);
+    terminal_form.attach(&padding_group, 0, 3, 2, 1);
 
     let (background_image_mode, background_image_mode_control) = settings_radio_group(
         ["Default", "Custom", "None"],
         background_image_mode_setting(settings.background_image()),
     );
-    form.attach(
+    background_form.attach(
         &settings_field("Background image", &background_image_mode_control),
         0,
-        4,
+        0,
         2,
         1,
     );
@@ -1212,10 +1242,10 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         };
         open_background_image_dialog(&window, background_image_path);
     });
-    form.attach(
+    background_form.attach(
         &settings_field("Custom background image", &background_image_path),
         0,
-        5,
+        1,
         2,
         1,
     );
@@ -1231,14 +1261,14 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         OPACITY_CONTROLS_ENABLED_BY_DEFAULT,
         "Use custom background image opacity",
     );
-    form.attach(
+    background_form.attach(
         &settings_field_with_checkbox(
             "Background image opacity (0 - 0.60)",
             &background_image_opacity_enabled,
             &background_image_opacity,
         ),
         0,
-        6,
+        2,
         2,
         1,
     );
@@ -1254,14 +1284,14 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         OPACITY_CONTROLS_ENABLED_BY_DEFAULT,
         "Use custom window opacity",
     );
-    form.attach(
+    window_form.attach(
         &settings_field_with_checkbox(
             "Window opacity (0.60 - 1.00)",
             &window_opacity_enabled,
             &window_opacity,
         ),
         0,
-        7,
+        0,
         2,
         1,
     );
@@ -1307,7 +1337,24 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
         sync_opacity_control(window_opacity_enabled, &window_opacity_for_toggle);
     });
 
-    surface.append(&form);
+    pages.add_titled(&terminal_page, Some("terminal"), "Terminal");
+    pages.add_titled(&appearance_page, Some("appearance"), "Appearance");
+    pages.add_titled(&background_page, Some("background"), "Background");
+    pages.add_titled(&window_page, Some("window"), "Window");
+    pages.set_visible_child_name("terminal");
+    append_settings_navigation(
+        &sidebar,
+        &pages,
+        [
+            ("Terminal", "terminal"),
+            ("Appearance", "appearance"),
+            ("Background", "background"),
+            ("Window", "window"),
+        ],
+    );
+    body.append(&sidebar);
+    body.append(&pages);
+    surface.append(&body);
 
     let controls = SettingsControls {
         shell,
@@ -1405,6 +1452,56 @@ fn create_settings_window(parent: &gtk::ApplicationWindow, settings: Settings) -
     window.add_controller(key_controller);
 
     window
+}
+
+fn settings_page(title: &str) -> gtk::Box {
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    page.add_css_class("zter-settings-page");
+    page.set_hexpand(true);
+    page.set_vexpand(true);
+
+    let title = gtk::Label::builder().label(title).xalign(0.0).build();
+    title.add_css_class("zter-settings-page-title");
+    page.append(&title);
+
+    page
+}
+
+fn settings_form() -> gtk::Grid {
+    let form = gtk::Grid::builder()
+        .column_spacing(12)
+        .row_spacing(12)
+        .build();
+    form.add_css_class("zter-settings-form");
+    form
+}
+
+fn append_settings_navigation(
+    sidebar: &gtk::Box,
+    pages: &gtk::Stack,
+    items: [(&'static str, &'static str); 4],
+) {
+    let mut first_button = None;
+    for (index, (label, page_name)) in items.into_iter().enumerate() {
+        let button = gtk::CheckButton::with_label(label);
+        button.add_css_class("zter-settings-nav");
+        button.set_halign(gtk::Align::Fill);
+        if let Some(first_button) = first_button.as_ref() {
+            button.set_group(Some(first_button));
+        }
+        if index == 0 {
+            button.set_active(true);
+            first_button = Some(button.clone());
+        }
+
+        let pages = pages.clone();
+        button.connect_toggled(move |button| {
+            if button.is_active() {
+                pages.set_visible_child_name(page_name);
+            }
+        });
+        sidebar.append(&button);
+    }
 }
 
 fn settings_field(title: &str, control: &impl IsA<gtk::Widget>) -> gtk::Box {

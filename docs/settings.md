@@ -34,8 +34,9 @@ and are not tracked by the project Git history.
 
 ## Settings Window
 
-The settings button beside the window controls opens one compact modal for its
-terminal window. It edits the active debug or release profile shared by all
+The settings button beside the window controls opens one non-modal settings
+window for the active application. Opening settings again presents the existing
+settings window. It edits the active debug or release profile shared by all
 zter windows in that application.
 
 OK atomically saves the complete draft. Font, theme, padding, scrollback,
@@ -43,19 +44,20 @@ background image, background image opacity, and window opacity changes then
 apply to every current window and tab. The configured font size replaces each
 tab's runtime zoom and resets every tab to 100%; tabs can be zoomed
 independently again after the save. A shell change applies only to tabs opened
-after the save and does not restart current shells. Closing the modal, pressing
-Escape, clicking Cancel, or closing the parent terminal discards unsaved edits.
-A save or runtime-configuration error is shown in the modal and retains the
+after the save and does not restart current shells. Closing the settings
+window, pressing Escape, or clicking Cancel discards unsaved edits. A save or
+runtime-configuration error is shown in the settings window and retains the
 draft.
 
-A dropdown selects the theme. An unboxed radio group selects the Default,
-Custom, or None background image mode. Custom can browse local image formats
-supported by GdkPixbuf and place the selected path in the draft. Background
-image opacity and window opacity each have a checkbox before the label; clicking
-the label toggles the checkbox. Both opacity controls start checked. An
-unchecked opacity control applies the embedded default and keeps the current
-slider value in the draft; a checked opacity control applies the slider value.
-Opacity sliders show two-decimal values.
+The settings window uses sidebar sections for Terminal, Appearance, Background,
+and Window controls. A dropdown selects the theme. An unboxed radio group
+selects the Default, Custom, or None background image mode. Custom can browse
+local image formats supported by GdkPixbuf and place the selected path in the
+draft. Background image opacity and window opacity each have a checkbox before
+the label; clicking the label toggles the checkbox. Both opacity controls start
+checked. An unchecked opacity control applies the embedded default and keeps
+the current slider value in the draft; a checked opacity control applies the
+slider value. Opacity sliders show two-decimal values.
 
 Unchecked checkbox and radio indicators use the current theme background and
 border roles. Checked indicators, enabled slider highlights, and resting slider
