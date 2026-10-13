@@ -6,5 +6,10 @@ Exec=zter-devel
 Icon=io.github.z99natza.zter.Devel
 Terminal=false
 NoDisplay=true
+Actions=new-window;
 StartupNotify=false
 StartupWMClass=io.github.z99natza.zter.Devel
+
+[Desktop Action new-window]
+Name=New Standalone Window
+Exec=zter-devel --standalone

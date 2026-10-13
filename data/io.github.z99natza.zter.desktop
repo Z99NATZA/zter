@@ -7,5 +7,10 @@ Icon=io.github.z99natza.zter
 Terminal=false
 Categories=System;TerminalEmulator;
 Keywords=shell;prompt;command;commandline;terminal;
+Actions=new-window;
 StartupNotify=true
 StartupWMClass=io.github.z99natza.zter
+
+[Desktop Action new-window]
+Name=New Standalone Window
+Exec=zter --standalone

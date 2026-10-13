@@ -58,6 +58,10 @@ const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
 const TERMINAL_END_OF_INPUT: &[u8] = b"\x04";
 const TERMINAL_SUSPEND: &[u8] = b"\x1a";
+const SUPER_MINUS: &[u8] = b"\x1b[45;9u";
+const SUPER_EQUAL: &[u8] = b"\x1b[61;9u";
+const SUPER_COMMA: &[u8] = b"\x1b[44;9u";
+const SUPER_PERIOD: &[u8] = b"\x1b[46;9u";
 const CODEX_ACTION_REQUIRED_STATUS: &str = "[ ! ] Action Required";
 const TERMINAL_STATUS_GLYPHS: [char; 16] = [
     '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '◐', '◑', '✦', '✋', '✳', '◇',
@@ -3540,9 +3544,53 @@ fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Termin
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
     install_hyperlink_activation(&terminal, runtime);
     install_clipboard_context_menu(&terminal, runtime, config.key_bindings());
+    install_super_punctuation_forwarding(&terminal);
     theme::apply_to(&terminal, config.theme());
 
     terminal
+}
+
+fn install_super_punctuation_forwarding(terminal: &vte4::Terminal) {
+    let controller = gtk::EventControllerKey::new();
+    controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let terminal_weak = terminal.downgrade();
+
+    controller.connect_key_pressed(move |_, key, _, modifiers| {
+        let Some(sequence) = super_punctuation_sequence(key, modifiers) else {
+            return gtk::glib::Propagation::Proceed;
+        };
+        let Some(terminal) = terminal_weak.upgrade() else {
+            return gtk::glib::Propagation::Proceed;
+        };
+
+        terminal.feed_child(sequence);
+        gtk::glib::Propagation::Stop
+    });
+
+    terminal.add_controller(controller);
+}
+
+fn super_punctuation_sequence(
+    key: gtk::gdk::Key,
+    modifiers: gtk::gdk::ModifierType,
+) -> Option<&'static [u8]> {
+    let relevant_modifiers = gtk::gdk::ModifierType::CONTROL_MASK
+        | gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::META_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK;
+    if modifiers & relevant_modifiers != gtk::gdk::ModifierType::SUPER_MASK {
+        return None;
+    }
+
+    match key {
+        gtk::gdk::Key::minus => Some(SUPER_MINUS),
+        gtk::gdk::Key::equal => Some(SUPER_EQUAL),
+        gtk::gdk::Key::comma => Some(SUPER_COMMA),
+        gtk::gdk::Key::period => Some(SUPER_PERIOD),
+        _ => None,
+    }
 }
 
 fn install_foreground_process_key_protection(terminal: &vte4::Terminal, runtime: &Rc<TabRuntime>) {
@@ -4560,6 +4608,49 @@ mod tests {
             None
         );
         assert_eq!(terminal_zoom_scroll(control_shift, -1.0), None);
+    }
+
+    #[test]
+    fn super_punctuation_is_forwarded_as_csi_u() {
+        let super_key = gtk::gdk::ModifierType::SUPER_MASK;
+
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::minus, super_key),
+            Some(SUPER_MINUS)
+        );
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::equal, super_key),
+            Some(SUPER_EQUAL)
+        );
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::comma, super_key),
+            Some(SUPER_COMMA)
+        );
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::period, super_key),
+            Some(SUPER_PERIOD)
+        );
+    }
+
+    #[test]
+    fn super_punctuation_forwarding_rejects_other_keys_and_modifiers() {
+        let super_key = gtk::gdk::ModifierType::SUPER_MASK;
+
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::slash, super_key),
+            None
+        );
+        assert_eq!(
+            super_punctuation_sequence(
+                gtk::gdk::Key::minus,
+                super_key | gtk::gdk::ModifierType::SHIFT_MASK
+            ),
+            None
+        );
+        assert_eq!(
+            super_punctuation_sequence(gtk::gdk::Key::minus, gtk::gdk::ModifierType::ALT_MASK),
+            None
+        );
     }
 
     #[test]

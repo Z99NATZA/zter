@@ -128,6 +128,10 @@ scrolls to input on a keystroke, hides the pointer while typing, and recognizes
 OSC 8 hyperlinks. Control-primary-clicking a recognized hyperlink opens its URI
 with the system-default handler. Other primary clicks retain their terminal
 behavior.
+`Super+-`, `Super+=`, `Super+,`, and `Super+.` are forwarded to the terminal
+child as CSI-u extended keys so applications can distinguish them from their
+unmodified punctuation characters. Other Super-modified keys retain VTE's
+native behavior.
 
 Saving the settings window applies font, theme, padding, and scrollback changes
 to every current tab. The configured font size replaces each tab's runtime zoom,

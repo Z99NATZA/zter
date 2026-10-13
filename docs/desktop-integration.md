@@ -16,6 +16,11 @@ and is tracked at
 `data/icons/hicolor/scalable/apps/io.github.z99natza.zter.Devel.svg`. Its desktop
 metadata is `data/io.github.z99natza.zter.Devel.desktop`.
 
+Both launchers expose the standard `new-window` desktop action. The release
+action runs `zter --standalone`, and the development action runs
+`zter-devel --standalone`, so desktop environments can explicitly request a
+new process and window instead of activating the profile-matched instance.
+
 The default zter background image is tracked at
 `data/wallpapers/zter-wallpaper.png` and embedded in both debug and release
 binaries. The user-local installer therefore does not need to copy a separate
