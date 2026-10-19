@@ -106,6 +106,36 @@ enum ForegroundProcessShortcut {
     Suppress,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct SuperPunctuationKeycodes {
+    minus: Vec<u32>,
+    equal: Vec<u32>,
+    comma: Vec<u32>,
+    period: Vec<u32>,
+}
+
+impl SuperPunctuationKeycodes {
+    fn for_display(display: &gtk::gdk::Display) -> Self {
+        Self::with_keycode_resolver(|key| keycodes_for_keyval(display, key))
+    }
+
+    fn with_keycode_resolver(mut keycodes_for: impl FnMut(gtk::gdk::Key) -> Vec<u32>) -> Self {
+        let mut resolve = |keys: &[gtk::gdk::Key]| {
+            let mut keycodes: Vec<u32> = keys.iter().flat_map(|key| keycodes_for(*key)).collect();
+            keycodes.sort_unstable();
+            keycodes.dedup();
+            keycodes
+        };
+
+        Self {
+            minus: resolve(&[gtk::gdk::Key::minus, gtk::gdk::Key::Thai_khokhai]),
+            equal: resolve(&[gtk::gdk::Key::equal, gtk::gdk::Key::Thai_chochang]),
+            comma: resolve(&[gtk::gdk::Key::comma, gtk::gdk::Key::Thai_moma]),
+            period: resolve(&[gtk::gdk::Key::period, gtk::gdk::Key::Thai_saraaimaimuan]),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TerminalZoom {
     In,
@@ -3554,9 +3584,11 @@ fn install_super_punctuation_forwarding(terminal: &vte4::Terminal) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     let terminal_weak = terminal.downgrade();
+    let punctuation_keycodes = SuperPunctuationKeycodes::for_display(&terminal.display());
 
-    controller.connect_key_pressed(move |_, key, _, modifiers| {
-        let Some(sequence) = super_punctuation_sequence(key, modifiers) else {
+    controller.connect_key_pressed(move |_, _, keycode, modifiers| {
+        let Some(sequence) = super_punctuation_sequence(keycode, modifiers, &punctuation_keycodes)
+        else {
             return gtk::glib::Propagation::Proceed;
         };
         let Some(terminal) = terminal_weak.upgrade() else {
@@ -3571,8 +3603,9 @@ fn install_super_punctuation_forwarding(terminal: &vte4::Terminal) {
 }
 
 fn super_punctuation_sequence(
-    key: gtk::gdk::Key,
+    keycode: u32,
     modifiers: gtk::gdk::ModifierType,
+    keycodes: &SuperPunctuationKeycodes,
 ) -> Option<&'static [u8]> {
     let relevant_modifiers = gtk::gdk::ModifierType::CONTROL_MASK
         | gtk::gdk::ModifierType::SHIFT_MASK
@@ -3584,12 +3617,16 @@ fn super_punctuation_sequence(
         return None;
     }
 
-    match key {
-        gtk::gdk::Key::minus => Some(SUPER_MINUS),
-        gtk::gdk::Key::equal => Some(SUPER_EQUAL),
-        gtk::gdk::Key::comma => Some(SUPER_COMMA),
-        gtk::gdk::Key::period => Some(SUPER_PERIOD),
-        _ => None,
+    if keycodes.minus.contains(&keycode) {
+        Some(SUPER_MINUS)
+    } else if keycodes.equal.contains(&keycode) {
+        Some(SUPER_EQUAL)
+    } else if keycodes.comma.contains(&keycode) {
+        Some(SUPER_COMMA)
+    } else if keycodes.period.contains(&keycode) {
+        Some(SUPER_PERIOD)
+    } else {
+        None
     }
 }
 
@@ -4611,44 +4648,70 @@ mod tests {
     }
 
     #[test]
-    fn super_punctuation_is_forwarded_as_csi_u() {
+    fn super_punctuation_physical_keys_are_forwarded_as_csi_u() {
         let super_key = gtk::gdk::ModifierType::SUPER_MASK;
+        let keycodes = SuperPunctuationKeycodes {
+            minus: vec![20],
+            equal: vec![21],
+            comma: vec![59],
+            period: vec![60],
+        };
 
         assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::minus, super_key),
+            super_punctuation_sequence(20, super_key, &keycodes),
             Some(SUPER_MINUS)
         );
         assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::equal, super_key),
+            super_punctuation_sequence(21, super_key, &keycodes),
             Some(SUPER_EQUAL)
         );
         assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::comma, super_key),
+            super_punctuation_sequence(59, super_key, &keycodes),
             Some(SUPER_COMMA)
         );
         assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::period, super_key),
+            super_punctuation_sequence(60, super_key, &keycodes),
             Some(SUPER_PERIOD)
         );
     }
 
     #[test]
+    fn super_punctuation_keycodes_resolve_from_thai_kedmanee_symbols() {
+        let keycodes = SuperPunctuationKeycodes::with_keycode_resolver(|key| match key {
+            gtk::gdk::Key::Thai_khokhai => vec![20],
+            gtk::gdk::Key::Thai_chochang => vec![21],
+            gtk::gdk::Key::Thai_moma => vec![59],
+            gtk::gdk::Key::Thai_saraaimaimuan => vec![60],
+            _ => Vec::new(),
+        });
+
+        assert_eq!(keycodes.minus, vec![20]);
+        assert_eq!(keycodes.equal, vec![21]);
+        assert_eq!(keycodes.comma, vec![59]);
+        assert_eq!(keycodes.period, vec![60]);
+    }
+
+    #[test]
     fn super_punctuation_forwarding_rejects_other_keys_and_modifiers() {
         let super_key = gtk::gdk::ModifierType::SUPER_MASK;
+        let keycodes = SuperPunctuationKeycodes {
+            minus: vec![20],
+            equal: vec![21],
+            comma: vec![59],
+            period: vec![60],
+        };
 
-        assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::slash, super_key),
-            None
-        );
+        assert_eq!(super_punctuation_sequence(61, super_key, &keycodes), None);
         assert_eq!(
             super_punctuation_sequence(
-                gtk::gdk::Key::minus,
-                super_key | gtk::gdk::ModifierType::SHIFT_MASK
+                20,
+                super_key | gtk::gdk::ModifierType::SHIFT_MASK,
+                &keycodes
             ),
             None
         );
         assert_eq!(
-            super_punctuation_sequence(gtk::gdk::Key::minus, gtk::gdk::ModifierType::ALT_MASK),
+            super_punctuation_sequence(20, gtk::gdk::ModifierType::ALT_MASK, &keycodes),
             None
         );
     }
