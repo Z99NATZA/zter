@@ -348,7 +348,11 @@ mod tests {
         }]);
         let bindings = bindings(value);
         let runtime = RuntimeKeyBindings::with_keycode_resolver(&bindings, |key| {
-            if key == gdk::Key::c { vec![54] } else { vec![] }
+            if key == gdk::Key::c {
+                vec![54]
+            } else {
+                vec![]
+            }
         });
         let control = gdk::ModifierType::CONTROL_MASK;
 
@@ -449,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn project_defaults_preserve_existing_shortcuts() {
+    fn project_defaults_match_expected_shortcuts() {
         let project: Value = serde_json::from_str(include_str!("../config/settings.json")).unwrap();
         let bindings: KeyBindings =
             serde_json::from_value(project["key_bindings"].clone()).unwrap();
@@ -506,9 +510,6 @@ mod tests {
             runtime.action_for_event(gdk::Key::minus, 20, control),
             Some(KeyAction::ZoomOut)
         );
-        assert_eq!(
-            runtime.action_for_event(gdk::Key::_0, 19, control),
-            Some(KeyAction::ZoomReset)
-        );
+        assert_eq!(runtime.action_for_event(gdk::Key::_0, 19, control), None);
     }
 }

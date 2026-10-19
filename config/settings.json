@@ -27,9 +27,7 @@
     "zoom_out": [
       { "key": "minus", "modifiers": ["control"], "match": "logical" }
     ],
-    "zoom_reset": [
-      { "key": "0", "modifiers": ["control"], "match": "logical" }
-    ]
+    "zoom_reset": []
   },
   "theme": "one-half-dark",
   "font_family": "Monospace",

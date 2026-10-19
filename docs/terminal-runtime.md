@@ -117,8 +117,8 @@ The terminal uses the configured font family, font size, scrollback line count,
 and theme. The configured `zoom_in` and `zoom_out` bindings and fixed
 Control-modified mouse or touchpad scrolling change the active tab's font scale
 in one-point steps from `6` through `72` points. Their defaults are `Ctrl+=` and
-`Ctrl+-`. The configured `zoom_reset` binding defaults to `Ctrl+0` and resets
-the active tab to 100% at the configured font size.
+`Ctrl+-`. The `zoom_reset` action resets the active tab to 100% at the
+configured font size when it has a binding; it is unbound by default.
 Runtime zoom does not resize the active tab's PTY grid. It lasts until the
 configured `zoom_reset` binding, a settings save, or that tab closes; it does
 not change other tabs or the settings file, and new tabs start at 100%.

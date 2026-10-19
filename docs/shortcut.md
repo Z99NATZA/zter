@@ -15,7 +15,9 @@ matching modes, reserved combinations, and failure handling are documented in
 | `Ctrl+T` | New tab |
 | `Ctrl+=` | Increase the active tab's font size |
 | `Ctrl+-` | Decrease the active tab's font size |
-| `Ctrl+0` | Reset the active tab to the configured font size |
+
+The zoom-reset action remains available through `zoom_reset` in
+[settings](settings.md#key-bindings), but has no default shortcut.
 
 These terminal protections and mouse gestures remain fixed:
 

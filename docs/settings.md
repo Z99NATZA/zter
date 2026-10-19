@@ -155,8 +155,9 @@ bindings therefore continue to work across keyboard layouts. A physical
 binding does not match when its key is unavailable on the active display.
 
 The supported actions are `new_tab`, `previous_tab`, `next_tab`, `copy`,
-`paste`, `zoom_in`, `zoom_out`, and `zoom_reset`. One key and modifier
-combination cannot be assigned to more than one action. `Ctrl+D`, `Ctrl+Z`, and
+`paste`, `zoom_in`, `zoom_out`, and `zoom_reset`. `zoom_reset` is unbound by
+default; assign it a binding if needed. One key and modifier combination cannot
+be assigned to more than one action. `Ctrl+D`, `Ctrl+Z`, and
 `Ctrl+Shift+Z` remain reserved for terminal process protection. `Ctrl+C` may be
 assigned only to Copy because it also retains terminal interrupt handling.
 Mouse-wheel zoom and hyperlink activation are gestures and are not key
