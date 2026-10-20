@@ -121,7 +121,9 @@ The short commands work with `cargo run --release --` as well as the installed
 
 A running profile-matched application updates all of its current windows
 immediately, and windows opened afterward use the saved mode. Standalone
-instances read the saved mode when they next start. On first load, schema 3
+instances watch their profile settings file and apply header mode changes live,
+including atomic file replacements. This watcher updates only the header mode;
+other settings retain their existing apply/reload behavior. On first load, schema 3
 `header_visible: true` becomes `full`, and `false` becomes `hidden` without
 discarding other valid settings.
 

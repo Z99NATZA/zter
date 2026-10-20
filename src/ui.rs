@@ -4196,7 +4196,7 @@ fn install_header_mode_action(application: &gtk::Application, action_name: &str,
     application.add_action(&action);
 }
 
-fn apply_header_mode(mode: HeaderMode) {
+pub(crate) fn apply_header_mode(mode: HeaderMode) {
     for context in active_window_contexts() {
         context.config.borrow_mut().set_header_mode(mode);
         apply_header_mode_to_window(&context, mode);

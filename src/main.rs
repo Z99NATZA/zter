@@ -1,4 +1,5 @@
 mod config;
+mod header_watch;
 mod identity;
 mod key_bindings;
 mod settings;
@@ -180,6 +181,22 @@ fn run_terminal(standalone: bool) -> gtk::glib::ExitCode {
     application.connect_activate(move |application| {
         ui::build(application, &config);
     });
+
+    let _header_monitor = if standalone {
+        match settings::settings_path()
+            .map_err(|error| error.to_string())
+            .and_then(|path| {
+                header_watch::watch(&path, ui::apply_header_mode).map_err(|error| error.to_string())
+            }) {
+            Ok(monitor) => Some(monitor),
+            Err(error) => {
+                eprintln!("zter: could not watch header settings: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     application.run_with_args(&["zter"])
 }

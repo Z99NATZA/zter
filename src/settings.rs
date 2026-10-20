@@ -464,7 +464,7 @@ impl Error for SettingsError {
     }
 }
 
-fn settings_path() -> Result<PathBuf, SettingsError> {
+pub(crate) fn settings_path() -> Result<PathBuf, SettingsError> {
     if let Some(config_home) = env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(config_home)
             .join(SETTINGS_DIRECTORY)
