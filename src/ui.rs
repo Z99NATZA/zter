@@ -58,6 +58,7 @@ const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
 const TERMINAL_END_OF_INPUT: &[u8] = b"\x04";
 const TERMINAL_SUSPEND: &[u8] = b"\x1a";
+const CONTROL_ZERO: &[u8] = b"\x1b[48;5u";
 const SUPER_MINUS: &[u8] = b"\x1b[45;9u";
 const SUPER_EQUAL: &[u8] = b"\x1b[61;9u";
 const SUPER_COMMA: &[u8] = b"\x1b[44;9u";
@@ -3574,21 +3575,23 @@ fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Termin
     terminal.set_font_scale(terminal_font_scale(config.font_size()));
     install_hyperlink_activation(&terminal, runtime);
     install_clipboard_context_menu(&terminal, runtime, config.key_bindings());
-    install_super_punctuation_forwarding(&terminal);
+    install_extended_key_forwarding(&terminal);
     theme::apply_to(&terminal, config.theme());
 
     terminal
 }
 
-fn install_super_punctuation_forwarding(terminal: &vte4::Terminal) {
+fn install_extended_key_forwarding(terminal: &vte4::Terminal) {
     let controller = gtk::EventControllerKey::new();
     controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     let terminal_weak = terminal.downgrade();
     let punctuation_keycodes = SuperPunctuationKeycodes::for_display(&terminal.display());
+    let zero_keycodes = control_zero_keycodes(|key| keycodes_for_keyval(&terminal.display(), key));
 
     controller.connect_key_pressed(move |_, _, keycode, modifiers| {
-        let Some(sequence) = super_punctuation_sequence(keycode, modifiers, &punctuation_keycodes)
-        else {
+        let sequence = control_zero_sequence(keycode, modifiers, &zero_keycodes)
+            .or_else(|| super_punctuation_sequence(keycode, modifiers, &punctuation_keycodes));
+        let Some(sequence) = sequence else {
             return gtk::glib::Propagation::Proceed;
         };
         let Some(terminal) = terminal_weak.upgrade() else {
@@ -3600,6 +3603,34 @@ fn install_super_punctuation_forwarding(terminal: &vte4::Terminal) {
     });
 
     terminal.add_controller(controller);
+}
+
+fn control_zero_keycodes(mut resolve: impl FnMut(gtk::gdk::Key) -> Vec<u32>) -> Vec<u32> {
+    let mut keycodes = resolve(gtk::gdk::Key::_0);
+    keycodes.extend(resolve(gtk::gdk::Key::Thai_chochan));
+    keycodes.sort_unstable();
+    keycodes.dedup();
+    keycodes
+}
+
+fn control_zero_sequence(
+    keycode: u32,
+    modifiers: gtk::gdk::ModifierType,
+    keycodes: &[u32],
+) -> Option<&'static [u8]> {
+    let relevant_modifiers = gtk::gdk::ModifierType::CONTROL_MASK
+        | gtk::gdk::ModifierType::SHIFT_MASK
+        | gtk::gdk::ModifierType::ALT_MASK
+        | gtk::gdk::ModifierType::SUPER_MASK
+        | gtk::gdk::ModifierType::META_MASK
+        | gtk::gdk::ModifierType::HYPER_MASK;
+    if modifiers & relevant_modifiers == gtk::gdk::ModifierType::CONTROL_MASK
+        && keycodes.contains(&keycode)
+    {
+        Some(CONTROL_ZERO)
+    } else {
+        None
+    }
 }
 
 fn super_punctuation_sequence(
@@ -4645,6 +4676,44 @@ mod tests {
             None
         );
         assert_eq!(terminal_zoom_scroll(control_shift, -1.0), None);
+    }
+
+    #[test]
+    fn control_zero_resolves_us_and_thai_physical_positions() {
+        for symbol in [gtk::gdk::Key::_0, gtk::gdk::Key::Thai_chochan] {
+            let keycodes =
+                control_zero_keycodes(|key| if key == symbol { vec![19] } else { vec![] });
+            assert_eq!(keycodes, vec![19]);
+            assert_eq!(
+                control_zero_sequence(19, gtk::gdk::ModifierType::CONTROL_MASK, &keycodes),
+                Some(b"\x1b[48;5u".as_slice())
+            );
+        }
+        assert_eq!(control_zero_keycodes(|_| vec![19, 19]), vec![19]);
+    }
+
+    #[test]
+    fn control_zero_rejects_plain_zero_other_keys_and_extra_modifiers() {
+        use gtk::gdk::ModifierType as M;
+        assert_eq!(control_zero_sequence(19, M::empty(), &[19]), None);
+        assert_eq!(control_zero_sequence(90, M::CONTROL_MASK, &[19]), None);
+        assert_eq!(control_zero_sequence(19, M::CONTROL_MASK, &[]), None);
+        for extra in [
+            M::SHIFT_MASK,
+            M::ALT_MASK,
+            M::SUPER_MASK,
+            M::META_MASK,
+            M::HYPER_MASK,
+        ] {
+            assert_eq!(
+                control_zero_sequence(19, M::CONTROL_MASK | extra, &[19]),
+                None
+            );
+        }
+        assert_eq!(
+            control_zero_sequence(19, M::CONTROL_MASK | M::LOCK_MASK, &[19]),
+            Some(CONTROL_ZERO)
+        );
     }
 
     #[test]

@@ -135,6 +135,13 @@ so they keep working when either keyboard layout is active and applications can
 distinguish them from their unmodified characters. Other Super-modified keys
 retain VTE's native behavior.
 
+`Ctrl+0` on the physical top-row zero key is forwarded as CSI-u `ESC [ 48 ; 5 u`,
+so terminal applications such as Neovim can distinguish it from plain `0`.
+The position resolves from US `0` and Thai Kedmanee `จ`; Shift, Alt, and Super
+combinations and keypad zero retain their native behavior. Configured zter
+shortcuts run first, so a matching application binding (such as `zoom_reset`)
+consumes the key instead of forwarding it.
+
 Saving the settings window applies font, theme, padding, and scrollback changes
 to every current tab. The configured font size replaces each tab's runtime zoom,
 so all current tabs reset to 100% and have the same font size immediately after
