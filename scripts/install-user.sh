@@ -39,6 +39,8 @@ if [ ! -f "$binary_source" ]; then
     exit 1
 fi
 
+sh "$script_directory/install-fonts.sh"
+
 install -Dm755 "$binary_source" "$installed_binary"
 install -Dm644 \
     "$project_directory/data/$application_id.desktop" \

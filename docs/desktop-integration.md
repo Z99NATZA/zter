@@ -34,14 +34,35 @@ Install a release build and its desktop files for the current user:
 ./scripts/install-user.sh
 ```
 
-The command installs only these paths:
+The command installs these application paths:
 
 - `~/.local/bin/zter`
 - `~/.local/share/applications/io.github.z99natza.zter.desktop`
 - `~/.local/share/icons/hicolor/scalable/apps/io.github.z99natza.zter.svg`
 
-When `XDG_DATA_HOME` is set, the launcher and icon use that data directory
-instead of `~/.local/share`.
+The installer also checks fontconfig for `JetBrainsMono Nerd Font` and
+`Noto Sans Thai UI`, the default terminal font families. Missing families are
+downloaded over HTTPS into `~/.local/share/fonts/zter`, along with their OFL
+licenses. JetBrainsMono includes regular, bold, italic, and bold italic faces;
+Noto Sans Thai UI uses its variable font. Existing families are reused without
+network access. The installer requires `fc-list`; when fonts are missing it
+also requires `curl`, `fc-scan`, and `fc-cache` (the `fontconfig` package on
+Ubuntu supplies these font tools).
+
+Downloads use pinned versions from [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts/tree/v3.4.0/patched-fonts/JetBrainsMono)
+and [Google Fonts](https://github.com/google/fonts/tree/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/notosansthaiui).
+All downloaded fonts are checked for the expected family before installation,
+then the font cache is refreshed. Download or validation failures stop release
+installation before replacing the binary. Installation preserves user settings;
+`settings apply` explicitly copies the defaults embedded at build time.
+
+When `XDG_DATA_HOME` is set, the launcher, icon, and fonts use that data directory
+instead of `~/.local/share`. Uninstall keeps fonts because other applications
+may use them.
+
+Run `sh tests/install-fonts.sh` to check real downloads, offline reuse, missing
+fallback repair, and download failures with isolated temporary font directories.
+This integration check requires network access.
 
 After changing the desktop files, the install and uninstall commands refresh
 the desktop database when `update-desktop-database` is available. They also

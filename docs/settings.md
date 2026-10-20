@@ -183,7 +183,7 @@ Every settings file contains every supported key.
 | `header_mode` | `"full"`, `"mini"`, or `"hidden"` | `"full"` | Selects the persistent terminal header mode. `show` is an alias for `full`, and `hide` selects `hidden`. |
 | `key_bindings` | object | See [Key Bindings](#key-bindings) | Configures keyboard shortcuts for application actions. |
 | `theme` | `"one-half-dark"`, `"purple"`, `"white-mist"`, `"white-sky"`, `"forest-calm"`, `"one-half-gray"`, `"red"`, or `"mauve"` | `"one-half-dark"` | Terminal, ANSI, chrome, dialog, menu, and settings color theme. |
-| `font_family` | string | `"Monospace"` | Terminal font family. It must not be empty. |
+| `font_family` | string | `"JetBrainsMono Nerd Font, Noto Sans Thai UI"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `6` through `72`. |
 | `padding_top` | integer | `16` | Inner terminal padding above the content in pixels, from `0` through `128`. |
 | `padding_right` | integer | `16` | Inner terminal padding to the right of the content in pixels, from `0` through `128`. |

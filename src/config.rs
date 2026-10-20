@@ -310,7 +310,10 @@ mod tests {
         let config = config(None, None).unwrap();
 
         assert_eq!(config.theme(), Theme::OneHalfDark);
-        assert_eq!(config.font_family(), "Monospace");
+        assert_eq!(
+            config.font_family(),
+            "JetBrainsMono Nerd Font, Noto Sans Thai UI"
+        );
         assert_eq!(config.font_size(), 12.0);
         assert_eq!(config.scrollback_lines(), 10_000);
         assert_eq!(config.background_image_opacity(), 0.1);
