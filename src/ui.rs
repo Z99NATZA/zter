@@ -632,12 +632,34 @@ impl TerminalZoomControl {
     }
 }
 
-pub fn build(application: &gtk::Application, config: &AppConfig) {
-    let config = active_window_contexts()
-        .first()
-        .map(|context| context.config.borrow().clone())
-        .unwrap_or_else(|| config.clone());
-    create_window(application, &config, true);
+pub fn activate(application: &gtk::Application, config: &AppConfig, new_tab: bool) {
+    let contexts = active_window_contexts();
+    let active_window = application.active_window();
+    let context = contexts
+        .iter()
+        .find(|context| {
+            context
+                .window
+                .upgrade()
+                .is_some_and(|window| active_window.as_ref() == Some(window.upcast_ref()))
+        })
+        .or_else(|| {
+            contexts
+                .iter()
+                .find(|context| context.window.upgrade().is_some())
+        });
+    if let Some(context) = context {
+        if new_tab {
+            add_terminal_tab(context);
+        }
+        if let Some((window, notebook, _, _)) = context.widgets() {
+            window.unminimize();
+            window.present();
+            focus_current_terminal(&notebook);
+        }
+    } else {
+        create_window(application, config, true);
+    }
 }
 
 fn create_window(

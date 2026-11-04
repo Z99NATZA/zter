@@ -16,10 +16,18 @@ and is tracked at
 `data/icons/hicolor/scalable/apps/io.github.z99natza.zter.Devel.svg`. Its desktop
 metadata is `data/io.github.z99natza.zter.Devel.desktop`.
 
-Both launchers expose the standard `new-window` desktop action. The release
-action runs `zter --standalone`, and the development action runs
+Both launchers expose `new-tab` and `new-window` desktop actions. `new-tab` runs
+`zter --new-tab` (or `zter-devel --new-tab`) to add a tab in the primary application,
+opening its first window with one tab when absent. The default launcher presents
+that application's existing terminal without adding a tab. Neither request targets
+standalone instances.
+
+The release `new-window` action runs `zter --standalone`, and the development
+action runs
 `zter-devel --standalone`, so desktop environments can explicitly request a
 new process and window instead of activating the profile-matched instance.
+After updating the binary and launcher, close and reopen the primary terminal
+before sending `--new-tab` requests to it.
 
 The default zter background image is tracked at
 `data/wallpapers/zter-wallpaper.png` and embedded in both debug and release

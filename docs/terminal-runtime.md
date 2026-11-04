@@ -6,11 +6,20 @@ user settings and environment with the UTF-8 entries from the parent process
 environment and the directory from which zter was launched. A shell exit closes
 only its tab; the window closes after the last tab exits.
 
-Starting `zter` without an option activates the profile-matched application. If
-that application is already running, the new window belongs to its existing
-process. `zter -s` and `zter --standalone` start a separate application instance
+Starting `zter` without an option presents the existing terminal window of the
+profile-matched application without adding a window or tab. When that application
+is absent, it opens one window with one tab. `zter --new-tab` adds one tab to that
+application, or opens its first window with one tab when absent. If tab detaching
+has created multiple windows in the primary process, activation targets its active
+terminal window, falling back to its first surviving terminal window. A settings
+window is never a tab target.
+
+`zter -s` and `zter --standalone` start a separate application instance
 and window in the new process, ignoring any existing instance. A settings reload
 targets the normal profile-matched application rather than standalone instances.
+Normal and `--new-tab` requests likewise target only that primary application,
+even when standalone windows are open. `--new-tab` and `--standalone` cannot be
+combined. New tabs inherit the active tab's working directory as described below.
 `zter -v` and `zter --version` print `zter` followed by the version compiled
 from the Cargo package metadata, then exit without loading settings or starting
 GTK.

@@ -19,15 +19,16 @@ use crate::identity::{
 use crate::settings::{HeaderMode, Settings};
 
 #[cfg(debug_assertions)]
-const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
+const USAGE: &str = "usage: zter [-s|--standalone|--new-tab]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
 #[cfg(not(debug_assertions))]
-const USAGE: &str = "usage: zter [-s|--standalone]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>\n       zter <hf|hm|hh>";
+const USAGE: &str = "usage: zter [-s|--standalone|--new-tab]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>\n       zter <hf|hm|hh>";
 const VERSION_OUTPUT: &str = concat!("zter ", env!("CARGO_PKG_VERSION"));
 
 fn main() -> gtk::glib::ExitCode {
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
     match command_from_arguments(&arguments) {
-        Ok(Command::Run { standalone }) => run_terminal(standalone),
+        Ok(Command::Run { standalone }) => run_terminal(standalone, false),
+        Ok(Command::NewTab) => run_terminal(false, true),
         Ok(Command::SettingsApply) => apply_project_settings(),
         Ok(Command::SettingsReload) => reload_running_settings(),
         Ok(Command::HeaderMode(mode)) => set_header_mode(mode),
@@ -49,6 +50,7 @@ fn main() -> gtk::glib::ExitCode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
     Run { standalone: bool },
+    NewTab,
     SettingsApply,
     SettingsReload,
     HeaderMode(HeaderMode),
@@ -62,6 +64,7 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         [argument] if argument == "--standalone" || argument == "-s" => {
             Ok(Command::Run { standalone: true })
         }
+        [argument] if argument == "--new-tab" => Ok(Command::NewTab),
         [argument] if argument == "--version" || argument == "-v" => Ok(Command::Version),
         [argument] if argument == "--help" || argument == "-h" => Ok(Command::Help),
         [settings, apply] if settings == "settings" && apply == "apply" => {
@@ -91,9 +94,9 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
 
 fn application_flags(standalone: bool) -> gtk::gio::ApplicationFlags {
     if standalone {
-        gtk::gio::ApplicationFlags::NON_UNIQUE
+        gtk::gio::ApplicationFlags::NON_UNIQUE | gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE
     } else {
-        gtk::gio::ApplicationFlags::empty()
+        gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE
     }
 }
 
@@ -164,7 +167,7 @@ fn apply_project_settings() -> gtk::glib::ExitCode {
     gtk::glib::ExitCode::SUCCESS
 }
 
-fn run_terminal(standalone: bool) -> gtk::glib::ExitCode {
+fn run_terminal(standalone: bool, new_tab: bool) -> gtk::glib::ExitCode {
     let config = match AppConfig::from_environment() {
         Ok(config) => config,
         Err(error) => {
@@ -178,8 +181,27 @@ fn run_terminal(standalone: bool) -> gtk::glib::ExitCode {
         .flags(application_flags(standalone))
         .build();
 
+    application.add_main_option(
+        "new-tab",
+        gtk::glib::Char::from(0),
+        gtk::glib::OptionFlags::NONE,
+        gtk::glib::OptionArg::None,
+        "Add a tab to the primary terminal, opening it if needed",
+        None,
+    );
+
+    let activation_config = config.clone();
     application.connect_activate(move |application| {
-        ui::build(application, &config);
+        ui::activate(application, &activation_config, false);
+    });
+
+    application.connect_command_line(move |application, command_line| {
+        ui::activate(
+            application,
+            &config,
+            command_line.options_dict().contains("new-tab"),
+        );
+        gtk::glib::ExitCode::SUCCESS
     });
 
     let _header_monitor = if standalone {
@@ -198,7 +220,11 @@ fn run_terminal(standalone: bool) -> gtk::glib::ExitCode {
         None
     };
 
-    application.run_with_args(&["zter"])
+    if new_tab {
+        application.run_with_args(&["zter", "--new-tab"])
+    } else {
+        application.run_with_args(&["zter"])
+    }
 }
 
 #[cfg(test)]
@@ -260,6 +286,7 @@ mod tests {
         assert_eq!(
             application_flags(true),
             gtk::gio::ApplicationFlags::NON_UNIQUE
+                | gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE
         );
     }
 
@@ -267,8 +294,19 @@ mod tests {
     fn normal_startup_uses_a_unique_gtk_application() {
         assert_eq!(
             application_flags(false),
-            gtk::gio::ApplicationFlags::empty()
+            gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE
         );
+    }
+
+    #[test]
+    fn new_tab_targets_the_primary_application_without_standalone() {
+        assert_eq!(
+            command_from_arguments(&[OsString::from("--new-tab")]),
+            Ok(Command::NewTab)
+        );
+        for arguments in [["--standalone", "--new-tab"], ["--new-tab", "--standalone"]] {
+            assert!(command_from_arguments(&arguments.map(OsString::from)).is_err());
+        }
     }
 
     #[test]

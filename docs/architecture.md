@@ -4,8 +4,10 @@ Each zter application instance is one GTK4 desktop process. GTK owns the
 application lifecycle, windows, the unified titlebar tab controls, and the
 hidden-tab page container, while each tab has one VTE instance that owns
 terminal emulation, its pseudo-terminal, and its child shell connection. A
-normal startup activates the existing profile-matched application process when
-one is running. `zter -s` and `zter --standalone` instead start a non-unique GTK
+normal startup presents the existing terminal in the profile-matched application
+process when one is running. `--new-tab` is forwarded to that process and adds a
+tab, or creates its first window with one tab when absent.
+`zter -s` and `zter --standalone` instead start a non-unique GTK
 application instance in the new process.
 
 ## Runtime Flow
@@ -16,7 +18,8 @@ src/main.rs
   -> load or create user settings in src/settings.rs
   -> combine settings and environment overrides in src/config.rs
   -> activate GTK application
-      -> build the window, titlebar tab strip, and page container in src/ui.rs
+      -> present its existing terminal or add the requested tab in src/ui.rs
+      -> build a window, titlebar tab strip, and page container when absent
           -> create one terminal surface and VTE instance per tab
               -> spawn one user shell per VTE instance
                   -> close the tab when its shell exits
