@@ -632,7 +632,13 @@ impl TerminalZoomControl {
     }
 }
 
-pub fn activate(application: &gtk::Application, config: &AppConfig, new_tab: bool) {
+/// `run` is typed into the shell of a new tab; it never targets an existing tab.
+pub fn activate(
+    application: &gtk::Application,
+    config: &AppConfig,
+    new_tab: bool,
+    run: Option<&str>,
+) {
     let contexts = active_window_contexts();
     let active_window = application.active_window();
     let context = contexts
@@ -649,8 +655,8 @@ pub fn activate(application: &gtk::Application, config: &AppConfig, new_tab: boo
                 .find(|context| context.window.upgrade().is_some())
         });
     if let Some(context) = context {
-        if new_tab {
-            add_terminal_tab(context);
+        if new_tab || run.is_some() {
+            add_terminal_tab_running(context, run);
         }
         if let Some((window, notebook, _, _)) = context.widgets() {
             window.unminimize();
@@ -658,7 +664,7 @@ pub fn activate(application: &gtk::Application, config: &AppConfig, new_tab: boo
             focus_current_terminal(&notebook);
         }
     } else {
-        create_window(application, config, true);
+        create_window(application, config, true, run);
     }
 }
 
@@ -666,6 +672,7 @@ fn create_window(
     application: &gtk::Application,
     config: &AppConfig,
     initial_tab: bool,
+    run: Option<&str>,
 ) -> Rc<WindowContext> {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
@@ -758,7 +765,7 @@ fn create_window(
     window.set_child(Some(&content_overlay));
     apply_header_mode_to_window(&context, config.header_mode());
     if initial_tab {
-        add_terminal_tab(&context);
+        add_terminal_tab_running(&context, run);
         window.present();
         focus_current_terminal(&notebook);
     }
@@ -2145,6 +2152,12 @@ fn install_tab_switch_handler(
 }
 
 fn add_terminal_tab(context: &Rc<WindowContext>) {
+    add_terminal_tab_running(context, None);
+}
+
+/// Adds a tab whose shell receives `run` followed by Enter once it starts.
+fn add_terminal_tab_running(context: &Rc<WindowContext>, run: Option<&str>) {
+    let run = run.map(str::to_owned);
     let Some((window, notebook, tab_strip, tab_scroller)) = context.widgets() else {
         return;
     };
@@ -2169,6 +2182,7 @@ fn add_terminal_tab(context: &Rc<WindowContext>) {
             &config_for_spawn,
             &working_directory,
             &runtime_for_spawn,
+            run,
         );
     });
     content.set_widget_name(&tab_id);
@@ -2916,7 +2930,7 @@ fn detach_tab_to_new_window(runtime: &Rc<TabRuntime>) -> bool {
         return false;
     };
     let config = source.config.borrow().clone();
-    let target = create_window(&application, &config, false);
+    let target = create_window(&application, &config, false, None);
     let Some(window) = target.window.upgrade() else {
         return false;
     };
@@ -4499,6 +4513,7 @@ fn spawn_shell(
     config: &AppConfig,
     working_directory: &str,
     runtime: &Rc<TabRuntime>,
+    run: Option<String>,
 ) {
     let argv = [config.shell()];
     let environment: Vec<String> = env::vars_os()
@@ -4522,7 +4537,14 @@ fn spawn_shell(
         -1,
         None::<&gtk::gio::Cancellable>,
         move |result| match result {
-            Ok(pid) => runtime.shell_pid.set(Some(pid.0)),
+            Ok(pid) => {
+                runtime.shell_pid.set(Some(pid.0));
+                // Typed like user input, so the shell's startup files and PATH
+                // apply and the shell stays open after the command exits.
+                if let Some(run) = &run {
+                    terminal_for_error.feed_child(format!("{run}\r").as_bytes());
+                }
+            }
             Err(error) => {
                 eprintln!("zter: could not start the shell: {error}");
                 terminal_for_error

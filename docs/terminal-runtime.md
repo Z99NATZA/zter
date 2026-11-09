@@ -20,6 +20,13 @@ targets the normal profile-matched application rather than standalone instances.
 Normal and `--new-tab` requests likewise target only that primary application,
 even when standalone windows are open. `--new-tab` and `--standalone` cannot be
 combined. New tabs inherit the active tab's working directory as described below.
+`--run <command>` adds a command to any of these launches, for example
+`zter --new-tab --run codex` or `zter -s --run "npm run dev"`. zter types the
+command into the shell of a new tab, followed by Enter, once that shell starts,
+so the shell's startup files and `PATH` apply and the shell stays open after the
+command exits. Without `--new-tab`, a running primary application also gets a new
+tab; the command is never typed into an existing tab. The command must be one
+line without control characters, and `--run` can appear only once.
 `zter -v` and `zter --version` print `zter` followed by the version compiled
 from the Cargo package metadata, then exit without loading settings or starting
 GTK.

@@ -19,16 +19,16 @@ use crate::identity::{
 use crate::settings::{HeaderMode, Settings};
 
 #[cfg(debug_assertions)]
-const USAGE: &str = "usage: zter [-s|--standalone|--new-tab]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
+const USAGE: &str = "usage: zter [-s|--standalone|--new-tab] [--run <command>]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>";
 #[cfg(not(debug_assertions))]
-const USAGE: &str = "usage: zter [-s|--standalone|--new-tab]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>\n       zter <hf|hm|hh>";
+const USAGE: &str = "usage: zter [-s|--standalone|--new-tab] [--run <command>]\n       zter <-v|--version>\n       zter settings <apply|reload>\n       zter header <full|mini|hide|show>\n       zter <hf|hm|hh>";
 const VERSION_OUTPUT: &str = concat!("zter ", env!("CARGO_PKG_VERSION"));
 
 fn main() -> gtk::glib::ExitCode {
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
     match command_from_arguments(&arguments) {
-        Ok(Command::Run { standalone }) => run_terminal(standalone, false),
-        Ok(Command::NewTab) => run_terminal(false, true),
+        Ok(Command::Run { standalone, run }) => run_terminal(standalone, false, run),
+        Ok(Command::NewTab { run }) => run_terminal(false, true, run),
         Ok(Command::SettingsApply) => apply_project_settings(),
         Ok(Command::SettingsReload) => reload_running_settings(),
         Ok(Command::HeaderMode(mode)) => set_header_mode(mode),
@@ -47,10 +47,15 @@ fn main() -> gtk::glib::ExitCode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Command {
-    Run { standalone: bool },
-    NewTab,
+    Run {
+        standalone: bool,
+        run: Option<String>,
+    },
+    NewTab {
+        run: Option<String>,
+    },
     SettingsApply,
     SettingsReload,
     HeaderMode(HeaderMode),
@@ -59,12 +64,19 @@ enum Command {
 }
 
 fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static str> {
+    if let Some(index) = arguments.iter().position(|argument| argument == "--run") {
+        return run_command_from_arguments(arguments, index);
+    }
     match arguments {
-        [] => Ok(Command::Run { standalone: false }),
-        [argument] if argument == "--standalone" || argument == "-s" => {
-            Ok(Command::Run { standalone: true })
-        }
-        [argument] if argument == "--new-tab" => Ok(Command::NewTab),
+        [] => Ok(Command::Run {
+            standalone: false,
+            run: None,
+        }),
+        [argument] if argument == "--standalone" || argument == "-s" => Ok(Command::Run {
+            standalone: true,
+            run: None,
+        }),
+        [argument] if argument == "--new-tab" => Ok(Command::NewTab { run: None }),
         [argument] if argument == "--version" || argument == "-v" => Ok(Command::Version),
         [argument] if argument == "--help" || argument == "-h" => Ok(Command::Help),
         [settings, apply] if settings == "settings" && apply == "apply" => {
@@ -89,6 +101,34 @@ fn command_from_arguments(arguments: &[OsString]) -> Result<Command, &'static st
         #[cfg(not(debug_assertions))]
         [alias] if alias == "hh" => Ok(Command::HeaderMode(HeaderMode::Hidden)),
         _ => Err("unknown command"),
+    }
+}
+
+/// Reads `--run <command>` at `index` and attaches it to the launch options
+/// around it. The command is typed into a shell, so it must be one line of
+/// printable UTF-8.
+fn run_command_from_arguments(
+    arguments: &[OsString],
+    index: usize,
+) -> Result<Command, &'static str> {
+    let command = arguments
+        .get(index + 1)
+        .and_then(|command| command.to_str())
+        .filter(|command| !command.trim().is_empty() && !command.chars().any(char::is_control))
+        .ok_or("--run requires a single-line command")?
+        .to_owned();
+    let mut rest = arguments[..index].to_vec();
+    rest.extend_from_slice(&arguments[index + 2..]);
+    match command_from_arguments(&rest)? {
+        Command::Run {
+            standalone,
+            run: None,
+        } => Ok(Command::Run {
+            standalone,
+            run: Some(command),
+        }),
+        Command::NewTab { run: None } => Ok(Command::NewTab { run: Some(command) }),
+        _ => Err("--run combines only with -s, --standalone or --new-tab, once"),
     }
 }
 
@@ -167,7 +207,7 @@ fn apply_project_settings() -> gtk::glib::ExitCode {
     gtk::glib::ExitCode::SUCCESS
 }
 
-fn run_terminal(standalone: bool, new_tab: bool) -> gtk::glib::ExitCode {
+fn run_terminal(standalone: bool, new_tab: bool, run: Option<String>) -> gtk::glib::ExitCode {
     let config = match AppConfig::from_environment() {
         Ok(config) => config,
         Err(error) => {
@@ -189,17 +229,28 @@ fn run_terminal(standalone: bool, new_tab: bool) -> gtk::glib::ExitCode {
         "Add a tab to the primary terminal, opening it if needed",
         None,
     );
+    application.add_main_option(
+        "run",
+        gtk::glib::Char::from(0),
+        gtk::glib::OptionFlags::NONE,
+        gtk::glib::OptionArg::String,
+        "Type a command into the shell of a new tab",
+        Some("COMMAND"),
+    );
 
     let activation_config = config.clone();
     application.connect_activate(move |application| {
-        ui::activate(application, &activation_config, false);
+        ui::activate(application, &activation_config, false, None);
     });
 
     application.connect_command_line(move |application, command_line| {
+        let options = command_line.options_dict();
+        let run = options.lookup::<String>("run").ok().flatten();
         ui::activate(
             application,
             &config,
-            command_line.options_dict().contains("new-tab"),
+            options.contains("new-tab"),
+            run.as_deref(),
         );
         gtk::glib::ExitCode::SUCCESS
     });
@@ -220,11 +271,15 @@ fn run_terminal(standalone: bool, new_tab: bool) -> gtk::glib::ExitCode {
         None
     };
 
+    let mut arguments = vec!["zter".to_owned()];
     if new_tab {
-        application.run_with_args(&["zter", "--new-tab"])
-    } else {
-        application.run_with_args(&["zter"])
+        arguments.push("--new-tab".to_owned());
     }
+    // The = form keeps a command that starts with "-" as the option's value.
+    if let Some(run) = run {
+        arguments.push(format!("--run={run}"));
+    }
+    application.run_with_args(&arguments)
 }
 
 #[cfg(test)]
@@ -235,7 +290,10 @@ mod tests {
     fn no_arguments_runs_the_terminal() {
         assert_eq!(
             command_from_arguments(&[]),
-            Ok(Command::Run { standalone: false })
+            Ok(Command::Run {
+                standalone: false,
+                run: None
+            })
         );
     }
 
@@ -245,7 +303,10 @@ mod tests {
 
         assert_eq!(
             command_from_arguments(&arguments),
-            Ok(Command::Run { standalone: true })
+            Ok(Command::Run {
+                standalone: true,
+                run: None
+            })
         );
     }
 
@@ -255,7 +316,10 @@ mod tests {
 
         assert_eq!(
             command_from_arguments(&arguments),
-            Ok(Command::Run { standalone: true })
+            Ok(Command::Run {
+                standalone: true,
+                run: None
+            })
         );
     }
 
@@ -302,10 +366,58 @@ mod tests {
     fn new_tab_targets_the_primary_application_without_standalone() {
         assert_eq!(
             command_from_arguments(&[OsString::from("--new-tab")]),
-            Ok(Command::NewTab)
+            Ok(Command::NewTab { run: None })
         );
         for arguments in [["--standalone", "--new-tab"], ["--new-tab", "--standalone"]] {
             assert!(command_from_arguments(&arguments.map(OsString::from)).is_err());
+        }
+    }
+
+    #[test]
+    fn run_attaches_a_command_to_each_launch_option() {
+        let parse = |arguments: &[&str]| {
+            command_from_arguments(&arguments.iter().map(OsString::from).collect::<Vec<_>>())
+        };
+        let run = Some("npm run dev".to_owned());
+        assert_eq!(
+            parse(&["--run", "npm run dev"]),
+            Ok(Command::Run {
+                standalone: false,
+                run: run.clone()
+            })
+        );
+        for arguments in [
+            ["-s", "--run", "npm run dev"],
+            ["--run", "npm run dev", "--standalone"],
+        ] {
+            assert_eq!(
+                parse(&arguments),
+                Ok(Command::Run {
+                    standalone: true,
+                    run: run.clone()
+                })
+            );
+        }
+        assert_eq!(
+            parse(&["--new-tab", "--run", "npm run dev"]),
+            Ok(Command::NewTab { run })
+        );
+    }
+
+    #[test]
+    fn run_rejects_missing_multiline_repeated_or_unrelated_use() {
+        for arguments in [
+            &["--run"][..],
+            &["--run", " "],
+            &["--run", "codex\nrm -rf ~"],
+            &["--run", "codex\u{1b}[2J"],
+            &["--run", "a", "--run", "b"],
+            &["-s", "--new-tab", "--run", "codex"],
+            &["--version", "--run", "codex"],
+            &["settings", "reload", "--run", "codex"],
+        ] {
+            let arguments: Vec<_> = arguments.iter().map(OsString::from).collect();
+            assert!(command_from_arguments(&arguments).is_err(), "{arguments:?}");
         }
     }
 
