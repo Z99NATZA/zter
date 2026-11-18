@@ -131,9 +131,9 @@ terminal surface.
 
 The terminal uses the configured font family, font size, scrollback line count,
 and theme. The configured `zoom_in` and `zoom_out` bindings and fixed
-Control-modified mouse or touchpad scrolling change the active tab's font scale
-in one-point steps from `6` through `72` points. Their defaults are `Ctrl+=` and
-`Ctrl+-`. The `zoom_reset` action resets the active tab to 100% at the
+Control-modified mouse or touchpad scrolling immediately change the active tab's
+font size in one-point steps from `1` through `72` points. Their defaults are
+`Ctrl+=` and `Ctrl+-`. The `zoom_reset` action resets the active tab to 100% at the
 configured font size when it has a binding; it is unbound by default.
 Runtime zoom does not resize the active tab's PTY grid. It lasts until the
 configured `zoom_reset` binding, a settings save, or that tab closes; it does
@@ -202,8 +202,7 @@ Each tab waits for its first positive viewport allocation, applies that terminal
 grid, and only then starts its shell. During continuous window resizing, the
 background image follows the window while the terminal grid remains at its last
 applied size. After the window allocation is stable for `120ms`, zter applies
-its latest grid. Font zoom instead applies immediately through VTE's native font
-scale and does not enter the deferred window-resize path.
+its latest grid.
 
 App-owned surfaces do not use shadows. The app window has one outer `1px`
 theme border and `12px` rounded corners. The lower composition layer is clipped

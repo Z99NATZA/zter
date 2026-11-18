@@ -17,7 +17,7 @@ const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_SCHEMA_VERSION: u32 = 4;
 const DEFAULT_PADDING: u16 = 0;
 pub(crate) const MAX_PADDING: u16 = 128;
-pub(crate) const MIN_FONT_SIZE: f64 = 6.0;
+pub(crate) const MIN_FONT_SIZE: f64 = 1.0;
 pub(crate) const MAX_FONT_SIZE: f64 = 72.0;
 pub(crate) const MAX_SCROLLBACK_LINES: i64 = 1_000_000;
 pub(crate) const MAX_BACKGROUND_IMAGE_OPACITY: f64 = 0.6;
@@ -734,7 +734,10 @@ impl Settings {
         }
         if !self.font_size.is_finite() || !(MIN_FONT_SIZE..=MAX_FONT_SIZE).contains(&self.font_size)
         {
-            return Err(invalid(path, "font_size must be between 6 and 72"));
+            return Err(invalid(
+                path,
+                &format!("font_size must be between {MIN_FONT_SIZE} and {MAX_FONT_SIZE}"),
+            ));
         }
         if !(0..=MAX_SCROLLBACK_LINES).contains(&self.scrollback_lines) {
             return Err(invalid(
@@ -1269,7 +1272,7 @@ mod tests {
             background_image: Some(PathBuf::from("/tmp/wallpaper.png")),
             theme: Theme::ForestCalm,
             font_family: "JetBrains Mono".to_owned(),
-            font_size: 16.0,
+            font_size: 1.0,
             terminal_padding: TerminalPadding::new(1, 2, 3, 4),
             scrollback_lines: 25_000,
             background_image_opacity: 0.25,
@@ -1286,7 +1289,7 @@ mod tests {
         );
         assert_eq!(reloaded.theme(), Theme::ForestCalm);
         assert_eq!(reloaded.font_family(), "JetBrains Mono");
-        assert_eq!(reloaded.font_size(), 16.0);
+        assert_eq!(reloaded.font_size(), 1.0);
         assert_eq!(
             reloaded.terminal_padding(),
             TerminalPadding::new(1, 2, 3, 4)

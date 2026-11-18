@@ -53,8 +53,8 @@ const MINI_HEADER_HIDE_DELAY: Duration = Duration::from_millis(400);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
 const TERMINAL_ZOOM_STEP: f64 = 1.0;
-// Places the supported point range inside VTE's native 0.25-4.0 scale.
 const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
+const VTE_MIN_FONT_SCALE: f64 = 0.25;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
 const TERMINAL_END_OF_INPUT: &[u8] = b"\x04";
 const TERMINAL_SUSPEND: &[u8] = b"\x1a";
@@ -623,12 +623,14 @@ impl TerminalZoomControl {
         let Some(terminal) = self.terminal.upgrade() else {
             return;
         };
-        self.state.borrow_mut().font_size = terminal.font_scale() * TERMINAL_FONT_SCALE_BASE_SIZE;
+        let Some(font) = terminal.font() else {
+            return;
+        };
         let Some(font_size) = self.state.borrow_mut().request(zoom) else {
             return;
         };
 
-        terminal.set_font_scale(terminal_font_scale(font_size));
+        apply_terminal_font_size(&terminal, font, font_size);
     }
 }
 
@@ -1910,11 +1912,7 @@ fn apply_terminal_config(
     let font_size = runtime.map_or(config.font_size(), |runtime| {
         runtime.zoom.borrow_mut().apply_settings(config.font_size())
     });
-    terminal.set_font(Some(&terminal_font(
-        config.font_family(),
-        TERMINAL_FONT_SCALE_BASE_SIZE,
-    )));
-    terminal.set_font_scale(terminal_font_scale(font_size));
+    apply_terminal_font_size(terminal, terminal_font(config.font_family()), font_size);
     terminal.set_scrollback_lines(config.scrollback_lines());
     theme::apply_to(terminal, config.theme());
 }
@@ -3604,11 +3602,11 @@ fn create_terminal(config: &AppConfig, runtime: &Rc<TabRuntime>) -> vte4::Termin
     terminal.set_scroll_on_keystroke(true);
     terminal.set_mouse_autohide(true);
     terminal.set_allow_hyperlink(true);
-    terminal.set_font(Some(&terminal_font(
-        config.font_family(),
-        TERMINAL_FONT_SCALE_BASE_SIZE,
-    )));
-    terminal.set_font_scale(terminal_font_scale(config.font_size()));
+    apply_terminal_font_size(
+        &terminal,
+        terminal_font(config.font_family()),
+        config.font_size(),
+    );
     install_hyperlink_activation(&terminal, runtime);
     install_clipboard_context_menu(&terminal, runtime, config.key_bindings());
     install_extended_key_forwarding(&terminal);
@@ -3788,15 +3786,30 @@ fn keycodes_for_keyval(display: &gtk::gdk::Display, key: gtk::gdk::Key) -> Vec<u
     keycodes
 }
 
-fn terminal_font(family: &str, size: f64) -> gtk::pango::FontDescription {
+fn terminal_font(family: &str) -> gtk::pango::FontDescription {
     let mut font = gtk::pango::FontDescription::new();
     font.set_family(family);
-    font.set_size((size * f64::from(gtk::pango::SCALE)).round() as i32);
     font
 }
 
-fn terminal_font_scale(font_size: f64) -> f64 {
-    font_size / TERMINAL_FONT_SCALE_BASE_SIZE
+fn apply_terminal_font_size(
+    terminal: &vte4::Terminal,
+    mut font: gtk::pango::FontDescription,
+    font_size: f64,
+) {
+    let (base_size, scale) = terminal_font_base_and_scale(font_size);
+    let pango_size = (base_size * f64::from(gtk::pango::SCALE)).round() as i32;
+    if font.size() != pango_size {
+        font.set_size(pango_size);
+        terminal.set_font(Some(&font));
+    }
+    terminal.set_font_scale(scale);
+}
+
+fn terminal_font_base_and_scale(font_size: f64) -> (f64, f64) {
+    // Use a smaller base below 5 pt to stay within VTE's scale range.
+    let base_size = TERMINAL_FONT_SCALE_BASE_SIZE.min(font_size / VTE_MIN_FONT_SCALE);
+    (base_size, font_size / base_size)
 }
 
 fn tab_terminal_has_running_foreground_process(
@@ -4858,19 +4871,28 @@ mod tests {
     #[test]
     fn terminal_zoom_state_honors_the_supported_bounds() {
         let mut maximum = TerminalZoomState::new(MAX_FONT_SIZE);
-        let mut minimum = TerminalZoomState::new(MIN_FONT_SIZE);
-
         assert_eq!(maximum.request(TerminalZoom::In), None);
-        assert_eq!(minimum.request(TerminalZoom::Out), None);
+
+        let mut zoom = TerminalZoomState::new(6.0);
+        for size in [5.0, 4.0, 3.0, 2.0, 1.0] {
+            assert_eq!(zoom.request(TerminalZoom::Out), Some(size));
+        }
+        assert_eq!(zoom.request(TerminalZoom::Out), None);
+        assert_eq!(zoom.request(TerminalZoom::In), Some(2.0));
+        assert_eq!(zoom.request(TerminalZoom::Reset), Some(6.0));
     }
 
     #[test]
-    fn terminal_font_scale_covers_the_supported_point_range() {
-        assert_eq!(terminal_font_scale(TERMINAL_FONT_SCALE_BASE_SIZE), 1.0);
-        assert_eq!(terminal_font_scale(MIN_FONT_SIZE), 0.3);
-        assert_eq!(terminal_font_scale(MAX_FONT_SIZE), 3.6);
-        assert!(terminal_font_scale(MIN_FONT_SIZE) >= 0.25);
-        assert!(terminal_font_scale(MAX_FONT_SIZE) <= 4.0);
+    fn terminal_font_base_and_scale_cover_the_supported_point_range() {
+        assert_eq!(terminal_font_base_and_scale(1.0), (4.0, 0.25));
+        assert_eq!(terminal_font_base_and_scale(4.5), (18.0, 0.25));
+        assert_eq!(terminal_font_base_and_scale(5.0), (20.0, 0.25));
+        assert_eq!(terminal_font_base_and_scale(6.0), (20.0, 0.3));
+        assert_eq!(
+            terminal_font_base_and_scale(TERMINAL_FONT_SCALE_BASE_SIZE),
+            (20.0, 1.0)
+        );
+        assert_eq!(terminal_font_base_and_scale(MAX_FONT_SIZE), (20.0, 3.6));
     }
 
     #[test]
