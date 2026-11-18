@@ -595,6 +595,9 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
             box-shadow: none;
             padding: {}px {}px {}px {}px;
         }}
+        window.zter-window.zter-header-collapsed .zter-terminal {{
+            border-top-color: transparent;
+        }}
         .zter-terminal.zter-transparent-background {{
             background-color: transparent;
             background-image: none;
@@ -1264,6 +1267,19 @@ mod tests {
         );
         assert!(css.contains("border: 1px solid #324E70"));
         assert!(css.contains("border-top: 1px solid #324E70"));
+    }
+
+    #[test]
+    fn collapsed_header_hides_the_terminal_divider_without_resizing() {
+        let css = application_css(TerminalPadding::default());
+        let (_, rule) = css
+            .split_once("window.zter-window.zter-header-collapsed .zter-terminal {")
+            .unwrap();
+        let (rule, _) = rule.split_once('}').unwrap();
+
+        assert!(rule.contains("border-top-color: transparent"));
+        assert!(!rule.contains("border-top:"));
+        assert!(!rule.contains("border-width"));
     }
 
     #[test]

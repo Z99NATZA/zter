@@ -52,6 +52,7 @@ const TERMINAL_RESIZE_SETTLE: Duration = Duration::from_millis(120);
 const MINI_HEADER_HIDE_DELAY: Duration = Duration::from_millis(400);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
+const HEADER_COLLAPSED_CLASS: &str = "zter-header-collapsed";
 const TERMINAL_ZOOM_STEP: f64 = 1.0;
 const TERMINAL_FINE_ZOOM_STEP: f64 = 0.25;
 const TERMINAL_FINE_ZOOM_LIMIT: f64 = 6.0;
@@ -951,6 +952,13 @@ fn apply_header_mode_to_window(context: &WindowContext, mode: HeaderMode) {
         return;
     };
 
+    if let Some(window) = context.window.upgrade() {
+        if mode == HeaderMode::Full {
+            window.remove_css_class(HEADER_COLLAPSED_CLASS);
+        } else {
+            window.add_css_class(HEADER_COLLAPSED_CLASS);
+        }
+    }
     if mode == HeaderMode::Mini && mini_header.is_visible() {
         return;
     }

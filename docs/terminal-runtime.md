@@ -208,9 +208,11 @@ its latest grid.
 
 App-owned surfaces do not use shadows. The terminal window has a transparent
 `1px` outer border with square corners. The terminal content surface uses a
-theme-colored top border as the only header/content divider. Its top, right,
-bottom, and left inner padding are independently configurable from `0px` through
-`128px` and default to `16px`. The GTK titlebar's theme border is disabled so it
+theme-colored top border as the only header/content divider. In mini and hidden
+header modes that border stays `1px` but turns transparent, so no line shows and
+the terminal grid does not shift. The surface's top, right, bottom, and left
+inner padding are independently configurable from `0px` through `128px` and
+default to `16px`. The GTK titlebar's theme border is disabled so it
 does not create a second dark line. The background image does not add borders or
 shrink with terminal padding. Window-manager or compositor decoration remains
 system-owned and may include an outer window shadow beyond the app border.
