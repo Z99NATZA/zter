@@ -79,7 +79,8 @@ muted foreground role with white indicator marks. Hovered indicators use the
 same muted foreground for their borders. Focused indicators and hovered or
 focused slider thumbs use the theme foreground. Disabled settings controls use
 `0.3` opacity, and disabled slider tracks use a softened disabled-track role.
-The header close control uses a derived control fill and hover fill.
+The header close control matches the terminal window controls: a transparent
+`28px` circular button whose icon keeps the GTK theme's circular control fill.
 Numeric decrement and increment controls keep circular `28px` background boxes
 inside their fields, with transparent resting fills and derived hover fills.
 Settings controls change state without transition durations.
@@ -187,7 +188,7 @@ Every settings file contains every supported key.
 | `background_image` | string or `null` | `"builtin"` | `"builtin"` selects the default image embedded in zter, another non-empty string selects a local image path, and `null` or an empty string disables the image layer. |
 | `header_mode` | `"full"`, `"mini"`, or `"hidden"` | `"full"` | Selects the persistent terminal header mode. `show` is an alias for `full`, and `hide` selects `hidden`. |
 | `key_bindings` | object | See [Key Bindings](#key-bindings) | Configures keyboard shortcuts for application actions. |
-| `theme` | `"one-half-dark"`, `"purple"`, `"white-mist"`, `"white-sky"`, `"forest-calm"`, `"one-half-gray"`, `"red"`, or `"mauve"` | `"one-half-dark"` | Terminal, ANSI, chrome, dialog, menu, and settings color theme. |
+| `theme` | `"purple"`, `"white-mist"`, `"white-sky"`, `"forest-calm"`, `"one-half-gray"`, `"red"`, or `"mauve"` | `"one-half-gray"` | Terminal, ANSI, chrome, dialog, menu, and settings color theme. The removed `"one-half-dark"` value loads as `"one-half-gray"`. |
 | `font_family` | string | `"JetBrainsMono Nerd Font, Noto Sans Thai UI"` | Terminal font family. It must not be empty. |
 | `font_size` | number | `12.0` | Font size in points, from `1` through `72`. |
 | `padding_top` | integer | `16` | Inner terminal padding above the content in pixels, from `0` through `128`. |

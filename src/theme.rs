@@ -46,58 +46,12 @@ struct SettingsPalette {
     error: Rgb,
 }
 
-const BACKGROUND: Rgb = Rgb(0x28, 0x2c, 0x34);
-const FOREGROUND: Rgb = Rgb(0xdc, 0xdf, 0xe4);
-const HEADER_BACKGROUND: Rgb = Rgb(0x30, 0x36, 0x43);
-const TAB_HOVER: Rgb = Rgb(0x35, 0x3b, 0x48);
-const HEADER_BUTTON_HOVER: Rgb = Rgb(0x44, 0x4a, 0x55);
-const TAB_CLOSE_HOVER: Rgb = Rgb(0x5c, 0x63, 0x70);
-const TAB_DROP_TARGET: Rgb = Rgb(0xff, 0xff, 0xff);
-const CURSOR: Rgb = Rgb(0x61, 0xaf, 0xef);
-const SELECTION: Rgb = Rgb(0x3e, 0x44, 0x51);
-const MUTED_FOREGROUND: Rgb = Rgb(0x9d, 0xa5, 0xb4);
 const ERROR: Rgb = Rgb(0xe0, 0x6c, 0x75);
 const TRANSPARENT_BACKGROUND_CLASS: &str = "zter-transparent-background";
-
-const ANSI_PALETTE: [Rgb; 16] = [
-    Rgb(0x28, 0x2c, 0x34), // black
-    Rgb(0xe0, 0x6c, 0x75), // red: error semantics only
-    Rgb(0x98, 0xc3, 0x79), // green
-    Rgb(0xe5, 0xc0, 0x7b), // yellow
-    Rgb(0x61, 0xaf, 0xef), // blue
-    Rgb(0xc6, 0x78, 0xdd), // magenta
-    Rgb(0x56, 0xb6, 0xc2), // cyan
-    Rgb(0xdc, 0xdf, 0xe4), // white
-    Rgb(0x5c, 0x63, 0x70), // bright black
-    Rgb(0xe0, 0x6c, 0x75), // bright red: error semantics only
-    Rgb(0x98, 0xc3, 0x79), // bright green
-    Rgb(0xe5, 0xc0, 0x7b), // bright yellow
-    Rgb(0x61, 0xaf, 0xef), // bright blue
-    Rgb(0xc6, 0x78, 0xdd), // bright magenta
-    Rgb(0x56, 0xb6, 0xc2), // bright cyan
-    Rgb(0xff, 0xff, 0xff), // bright white
-];
 
 impl Theme {
     fn palette(self) -> ThemePalette {
         match self {
-            Self::OneHalfDark => ThemePalette {
-                background: BACKGROUND,
-                foreground: FOREGROUND,
-                muted_foreground: MUTED_FOREGROUND,
-                surface: BACKGROUND,
-                header_background: HEADER_BACKGROUND,
-                tab_hover: TAB_HOVER,
-                header_button_hover: HEADER_BUTTON_HOVER,
-                tab_close_hover: TAB_CLOSE_HOVER,
-                tab_drop_target: TAB_DROP_TARGET,
-                cursor: CURSOR,
-                selection: SELECTION,
-                selection_foreground: BACKGROUND,
-                border: SELECTION,
-                error: ERROR,
-                ansi: ANSI_PALETTE,
-            },
             Self::Purple => zter_palette(
                 Rgb(0x8f, 0x5f, 0x8a),
                 Rgb(0x2b, 0x22, 0x2d),
@@ -217,14 +171,6 @@ fn themed_ansi(background: Rgb, foreground: Rgb, muted_foreground: Rgb, accent: 
 fn settings_palette(theme: Theme) -> SettingsPalette {
     let palette = theme.palette();
     let (accent, text, control, control_hover, selected, track) = match theme {
-        Theme::OneHalfDark => (
-            palette.cursor,
-            Rgb(0x17, 0x42, 0x69),
-            Rgb(0xea, 0xf4, 0xff),
-            Rgb(0xdc, 0xee, 0xff),
-            Rgb(0xdc, 0xee, 0xff),
-            Rgb(0xd1, 0xe7, 0xfa),
-        ),
         Theme::Purple => (
             Rgb(0x87, 0x5a, 0x82),
             Rgb(0x3f, 0x2b, 0x41),
@@ -359,7 +305,7 @@ pub fn install_display_styles(
 }
 
 fn application_css(terminal_padding: TerminalPadding) -> String {
-    application_css_for(Theme::OneHalfDark, terminal_padding)
+    application_css_for(Theme::WhiteSky, terminal_padding)
 }
 
 fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> String {
@@ -734,7 +680,7 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
 }
 
 fn settings_window_css() -> String {
-    settings_window_css_for(Theme::OneHalfDark)
+    settings_window_css_for(Theme::WhiteSky)
 }
 
 fn settings_window_css_for(theme: Theme) -> String {
@@ -763,19 +709,19 @@ fn settings_window_css_for(theme: Theme) -> String {
             min-height: 36px;
         }}
         window.zter-settings-window .zter-settings-header windowcontrols button {{
-            background-color: {};
+            background-color: transparent;
             background-image: none;
             border-width: 0;
-            border-radius: 9px;
+            border-radius: 999px;
             box-shadow: none;
             color: {};
-            min-height: 29px;
-            min-width: 29px;
+            min-height: 28px;
+            min-width: 28px;
             margin: 20px 16px 0 0;
             padding: 0;
         }}
         window.zter-settings-window .zter-settings-header windowcontrols button:hover {{
-            background-color: {};
+            background-color: transparent;
         }}
         window.zter-settings-window .zter-settings-body {{
             min-height: 420px;
@@ -863,9 +809,6 @@ fn settings_window_css_for(theme: Theme) -> String {
             border-radius: 7px;
             min-height: 22px;
             min-width: 22px;
-        }}
-        window.zter-settings-window .zter-theme-swatch-one-half-dark {{
-            background-color: {};
         }}
         window.zter-settings-window .zter-theme-swatch-purple {{
             background-color: {};
@@ -1139,9 +1082,7 @@ fn settings_window_css_for(theme: Theme) -> String {
         }}",
         settings.surface.css(),
         settings.border.css(),
-        settings.action.css(),
         settings.foreground.css(),
-        settings.action_hover.css(),
         settings.sidebar.css(),
         settings.foreground.css(),
         settings.muted_foreground.css(),
@@ -1154,7 +1095,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.foreground.css(),
         settings.nav_hover.css(),
         settings.list_selected.css(),
-        Theme::OneHalfDark.palette().cursor.css(),
         Theme::Purple.palette().cursor.css(),
         Theme::WhiteMist.palette().cursor.css(),
         Theme::WhiteSky.palette().cursor.css(),
@@ -1260,11 +1200,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn one_half_dark_palette_has_sixteen_ansi_colors() {
-        assert_eq!(ANSI_PALETTE.len(), 16);
-    }
-
-    #[test]
     fn every_supported_theme_has_sixteen_ansi_colors() {
         for theme in Theme::ALL {
             assert_eq!(theme.palette().ansi.len(), 16);
@@ -1287,15 +1222,12 @@ mod tests {
         )));
         assert!(css.contains(&format!("color: {}", palette.foreground.css())));
         assert!(css.contains(&format!("border: 1px solid {}", palette.border.css())));
-        assert!(!css.contains("background-color: #303643"));
+        assert!(!css.contains("background-color: #273C56"));
     }
 
     #[test]
-    fn non_default_theme_uses_a_dark_terminal_background() {
-        for theme in Theme::ALL
-            .into_iter()
-            .filter(|theme| *theme != Theme::OneHalfDark)
-        {
+    fn every_theme_uses_a_dark_terminal_background() {
+        for theme in Theme::ALL {
             let background = theme.palette().background;
 
             assert!(background.luminance() < 0.08);
@@ -1304,14 +1236,17 @@ mod tests {
 
     #[test]
     fn red_is_limited_to_normal_and_bright_ansi_red() {
-        let red = Rgb(0xe0, 0x6c, 0x75);
-        let red_indexes: Vec<usize> = ANSI_PALETTE
-            .iter()
-            .enumerate()
-            .filter_map(|(index, color)| (*color == red).then_some(index))
-            .collect();
+        for theme in Theme::ALL {
+            let red_indexes: Vec<usize> = theme
+                .palette()
+                .ansi
+                .iter()
+                .enumerate()
+                .filter_map(|(index, color)| (*color == ERROR).then_some(index))
+                .collect();
 
-        assert_eq!(red_indexes, [1, 9]);
+            assert_eq!(red_indexes, [1, 9]);
+        }
     }
 
     #[test]
@@ -1330,8 +1265,8 @@ mod tests {
                 .iter()
                 .all(|rule| rule.trim() == "box-shadow: none;")
         );
-        assert!(css.contains("border: 1px solid #3E4451"));
-        assert!(css.contains("border-top: 1px solid #3E4451"));
+        assert!(css.contains("border: 1px solid #324E70"));
+        assert!(css.contains("border-top: 1px solid #324E70"));
     }
 
     #[test]
@@ -1364,8 +1299,8 @@ mod tests {
         let (_, item_rule) = css.split_once("button.zter-context-menu-item {").unwrap();
         let (item_rule, _) = item_rule.split_once('}').unwrap();
 
-        assert!(surface_rule.contains("background-color: #303643"));
-        assert!(surface_rule.contains("border: 1px solid #3E4451"));
+        assert!(surface_rule.contains("background-color: #273C56"));
+        assert!(surface_rule.contains("border: 1px solid #324E70"));
         assert!(surface_rule.contains("box-shadow: none"));
         assert!(surface_rule.contains("padding: 4px"));
         assert!(item_rule.contains("min-height: 30px"));
@@ -1379,7 +1314,7 @@ mod tests {
         let (_, header_rule) = css.split_once("window.zter-window .zter-header {").unwrap();
         let (header_rule, _) = header_rule.split_once('}').unwrap();
 
-        assert!(header_rule.contains("background-color: #303643"));
+        assert!(header_rule.contains("background-color: #273C56"));
         assert!(header_rule.contains("border-bottom-width: 0"));
         assert!(!header_rule.contains("#E06C75"));
     }
@@ -1466,13 +1401,13 @@ mod tests {
         let (_, active_tab_rule) = css.split_once(".zter-header-tab.zter-tab-active").unwrap();
         let (active_tab_rule, _) = active_tab_rule.split_once('}').unwrap();
 
-        assert!(active_tab_rule.contains("background-color: #3E4451"));
+        assert!(active_tab_rule.contains("background-color: #324E70"));
         assert!(active_tab_rule.contains("border-width: 0"));
         assert!(active_tab_rule.contains("box-shadow: none"));
     }
 
     #[test]
-    fn tab_drop_target_uses_an_inset_white_outline() {
+    fn tab_drop_target_uses_an_inset_accent_outline() {
         let css = application_css(TerminalPadding::default());
         let (_, target_rule) = css
             .split_once(".zter-header-tab.zter-tab-drop-target")
@@ -1481,7 +1416,7 @@ mod tests {
 
         assert!(!target_rule.contains("background-color:"));
         assert!(target_rule.contains("border-width: 0"));
-        assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
+        assert!(target_rule.contains("outline: 1px solid #6BA4F4"));
         assert!(target_rule.contains("outline-offset: -1px"));
         assert!(target_rule.contains("box-shadow: none"));
     }
@@ -1498,21 +1433,21 @@ mod tests {
             .unwrap();
         let (after_rule, _) = after_rule.split_once('}').unwrap();
 
-        assert!(before_rule.contains("transparent 24.5%, #FFFFFF 24.5%"));
-        assert!(before_rule.contains("#FFFFFF 25.5%, transparent 25.5%"));
-        assert!(after_rule.contains("transparent 74.5%, #FFFFFF 74.5%"));
-        assert!(after_rule.contains("#FFFFFF 75.5%, transparent 75.5%"));
+        assert!(before_rule.contains("transparent 24.5%, #6BA4F4 24.5%"));
+        assert!(before_rule.contains("#6BA4F4 25.5%, transparent 25.5%"));
+        assert!(after_rule.contains("transparent 74.5%, #6BA4F4 74.5%"));
+        assert!(after_rule.contains("#6BA4F4 75.5%, transparent 75.5%"));
     }
 
     #[test]
-    fn blank_header_drop_target_uses_an_inset_white_outline() {
+    fn blank_header_drop_target_uses_an_inset_accent_outline() {
         let css = application_css(TerminalPadding::default());
         let (_, target_rule) = css
             .split_once(".zter-drag-space.zter-header-drop-target")
             .unwrap();
         let (target_rule, _) = target_rule.split_once('}').unwrap();
 
-        assert!(target_rule.contains("outline: 1px solid #FFFFFF"));
+        assert!(target_rule.contains("outline: 1px solid #6BA4F4"));
         assert!(target_rule.contains("outline-offset: -1px"));
     }
 
@@ -1522,7 +1457,7 @@ mod tests {
         let (_, editor_rule) = css.split_once("entry.zter-tab-title-entry").unwrap();
         let (editor_rule, _) = editor_rule.split_once('}').unwrap();
 
-        assert!(editor_rule.contains("background-color: #282C34"));
+        assert!(editor_rule.contains("background-color: #1C2D40"));
         assert!(editor_rule.contains("min-height: 28px"));
         assert!(editor_rule.contains("border-width: 0"));
         assert!(editor_rule.contains("box-shadow: none"));
@@ -1559,11 +1494,11 @@ mod tests {
             .unwrap();
         let (hover_rule, _) = hover_rule.split_once('}').unwrap();
 
-        assert!(button_rule.contains("background-color: #303643"));
+        assert!(button_rule.contains("background-color: #273C56"));
         assert!(button_rule.contains("min-width: 28px"));
         assert!(button_rule.contains("box-shadow: none"));
         assert!(button_rule.contains("transition: background-color 180ms ease-out"));
-        assert!(hover_rule.contains("background-color: #444A55"));
+        assert!(hover_rule.contains("background-color: #324E70"));
     }
 
     #[test]
@@ -1628,7 +1563,7 @@ mod tests {
         assert!(input_rule.contains("min-height: 36px"));
         assert!(focus_rule.contains(".zter-settings-field > entry:focus-within"));
         assert!(focus_rule.contains(".zter-settings-field > spinbutton:focus-within"));
-        assert!(focus_rule.contains("border-color: #61AFEF"));
+        assert!(focus_rule.contains("border-color: #6BA4F4"));
         assert!(focus_rule.contains("outline-width: 0"));
         assert!(focus_rule.contains("box-shadow: none"));
     }
@@ -1679,7 +1614,7 @@ mod tests {
         assert!(sidebar_rule.contains("border-right-width: 0"));
         assert!(sidebar_rule.contains("border-radius: 15px"));
         assert!(nav_rule.contains("border-radius: 10px"));
-        assert!(checked_rule.contains("background-color: #61AFEF"));
+        assert!(checked_rule.contains("background-color: #1E73E7"));
         assert!(checked_rule.contains("color: #FFFFFF"));
         assert!(label_rule.contains("text-align: left"));
         assert!(!css.contains("zter-settings-nav check"));
@@ -1807,19 +1742,19 @@ mod tests {
         let css = settings_window_css();
 
         assert!(css.contains(
-            "window.zter-settings-window .zter-theme-swatch-one-half-dark {\n            background-color: #61AFEF"
+            "window.zter-settings-window .zter-theme-swatch-one-half-gray {\n            background-color: #919AA6"
         ));
         assert!(css.contains(
             "window.zter-settings-window button.zter-settings-theme-option:checked image.zter-settings-theme-check {\n            opacity: 1"
         ));
         assert!(!css.contains(
-            "checkbutton.zter-settings-checkbox:checked check {\n            background-color: #61AFEF"
+            "checkbutton.zter-settings-checkbox:checked check {\n            background-color: #6BA4F4"
         ));
         assert!(!css.contains(
-            "checkbutton.zter-settings-radio:checked radio {\n            background-color: #61AFEF"
+            "checkbutton.zter-settings-radio:checked radio {\n            background-color: #6BA4F4"
         ));
         assert!(!css.contains(
-            "scale.zter-settings-opacity-scale highlight {\n            background-color: #61AFEF"
+            "scale.zter-settings-opacity-scale highlight {\n            background-color: #6BA4F4"
         ));
     }
 
@@ -1887,12 +1822,12 @@ mod tests {
     }
 
     #[test]
-    fn settings_close_button_uses_the_reference_control_fill() {
-        let css = application_css(TerminalPadding::default());
+    fn settings_close_button_matches_the_terminal_window_controls() {
+        let css = settings_window_css();
         let selector = "window.zter-settings-window .zter-settings-header windowcontrols button";
         let (_, close_rule) = css
             .split_once(&format!(
-                "{selector} {{\n            background-color: #EAF4FF"
+                "{selector} {{\n            background-color: transparent;\n            background-image: none;\n            border-width: 0;\n            border-radius: 999px"
             ))
             .unwrap();
         let (close_rule, remainder) = close_rule.split_once('}').unwrap();
@@ -1901,13 +1836,13 @@ mod tests {
             .unwrap();
         let (close_hover, _) = close_hover.split_once('}').unwrap();
 
-        assert!(close_rule.contains("border-radius: 9px"));
-        assert!(close_rule.contains("min-height: 29px"));
-        assert!(close_rule.contains("min-width: 29px"));
+        assert!(close_rule.contains("min-height: 28px"));
+        assert!(close_rule.contains("min-width: 28px"));
         assert!(close_rule.contains("margin: 20px 16px 0 0"));
         assert!(close_rule.contains("box-shadow: none"));
         assert!(!close_rule.contains("transition:"));
-        assert!(close_hover.contains("background-color: #DCEEFF"));
+        assert!(close_hover.contains("background-color: transparent"));
+        assert!(!css.contains("windowcontrols button > image"));
     }
 
     #[test]
@@ -1993,9 +1928,9 @@ mod tests {
             .unwrap();
         let (settings_button_hover, _) = settings_button_hover.split_once('}').unwrap();
 
-        assert!(tab_close_hover.contains("background-color: #5C6370"));
-        assert!(new_tab_hover.contains("background-color: #444A55"));
-        assert!(settings_button_hover.contains("background-color: #444A55"));
+        assert!(tab_close_hover.contains("background-color: #40628C"));
+        assert!(new_tab_hover.contains("background-color: #324E70"));
+        assert!(settings_button_hover.contains("background-color: #324E70"));
     }
 
     #[test]

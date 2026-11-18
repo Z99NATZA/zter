@@ -28,19 +28,18 @@ const PROJECT_SETTINGS_JSON: &str = include_str!("../config/settings.json");
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
-    OneHalfDark,
     Purple,
     WhiteMist,
     WhiteSky,
     ForestCalm,
+    #[serde(alias = "one-half-dark")]
     OneHalfGray,
     Red,
     Mauve,
 }
 
 impl Theme {
-    pub const ALL: [Self; 8] = [
-        Self::OneHalfDark,
+    pub const ALL: [Self; 7] = [
         Self::Purple,
         Self::WhiteMist,
         Self::WhiteSky,
@@ -52,7 +51,6 @@ impl Theme {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::OneHalfDark => "One Half Dark",
             Self::Purple => "Purple",
             Self::WhiteMist => "White Mist",
             Self::WhiteSky => "White Sky",
@@ -68,7 +66,7 @@ impl Theme {
             .ok()
             .and_then(|index| Self::ALL.get(index))
             .copied()
-            .unwrap_or(Self::OneHalfDark)
+            .unwrap_or(Self::OneHalfGray)
     }
 }
 
@@ -1050,7 +1048,7 @@ mod tests {
     #[test]
     fn supported_theme_values_are_loaded_from_settings() {
         let expected = [
-            ("one-half-dark", Theme::OneHalfDark),
+            ("one-half-dark", Theme::OneHalfGray),
             ("purple", Theme::Purple),
             ("white-mist", Theme::WhiteMist),
             ("white-sky", Theme::WhiteSky),

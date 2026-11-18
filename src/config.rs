@@ -309,7 +309,7 @@ mod tests {
     fn terminal_defaults_are_exposed_to_the_ui() {
         let config = config(None, None).unwrap();
 
-        assert_eq!(config.theme(), Theme::OneHalfDark);
+        assert_eq!(config.theme(), Theme::OneHalfGray);
         assert_eq!(
             config.font_family(),
             "JetBrainsMono Nerd Font, Noto Sans Thai UI"
@@ -352,7 +352,7 @@ mod tests {
             "background_image": background_image,
             "header_mode": "full",
             "key_bindings": key_bindings,
-            "theme": "one-half-dark",
+            "theme": "one-half-gray",
             "font_family": "Monospace",
             "font_size": 12.0,
             "padding_top": 0,

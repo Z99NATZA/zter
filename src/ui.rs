@@ -1655,12 +1655,11 @@ fn selected_theme(buttons: &[gtk::ToggleButton]) -> Theme {
         .position(gtk::ToggleButton::is_active)
         .and_then(|index| u32::try_from(index).ok())
         .map(Theme::from_selected_index)
-        .unwrap_or(Theme::OneHalfDark)
+        .unwrap_or(Theme::OneHalfGray)
 }
 
 fn theme_swatch_class(theme: Theme) -> &'static str {
     match theme {
-        Theme::OneHalfDark => "zter-theme-swatch-one-half-dark",
         Theme::Purple => "zter-theme-swatch-purple",
         Theme::WhiteMist => "zter-theme-swatch-white-mist",
         Theme::WhiteSky => "zter-theme-swatch-white-sky",
@@ -5350,7 +5349,7 @@ mod tests {
     #[test]
     fn wallpaper_is_blended_once_into_opaque_display_pixels() {
         let wallpaper = load_wallpaper(&BackgroundImageSource::Default).unwrap();
-        let background = theme::background_color(crate::settings::Theme::OneHalfDark);
+        let background = theme::background_color(crate::settings::Theme::OneHalfGray);
         let prepared = prepare_wallpaper(WallpaperPreparation {
             source: Some(BackgroundImageSource::Default),
             display_size: (960, 600),

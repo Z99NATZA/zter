@@ -229,25 +229,25 @@ minimum `40px` draggable gap while tabs overflow.
 ## Theme Palette
 
 Theme colors are assigned to semantic roles before they are used by terminal
-and GTK styling. `one-half-dark` preserves the original One Half Dark terminal
-palette. The other themes use zter-oriented dark terminal backgrounds with
+and GTK styling. Every theme uses a zter-oriented dark terminal background with
 theme-specific accent, foreground, muted foreground, border, hover, cursor,
 selection, and ANSI roles. Red is reserved for error affordances and for the
 normal and bright ANSI red slots used by terminal programs for error semantics.
 
-| Role       | Normal    | Bright    |
-| ---------- | --------- | --------- |
-| Black      | `#282C34` | `#5C6370` |
-| Red        | `#E06C75` | `#E06C75` |
-| Green      | `#98C379` | `#98C379` |
-| Yellow     | `#E5C07B` | `#E5C07B` |
-| Blue       | `#61AFEF` | `#61AFEF` |
-| Magenta    | `#C678DD` | `#C678DD` |
-| Cyan       | `#56B6C2` | `#56B6C2` |
-| White      | `#DCDFE4` | `#FFFFFF` |
+| Role       | Normal             | Bright             |
+| ---------- | ------------------ | ------------------ |
+| Black      | Theme background   | Muted foreground   |
+| Red        | `#E06C75`          | `#E06C75`          |
+| Green      | `#8FC07A`          | `#9DC980`          |
+| Yellow     | `#D7B469`          | `#E4C078`          |
+| Blue       | Theme accent       | Theme accent       |
+| Magenta    | `#C586C0`          | `#D099CB`          |
+| Cyan       | `#6FC8D8`          | `#7FD7E5`          |
+| White      | Theme foreground   | `#FFFFFF`          |
 
-The supported theme keys are `one-half-dark`, `purple`, `white-mist`,
-`white-sky`, `forest-calm`, `one-half-gray`, `red`, and `mauve`.
+The supported theme keys are `purple`, `white-mist`, `white-sky`,
+`forest-calm`, `one-half-gray`, `red`, and `mauve`. The default is
+`one-half-gray`, and the removed `one-half-dark` key loads as `one-half-gray`.
 
 ## Background Image
 
