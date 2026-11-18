@@ -40,13 +40,13 @@ open a new tab, and the close button closes the current tab. The configured
 `Ctrl+PageUp` or `Super+H`, and `Ctrl+PageDown` or `Super+L`.
 `zter header mini` keeps the same terminal area as hidden mode. An invisible
 `10px` target at the top edge moves the window and accepts dropped tabs. Hovering
-over it gives the bar a subtle tint and shows settings and window-control icons
-at the upper right. Each icon and its click target fit within the `10px` bar,
-with `10px` gaps between buttons. The buttons add no hover or active decoration.
-The bar changes color without animation. The controls hide `400ms` after the
-pointer moves away, and the bar
-returns to the terminal color. The terminal grid does not resize. The tab row
-remains hidden in mini mode.
+over it overlays a full-width bar that uses the full header's background,
+settings button, and GTK window controls at about 70% of the full header's size:
+a `25px` bar with `20px` buttons, `11px` icons, and `17px` window-control
+circles, inset `8px` from the right edge. The bar also moves the window. It
+covers the top of the terminal while shown and hides `400ms` after the pointer
+leaves both the target and the bar. The terminal grid does not resize. The tab
+row remains hidden in mini mode.
 `zter header hide` removes both the drag target and icons; `zter header full` or
 `zter header show` restores the persistent full row. These commands change all
 windows of the running profile-matched application and save the mode for later

@@ -329,30 +329,37 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
             min-height: 10px;
             transition: none;
         }}
-        window.zter-window .zter-mini-header.zter-mini-header-active {{
-            background-color: rgba(171, 178, 191, 0.12);
-        }}
-        window.zter-window .zter-mini-controls {{
+        window.zter-window .zter-mini-bar {{
             background-color: transparent;
             background-image: none;
             border-width: 0;
             box-shadow: none;
-            margin: 0 6px 0 0;
         }}
-        window.zter-window .zter-mini-controls button.zter-mini-control,
-        window.zter-window .zter-mini-controls button.zter-mini-control:hover,
-        window.zter-window .zter-mini-controls button.zter-mini-control:active {{
-            background-color: transparent;
-            background-image: none;
-            border-width: 0;
-            border-radius: 0;
-            box-shadow: none;
-            color: {};
-            min-height: 10px;
-            min-width: 10px;
-            margin: 0;
-            padding: 0;
-            transition: none;
+        window.zter-window .zter-mini-bar .zter-header {{
+            min-height: 25px;
+            padding: 0 8px 0 0;
+        }}
+        window.zter-window .zter-mini-bar .zter-header windowcontrols {{
+            border-spacing: 4px;
+            margin-left: 5px;
+        }}
+        window.zter-window .zter-mini-bar .zter-header windowcontrols button {{
+            -gtk-icon-size: 11px;
+            min-height: 20px;
+            min-width: 0;
+            margin: 0 1px;
+        }}
+        window.zter-window .zter-mini-bar .zter-header windowcontrols button > image {{
+            min-height: 13px;
+            min-width: 13px;
+            padding: 2px;
+            margin: 0 2px;
+        }}
+        window.zter-window .zter-mini-bar .zter-header button.zter-settings-button {{
+            -gtk-icon-size: 11px;
+            min-height: 20px;
+            min-width: 20px;
+            margin: 0 1px;
         }}
         window.zter-window .zter-header {{
             background-color: {};
@@ -643,7 +650,6 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
             background-image: none;
             border-radius: 0;
         }}",
-        palette.foreground.css(),
         palette.foreground.css(),
         palette.header_background.css(),
         palette.foreground.css(),
@@ -1512,6 +1518,56 @@ mod tests {
         assert!(button_rule.contains("box-shadow: none"));
         assert!(button_rule.contains("transition: background-color 180ms ease-out"));
         assert!(hover_rule.contains("background-color: #324E70"));
+    }
+
+    #[test]
+    fn mini_bar_is_a_smaller_full_header() {
+        let css = application_css(TerminalPadding::default());
+        let (_, trigger_rule) = css
+            .split_once("window.zter-window .zter-mini-header {")
+            .unwrap();
+        let (trigger_rule, _) = trigger_rule.split_once('}').unwrap();
+        let (_, bar_rule) = css
+            .split_once("window.zter-window .zter-mini-bar {")
+            .unwrap();
+        let (bar_rule, _) = bar_rule.split_once('}').unwrap();
+
+        assert!(trigger_rule.contains("background-color: transparent"));
+        assert!(trigger_rule.contains("min-height: 10px"));
+        assert!(bar_rule.contains("background-color: transparent"));
+        assert!(bar_rule.contains("border-width: 0"));
+        let (_, bar_header_rule) = css
+            .split_once("window.zter-window .zter-mini-bar .zter-header {")
+            .unwrap();
+        let (bar_header_rule, _) = bar_header_rule.split_once('}').unwrap();
+        let mini_rule = |selector: &str| {
+            let (_, rule) = css
+                .split_once(&format!(
+                    "window.zter-window .zter-mini-bar .zter-header {selector} {{"
+                ))
+                .unwrap();
+            let (rule, _) = rule.split_once('}').unwrap();
+            rule.to_owned()
+        };
+        let control_rule = mini_rule("windowcontrols button");
+        let control_image_rule = mini_rule("windowcontrols button > image");
+        let settings_rule = mini_rule("button.zter-settings-button");
+        let (_, header_rule) = css.split_once("window.zter-window .zter-header {").unwrap();
+        let (header_rule, _) = header_rule.split_once('}').unwrap();
+
+        assert!(bar_header_rule.contains("min-height: 25px"));
+        assert!(bar_header_rule.contains("padding: 0 8px 0 0"));
+        assert!(mini_rule("windowcontrols").contains("border-spacing: 4px"));
+        assert!(control_rule.contains("-gtk-icon-size: 11px"));
+        assert!(control_rule.contains("min-height: 20px"));
+        assert!(control_image_rule.contains("min-height: 13px"));
+        assert!(control_image_rule.contains("min-width: 13px"));
+        assert!(control_image_rule.contains("padding: 2px"));
+        assert!(settings_rule.contains("-gtk-icon-size: 11px"));
+        assert!(settings_rule.contains("min-width: 20px"));
+        assert!(header_rule.contains("min-height: 36px"));
+        assert!(!css.contains("zter-mini-header-active"));
+        assert!(!css.contains("zter-mini-control"));
     }
 
     #[test]
