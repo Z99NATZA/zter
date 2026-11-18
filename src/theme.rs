@@ -944,42 +944,43 @@ fn settings_window_css_for(theme: Theme) -> String {
             outline-width: 0;
             padding: 0 10px;
         }}
+        window.zter-settings-window .zter-settings-field > scale.zter-settings-opacity-scale {{
+            background-color: transparent;
+            padding: 0;
+        }}
         window.zter-settings-window scale.zter-settings-opacity-scale trough {{
             background-color: {};
             background-image: none;
             border-width: 0;
-            border-radius: 999px;
+            border-radius: 7px;
             box-shadow: none;
-            min-height: 6px;
+            min-height: 36px;
+            outline-width: 0;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale highlight {{
             background-color: {};
             background-image: none;
-            border-radius: 999px;
+            border-width: 0;
+            border-radius: 7px;
             box-shadow: none;
+            min-height: 36px;
+        }}
+        window.zter-settings-window scale.zter-settings-opacity-scale:focus highlight {{
+            background-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled trough,
         window.zter-settings-window scale.zter-settings-opacity-scale:disabled highlight {{
             background-color: {};
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale slider {{
-            background-color: {};
+            background-color: transparent;
             background-image: none;
-            border: 1px solid {};
-            border-radius: 999px;
+            border-width: 0;
             box-shadow: none;
-            min-height: 14px;
-            min-width: 14px;
-        }}
-        window.zter-settings-window scale.zter-settings-opacity-scale:hover slider,
-        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
-            background-color: {};
-        }}
-        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {{
-            border-color: {};
-        }}
-        window.zter-settings-window scale.zter-settings-opacity-scale:disabled slider {{
-            background-color: {};
+            margin: 0;
+            min-height: 0;
+            min-width: 0;
+            padding: 0;
         }}
         window.zter-settings-window scale.zter-settings-opacity-scale value {{
             color: {};
@@ -1127,10 +1128,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.foreground.css(),
         settings.track.css(),
         settings.muted_foreground.css(),
-        settings.disabled_track.css(),
-        settings.muted_foreground.css(),
-        settings.disabled_track.css(),
-        settings.foreground.css(),
         settings.foreground.css(),
         settings.disabled_track.css(),
         settings.foreground.css(),
@@ -1257,7 +1254,7 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 9);
+        assert_eq!(css.matches("border:").count(), 8);
         assert_eq!(css.matches("border-top:").count(), 2);
         assert!(!shadow_rules.is_empty());
         assert!(
@@ -1694,6 +1691,10 @@ mod tests {
             .split_once("scale.zter-settings-opacity-scale slider {")
             .unwrap();
         let (slider_rule, _) = slider_rule.split_once('}').unwrap();
+        let (_, field_rule) = css
+            .split_once(".zter-settings-field > scale.zter-settings-opacity-scale {")
+            .unwrap();
+        let (field_rule, _) = field_rule.split_once('}').unwrap();
         let (_, disabled_track_rule) = css
             .split_once("scale.zter-settings-opacity-scale:disabled trough,")
             .unwrap();
@@ -1703,13 +1704,20 @@ mod tests {
             .unwrap();
         let (disabled_control_rule, _) = disabled_control_rule.split_once('}').unwrap();
 
+        assert!(field_rule.contains("background-color: transparent"));
+        assert!(field_rule.contains("padding: 0"));
         assert!(trough_rule.contains("background-color: #D1E7FA"));
+        assert!(trough_rule.contains("border-radius: 7px"));
         assert!(trough_rule.contains("box-shadow: none"));
+        assert!(trough_rule.contains("min-height: 36px"));
         assert!(highlight_rule.contains("background-color: #607E98"));
+        assert!(highlight_rule.contains("border-radius: 7px"));
+        assert!(highlight_rule.contains("min-height: 36px"));
         assert!(disabled_track_rule.contains("background-color: #E4F1FC"));
         assert!(disabled_control_rule.contains("opacity: 0.3"));
-        assert!(slider_rule.contains("background-color: #607E98"));
-        assert!(slider_rule.contains("border: 1px solid #E4F1FC"));
+        assert!(slider_rule.contains("background-color: transparent"));
+        assert!(slider_rule.contains("border-width: 0"));
+        assert!(slider_rule.contains("min-width: 0"));
         assert!(slider_rule.contains("box-shadow: none"));
     }
 
@@ -1730,11 +1738,9 @@ mod tests {
             "checkbutton.zter-settings-radio:focus radio {\n            border-color: #174269"
         ));
         assert!(css.contains(
-            "scale.zter-settings-opacity-scale:hover slider,\n        window.zter-settings-window scale.zter-settings-opacity-scale:focus slider {\n            background-color: #174269"
+            "scale.zter-settings-opacity-scale:focus highlight {\n            background-color: #174269"
         ));
-        assert!(css.contains(
-            "scale.zter-settings-opacity-scale:focus slider {\n            border-color: #174269"
-        ));
+        assert!(!css.contains("scale.zter-settings-opacity-scale:hover highlight"));
     }
 
     #[test]

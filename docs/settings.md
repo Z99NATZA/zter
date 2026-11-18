@@ -59,8 +59,9 @@ GdkPixbuf and place the selected path in the draft. Background image opacity and
 window opacity each have a checkbox before the label; clicking the label toggles
 the checkbox. Both opacity controls start checked. An unchecked opacity control
 applies the embedded default and keeps the current slider value in the draft; a
-checked opacity control applies the slider value. Opacity sliders show
-two-decimal values.
+checked opacity control applies the slider value. Opacity sliders are `36px` bars
+with `7px` corners and no thumb: a track-role trough filled by a rounded highlight up
+to the current value, with the two-decimal value shown to the right.
 
 The settings window has square outer corners and a `1px` theme border role
 around its panel; the Cancel and OK action row has no separator line above it.
@@ -74,10 +75,10 @@ the theme primary accent border only while focused. Clicking elsewhere in the
 settings window clears input focus. The Padding group keeps a clear background
 so Top, Right, Bottom, and Left remain visually separate input fields. Unchecked
 checkbox and radio indicators use the derived field and border roles. Checked
-indicators, enabled slider highlights, and resting slider thumbs use the theme's
-muted foreground role with white indicator marks. Hovered indicators use the
-same muted foreground for their borders. Focused indicators and hovered or
-focused slider thumbs use the theme foreground. Disabled settings controls use
+indicators and resting slider highlights use the theme's muted foreground role
+with white indicator marks. Hovered indicators use the same muted foreground for
+their borders. Focused indicators and focused slider highlights use the theme
+foreground; slider highlights keep their color on hover. Disabled settings controls use
 `0.3` opacity, and disabled slider tracks use a softened disabled-track role.
 The header close control matches the terminal window controls: a transparent
 `28px` circular button whose icon keeps the GTK theme's circular control fill.
