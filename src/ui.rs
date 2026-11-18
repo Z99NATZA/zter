@@ -53,6 +53,8 @@ const MINI_HEADER_HIDE_DELAY: Duration = Duration::from_millis(400);
 const TERMINAL_TOP_BORDER: i32 = 1;
 const TERMINAL_SCROLLBAR_HIDDEN_CLASS: &str = "zter-terminal-scrollbar-hidden";
 const TERMINAL_ZOOM_STEP: f64 = 1.0;
+const TERMINAL_FINE_ZOOM_STEP: f64 = 0.25;
+const TERMINAL_FINE_ZOOM_LIMIT: f64 = 6.0;
 const TERMINAL_FONT_SCALE_BASE_SIZE: f64 = 20.0;
 const VTE_MIN_FONT_SCALE: f64 = 0.25;
 const TERMINAL_INTERRUPT: &[u8] = b"\x03";
@@ -4126,12 +4128,17 @@ fn terminal_zoom_scroll(modifiers: gtk::gdk::ModifierType, dy: f64) -> Option<Te
 }
 
 fn zoomed_font_size(current: f64, zoom: TerminalZoom) -> f64 {
-    let delta = match zoom {
-        TerminalZoom::In => TERMINAL_ZOOM_STEP,
-        TerminalZoom::Out => -TERMINAL_ZOOM_STEP,
-        TerminalZoom::Reset => return current,
-    };
-    (current + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    match zoom {
+        TerminalZoom::In if current < TERMINAL_FINE_ZOOM_LIMIT => {
+            (current + TERMINAL_FINE_ZOOM_STEP).min(TERMINAL_FINE_ZOOM_LIMIT)
+        }
+        TerminalZoom::In => (current + TERMINAL_ZOOM_STEP).min(MAX_FONT_SIZE),
+        TerminalZoom::Out if current > TERMINAL_FINE_ZOOM_LIMIT => {
+            (current - TERMINAL_ZOOM_STEP).max(TERMINAL_FINE_ZOOM_LIMIT)
+        }
+        TerminalZoom::Out => (current - TERMINAL_FINE_ZOOM_STEP).max(MIN_FONT_SIZE),
+        TerminalZoom::Reset => current,
+    }
 }
 
 fn install_deferred_terminal_resize<F>(
@@ -4846,6 +4853,8 @@ mod tests {
     fn terminal_zoom_steps_and_clamps_to_the_supported_font_range() {
         assert_eq!(zoomed_font_size(12.0, TerminalZoom::In), 13.0);
         assert_eq!(zoomed_font_size(12.0, TerminalZoom::Out), 11.0);
+        assert_eq!(zoomed_font_size(2.5, TerminalZoom::In), 2.75);
+        assert_eq!(zoomed_font_size(2.75, TerminalZoom::Out), 2.5);
         assert_eq!(
             zoomed_font_size(MAX_FONT_SIZE, TerminalZoom::In),
             MAX_FONT_SIZE
@@ -4854,6 +4863,22 @@ mod tests {
             zoomed_font_size(MIN_FONT_SIZE, TerminalZoom::Out),
             MIN_FONT_SIZE
         );
+    }
+
+    #[test]
+    fn terminal_zoom_changes_step_at_six_points_in_both_directions() {
+        let mut zoom = TerminalZoomState::new(5.75);
+
+        assert_eq!(zoom.request(TerminalZoom::In), Some(6.0));
+        assert_eq!(zoom.request(TerminalZoom::In), Some(7.0));
+        assert_eq!(zoom.request(TerminalZoom::Out), Some(6.0));
+        assert_eq!(zoom.request(TerminalZoom::Out), Some(5.75));
+    }
+
+    #[test]
+    fn terminal_zoom_stops_at_six_points_from_fractional_settings() {
+        assert_eq!(zoomed_font_size(5.9, TerminalZoom::In), 6.0);
+        assert_eq!(zoomed_font_size(6.5, TerminalZoom::Out), 6.0);
     }
 
     #[test]
@@ -4874,11 +4899,14 @@ mod tests {
         assert_eq!(maximum.request(TerminalZoom::In), None);
 
         let mut zoom = TerminalZoomState::new(6.0);
-        for size in [5.0, 4.0, 3.0, 2.0, 1.0] {
-            assert_eq!(zoom.request(TerminalZoom::Out), Some(size));
+        for quarters in (4..24).rev() {
+            assert_eq!(
+                zoom.request(TerminalZoom::Out),
+                Some(f64::from(quarters) / 4.0)
+            );
         }
         assert_eq!(zoom.request(TerminalZoom::Out), None);
-        assert_eq!(zoom.request(TerminalZoom::In), Some(2.0));
+        assert_eq!(zoom.request(TerminalZoom::In), Some(1.25));
         assert_eq!(zoom.request(TerminalZoom::Reset), Some(6.0));
     }
 
