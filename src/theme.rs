@@ -359,8 +359,8 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
             background-image: none;
             color: {};
             box-shadow: none;
-            border: 1px solid {};
-            border-radius: 12px;
+            border: 1px solid transparent;
+            border-radius: 0;
         }}
         window.zter-window .zter-mini-header {{
             background-color: transparent;
@@ -399,6 +399,7 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
             background-color: {};
             background-image: none;
             border-bottom-width: 0;
+            border-radius: 0;
             color: {};
             min-height: 36px;
             padding: 0;
@@ -673,15 +674,14 @@ fn application_css_for(theme: Theme, terminal_padding: TerminalPadding) -> Strin
         }}
         .zter-content {{
             background-color: transparent;
-            border-radius: 0 0 12px 12px;
+            border-radius: 0;
         }}
         picture.zter-background {{
             background-color: transparent;
             background-image: none;
-            border-radius: 0 0 12px 12px;
+            border-radius: 0;
         }}",
         palette.foreground.css(),
-        palette.border.css(),
         palette.foreground.css(),
         palette.header_background.css(),
         palette.foreground.css(),
@@ -732,14 +732,14 @@ fn settings_window_css_for(theme: Theme) -> String {
         window.zter-settings-window {{
             background-color: transparent;
             background-image: none;
-            border-radius: 22px;
+            border-radius: 0;
             box-shadow: none;
         }}
         window.zter-settings-window .zter-settings-surface {{
             background-color: {};
             background-image: none;
             border-width: 0;
-            border-radius: 22px;
+            border-radius: 0;
             box-shadow: none;
         }}
         window.zter-settings-window .zter-settings-header {{
@@ -1401,15 +1401,26 @@ mod tests {
         let (window_rule, _) = window_rule.split_once('}').unwrap();
 
         assert!(window_rule.contains("background-color: transparent"));
-        assert!(window_rule.contains("border: 1px solid #3E4451"));
+        assert!(window_rule.contains("border: 1px solid transparent;"));
     }
 
     #[test]
-    fn app_css_rounds_the_window_and_lower_content() {
+    fn terminal_and_settings_windows_have_square_corners() {
         let css = application_css(TerminalPadding::default());
 
-        assert!(css.contains("border-radius: 12px"));
-        assert!(css.contains("border-radius: 0 0 12px 12px"));
+        for selector in [
+            "window.zter-window",
+            "window.zter-window .zter-header",
+            ".zter-content",
+            "picture.zter-background",
+            "window.zter-settings-window",
+            "window.zter-settings-window .zter-settings-surface",
+        ] {
+            let (_, rule) = css.split_once(&format!("{selector} {{")).unwrap();
+            let (rule, _) = rule.split_once('}').unwrap();
+
+            assert!(rule.contains("border-radius: 0;"), "{selector}");
+        }
     }
 
     #[test]

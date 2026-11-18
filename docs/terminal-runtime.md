@@ -206,14 +206,13 @@ background image follows the window while the terminal grid remains at its last
 applied size. After the window allocation is stable for `120ms`, zter applies
 its latest grid.
 
-App-owned surfaces do not use shadows. The app window has one outer `1px`
-theme border and `12px` rounded corners. The lower composition layer is clipped
-to the same radius. The terminal content surface uses a top border of the same
-color as the only header/content divider. Its top, right, bottom, and left
-inner padding are independently configurable from `0px` through `128px` and
-default to `16px`. The GTK titlebar's theme border is disabled so it does not
-create a second dark line. The background image does not add borders or shrink
-with terminal padding. Window-manager or compositor decoration remains
+App-owned surfaces do not use shadows. The terminal window has a transparent
+`1px` outer border with square corners. The terminal content surface uses a
+theme-colored top border as the only header/content divider. Its top, right,
+bottom, and left inner padding are independently configurable from `0px` through
+`128px` and default to `16px`. The GTK titlebar's theme border is disabled so it
+does not create a second dark line. The background image does not add borders or
+shrink with terminal padding. Window-manager or compositor decoration remains
 system-owned and may include an outer window shadow beyond the app border.
 
 The unified header, inactive tabs, hover fills, active tabs, borders, drop

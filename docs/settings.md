@@ -62,9 +62,9 @@ applies the embedded default and keeps the current slider value in the draft; a
 checked opacity control applies the slider value. Opacity sliders show
 two-decimal values.
 
-The settings window uses a white panel surface, a rounded tinted sidebar,
-`40px` navigation rows, and `46px` theme rows derived from the current theme
-palette. Text inputs and spin buttons keep transparent resting borders and show
+The settings window has square outer corners. Its white panel surface, rounded
+tinted sidebar, `40px` navigation rows, and `46px` theme rows use the current
+theme palette. Text inputs and spin buttons keep transparent resting borders and show
 the theme primary accent border only while focused. Clicking elsewhere in the
 settings window clears input focus. The Padding group keeps a clear background
 so Top, Right, Bottom, and Left remain visually separate input fields. Unchecked
