@@ -32,7 +32,6 @@ struct SettingsPalette {
     page: Rgb,
     field: Rgb,
     border: Rgb,
-    subtle_border: Rgb,
     nav_hover: Rgb,
     nav_selected: Rgb,
     list_row: Rgb,
@@ -258,14 +257,7 @@ fn settings_palette(theme: Theme) -> SettingsPalette {
             Rgb(0xd9, 0xea, 0xe1),
             Rgb(0xcf, 0xe3, 0xd8),
         ),
-        Theme::OneHalfGray => (
-            Rgb(0x68, 0x71, 0x7d),
-            Rgb(0x2d, 0x36, 0x40),
-            Rgb(0xec, 0xef, 0xf1),
-            Rgb(0xe0, 0xe5, 0xe8),
-            Rgb(0xe0, 0xe5, 0xe8),
-            Rgb(0xcf, 0xd7, 0xdc),
-        ),
+        Theme::OneHalfGray => return dark_settings_palette(palette),
         Theme::Red => (
             Rgb(0xb8, 0x32, 0x52),
             Rgb(0x54, 0x24, 0x37),
@@ -290,7 +282,6 @@ fn settings_palette(theme: Theme) -> SettingsPalette {
         page: Rgb(0xfa, 0xfc, 0xfd),
         field: control,
         border: track,
-        subtle_border: control_hover,
         nav_hover: control_hover,
         nav_selected: accent,
         list_row: control,
@@ -302,6 +293,28 @@ fn settings_palette(theme: Theme) -> SettingsPalette {
         foreground: text,
         selected_foreground: Rgb(0xff, 0xff, 0xff),
         muted_foreground: text.mix(Rgb(0xfa, 0xfc, 0xfd), 32),
+        error: palette.error,
+    }
+}
+
+fn dark_settings_palette(palette: ThemePalette) -> SettingsPalette {
+    SettingsPalette {
+        surface: palette.background,
+        sidebar: palette.header_background,
+        page: palette.background,
+        field: palette.header_background,
+        border: palette.tab_hover,
+        nav_hover: palette.tab_hover,
+        nav_selected: palette.muted_foreground,
+        list_row: palette.header_background,
+        list_selected: palette.tab_close_hover,
+        action: palette.header_background,
+        action_hover: palette.tab_hover,
+        track: palette.tab_hover,
+        disabled_track: palette.tab_hover.mix(palette.background, 42),
+        foreground: palette.foreground,
+        selected_foreground: palette.background,
+        muted_foreground: palette.muted_foreground,
         error: palette.error,
     }
 }
@@ -738,7 +751,7 @@ fn settings_window_css_for(theme: Theme) -> String {
         window.zter-settings-window .zter-settings-surface {{
             background-color: {};
             background-image: none;
-            border-width: 0;
+            border: 1px solid {};
             border-radius: 0;
             box-shadow: none;
         }}
@@ -1084,7 +1097,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         window.zter-settings-window .zter-settings-actions {{
             background-color: {};
             background-image: none;
-            border-top: 1px solid {};
             padding: 12px 16px;
         }}
         window.zter-settings-window .zter-settings-status {{
@@ -1126,6 +1138,7 @@ fn settings_window_css_for(theme: Theme) -> String {
             background-color: {};
         }}",
         settings.surface.css(),
+        settings.border.css(),
         settings.action.css(),
         settings.foreground.css(),
         settings.action_hover.css(),
@@ -1187,7 +1200,6 @@ fn settings_window_css_for(theme: Theme) -> String {
         settings.foreground.css(),
         settings.action_hover.css(),
         settings.page.css(),
-        settings.subtle_border.css(),
         settings.error.css(),
         settings.action.css(),
         settings.border.css(),
@@ -1310,8 +1322,8 @@ mod tests {
             .filter(|line| line.contains("box-shadow:"))
             .collect();
 
-        assert_eq!(css.matches("border:").count(), 8);
-        assert_eq!(css.matches("border-top:").count(), 3);
+        assert_eq!(css.matches("border:").count(), 9);
+        assert_eq!(css.matches("border-top:").count(), 2);
         assert!(!shadow_rules.is_empty());
         assert!(
             shadow_rules
@@ -1812,6 +1824,49 @@ mod tests {
     }
 
     #[test]
+    fn one_half_gray_settings_window_uses_dark_theme_roles() {
+        let css = settings_window_css_for(Theme::OneHalfGray);
+        let rule = |selector: &str| {
+            let (_, rule) = css.split_once(&format!("{selector} {{")).unwrap();
+            let (rule, _) = rule.split_once('}').unwrap();
+            rule.to_owned()
+        };
+
+        let surface = rule("window.zter-settings-window .zter-settings-surface");
+        assert!(surface.contains("background-color: #242930"));
+        assert!(surface.contains("border: 1px solid #3F4752"));
+        assert!(!rule("window.zter-settings-window .zter-settings-actions").contains("border-top"));
+        assert!(
+            rule("window.zter-settings-window .zter-settings-pages")
+                .contains("background-color: #242930")
+        );
+        assert!(
+            rule("window.zter-settings-window .zter-settings-sidebar")
+                .contains("background-color: #313841")
+        );
+        assert!(
+            rule("window.zter-settings-window .zter-settings-sidebar-title")
+                .contains("color: #E8EBEE")
+        );
+        let nav_selected = rule("window.zter-settings-window button.zter-settings-nav:checked");
+        assert!(nav_selected.contains("background-color: #B7C0CA"));
+        assert!(nav_selected.contains("color: #242930"));
+        assert!(
+            rule("window.zter-settings-window button.zter-settings-theme-option")
+                .contains("background-color: #313841")
+        );
+        assert!(
+            rule("window.zter-settings-window button.zter-settings-theme-option:hover")
+                .contains("background-color: #3F4752")
+        );
+        assert!(
+            rule("window.zter-settings-window button.zter-settings-theme-option:checked")
+                .contains("background-color: #515B67")
+        );
+        assert!(!css.contains("#FAFCFD"));
+    }
+
+    #[test]
     fn padding_group_stays_clear_so_padding_inputs_read_as_separate_fields() {
         let css = application_css(TerminalPadding::default());
         let (_, group_rule) = css
@@ -1889,7 +1944,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_actions_are_separated_and_shadow_free() {
+    fn settings_actions_are_unseparated_and_shadow_free() {
         let css = application_css(TerminalPadding::default());
         let (_, actions_rule) = css
             .split_once("window.zter-settings-window .zter-settings-actions {")
@@ -1901,7 +1956,7 @@ mod tests {
         let (button_rule, _) = button_rule.split_once('}').unwrap();
 
         assert!(actions_rule.contains("background-color: #FAFCFD"));
-        assert!(actions_rule.contains("border-top: 1px solid #DCEEFF"));
+        assert!(!actions_rule.contains("border-top"));
         assert!(actions_rule.contains("padding: 12px 16px"));
         assert!(button_rule.contains("background-color: #EAF4FF"));
         assert!(button_rule.contains("border: 1px solid #D1E7FA"));

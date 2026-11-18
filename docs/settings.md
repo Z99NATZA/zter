@@ -62,9 +62,14 @@ applies the embedded default and keeps the current slider value in the draft; a
 checked opacity control applies the slider value. Opacity sliders show
 two-decimal values.
 
-The settings window has square outer corners. Its white panel surface, rounded
-tinted sidebar, `40px` navigation rows, and `46px` theme rows use the current
-theme palette. Text inputs and spin buttons keep transparent resting borders and show
+The settings window has square outer corners and a `1px` theme border role
+around its panel; the Cancel and OK action row has no separator line above it.
+Its white panel surface, rounded tinted sidebar, `40px` navigation rows, and
+`46px` theme rows use the current theme palette. One Half Gray instead uses a
+dark panel built from its terminal roles: background panel, header-background
+sidebar and rows, tab-hover hover fills and borders, tab-close-hover selected
+theme row, and a muted-foreground selected section with background-colored
+text. Text inputs and spin buttons keep transparent resting borders and show
 the theme primary accent border only while focused. Clicking elsewhere in the
 settings window clears input focus. The Padding group keeps a clear background
 so Top, Right, Bottom, and Left remain visually separate input fields. Unchecked
